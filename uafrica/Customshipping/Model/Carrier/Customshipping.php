@@ -115,37 +115,6 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
         return true;
     }
 
-//    /**
-//     * Obtain Tracking Information from uAfrica/Bobgo
-//     * @param string $trackings
-//     */
-//    public function getTrackingInfo($trackings)
-//    {
-//       // $result = $this->_trackFactory->create();
-//       // $tracking = explode(',', $trackings);
-//        // Get Tracking Results From uafrica API
-//        $this->curl->get("https://api.dev.ship.uafrica.com/tracking?channel=localhost&tracking_reference=UADPCTGF");
-//
-//        $result = $this->curl->getBody();
-//
-//        $bobGo = \Safe\json_decode($result, true);
-////        $result->setUrl('https://api.dev.ship.uafrica.com/tracking?channel=localhost&tracking_reference=UADPCTGF');
-////        $result->setTracking($trackings);
-////        $result->setCarrierTitle($this->getConfigData('title'));
-//            $track = $this->jsonFactory->create()->setData($bobGo);
-//
-//            return $track;
-//    }
-//    /**
-//     * Get tracking information
-//     *
-//     */
-//
-//    public function getTracking()
-//    {
-//        return $this->getTrackingInfo();
-//    }
-
     /**
      * Collect and get rates for storefront
      *
