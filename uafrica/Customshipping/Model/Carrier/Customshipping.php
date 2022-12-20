@@ -55,7 +55,7 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
 
 
 
-    //TODO: REFACTO THIS
+    //TODO: REFACTOR THIS
     /**
      * @var \Magento\Framework\Controller\Result\JsonFactory
      */
@@ -113,6 +113,20 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
     public function isTrackingAvailable(): bool
     {
         return true;
+    }
+    //Make getracking available with  fake data
+    /**
+     * @param string $tracking
+     * @return DataObject
+     */
+    public function getTrackingInfo($tracking): DataObject
+    {   
+         //  $result = $this->_trackFactory->create();
+        $result = new DataObject();
+        $result->setUrl('https://api.dev.ship.uafrica.com/tracking?channel=localhost&tracking_reference=UADPCTGF');
+        $result->setTracking($tracking);
+        $result->setCarrierTitle($this->getConfigData('title'));
+        return $result;
     }
 
     /**
