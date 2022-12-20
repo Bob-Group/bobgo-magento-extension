@@ -14,6 +14,12 @@ use Magento\Quote\Model\Quote\Address\RateResult\Method;
 use Magento\Quote\Model\Quote\Address\RateResult\MethodFactory;
 use Magento\Quote\Model\Quote\Address\RateRequest;
 use Psr\Log\LoggerInterface;
+use Magento\Framework\App\ActionInterface;
+use Magento\Framework\App\ResponseInterface;
+use Magento\Framework\Controller\ResultInterface;
+use Magento\Framework\Controller\Result\JsonFactory;
+use Magento\Framework\HTTP\Client\Curl;
+use Magento\Framework\HTTP\Client\CurlFactory;
 
 /**
  * @category   uafrica
@@ -47,6 +53,23 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
      */
     protected $_rateMethodFactory;
 
+
+
+    //TODO: REFACTO THIS
+    /**
+     * @var \Magento\Framework\Controller\Result\JsonFactory
+     */
+    protected $jsonFactory;
+
+    /**
+     * @var \Magento\Framework\HTTP\Client\Curl
+     */
+    protected $curl;
+
+    /**
+     * @param \Magento\Framework\Controller\Result\JsonFactory $jsonFactory
+     */
+
     /**
      * @param ScopeConfigInterface $scopeConfig
      * @param ErrorFactory $rateErrorFactory
@@ -61,8 +84,12 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
         LoggerInterface $logger,
         ResultFactory $rateResultFactory,
         MethodFactory $rateMethodFactory,
+        JsonFactory $jsonFactory,
+        CurlFactory $curlFactory,
         array $data = []
     ) {
+        $this->jsonFactory = $jsonFactory;
+        $this->curl = $curlFactory->create();
         $this->_rateResultFactory = $rateResultFactory;
         $this->_rateMethodFactory = $rateMethodFactory;
         parent::__construct($scopeConfig, $rateErrorFactory, $logger, $data);
@@ -75,10 +102,49 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
      * @return array
      * @api
      */
-    public function getAllowedMethods()
+    public function getAllowedMethods(): array
     {
         return [$this->getCarrierCode() => __($this->getConfigData('name'))];
     }
+    /**
+     * Allow Display of uAfrica/Bobgo in the list of carriers (Admin)
+     *  @return bool
+     */
+    public function isTrackingAvailable(): bool
+    {
+        return true;
+    }
+
+//    /**
+//     * Obtain Tracking Information from uAfrica/Bobgo
+//     * @param string $trackings
+//     */
+//    public function getTrackingInfo($trackings)
+//    {
+//       // $result = $this->_trackFactory->create();
+//       // $tracking = explode(',', $trackings);
+//        // Get Tracking Results From uafrica API
+//        $this->curl->get("https://api.dev.ship.uafrica.com/tracking?channel=localhost&tracking_reference=UADPCTGF");
+//
+//        $result = $this->curl->getBody();
+//
+//        $bobGo = \Safe\json_decode($result, true);
+////        $result->setUrl('https://api.dev.ship.uafrica.com/tracking?channel=localhost&tracking_reference=UADPCTGF');
+////        $result->setTracking($trackings);
+////        $result->setCarrierTitle($this->getConfigData('title'));
+//            $track = $this->jsonFactory->create()->setData($bobGo);
+//
+//            return $track;
+//    }
+//    /**
+//     * Get tracking information
+//     *
+//     */
+//
+//    public function getTracking()
+//    {
+//        return $this->getTrackingInfo();
+//    }
 
     /**
      * Collect and get rates for storefront
