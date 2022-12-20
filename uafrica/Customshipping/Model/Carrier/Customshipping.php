@@ -214,7 +214,6 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
 
         return $result;
     }
-    //rewrite function to include json response with formatted data
 
     /**
      * Collect and get rates for storefront
