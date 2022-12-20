@@ -20,6 +20,7 @@ use Magento\Framework\Controller\ResultInterface;
 use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
+use function Safe\swoole_event_defer;
 
 /**
  * @category   uafrica
@@ -114,20 +115,106 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
     {
         return true;
     }
-    //Make getracking available with  fake data
+
     /**
      * @param string $tracking
      * @return DataObject
      */
     public function getTrackingInfo($tracking): DataObject
-    {   
-         //  $result = $this->_trackFactory->create();
+    {
+        //Not Used Yet On This Phase of Development
+        //  $result = $this->_trackFactory->create();
         $result = new DataObject();
+
         $result->setUrl('https://api.dev.ship.uafrica.com/tracking?channel=localhost&tracking_reference=UADPCTGF');
+
         $result->setTracking($tracking);
+
         $result->setCarrierTitle($this->getConfigData('title'));
+
+        //Perfom curl request to get tracking info from uAfrica API
+        $this->curl->get('https://api.dev.ship.uafrica.com/tracking?channel=localhost&tracking_reference=UADPCTGF');
+
+        $response = $this->curl->getBody();
+
+        $response = json_decode($response, true);
+
+        $result->addData((array)$response);
+        /**1. Image to be dynamic in the next phase
+         * 2. Tracking status to be dynamic in the next phase
+         * 3. This method feels hacky, not sure if I will need to refactor, but it works for now I am up for suggestions
+         */
+
+        //Todo: Add Image to the result object
+        echo "<pre>";
+                print_r("
+        <img src='https://ik.imagekit.io/z1viz85yxs/dev-v3/provider-logos/devpanda_logo.png' alt='Dev Panda' width='100' height='100'>
+
+                <table '>
+                <tr>
+                <th>Order Number</th>
+                <th>Order Date</th>
+                <th>Order Status</th>
+                </tr>
+                <tr>
+                <td>".$response[0]['order_number']."</td>
+                <td>".$response[0]['shipment_time_created']."</td>
+                <td>".$response[0]['status_friendly']."</td>
+                </tr>
+                </table>
+
+                <h4>Tracking</h4>
+                <table>
+                <tr>
+                <th>Tracking Number</th>
+                <th>Tracking Status</th>
+                <th>Tracking Date</th>
+                </tr>
+                <tr>
+                <td>".$response[0]['shipment_tracking_reference']."</td>
+                <td>".$response[0]['status_friendly']."</td>
+                <td>".$response[0]['last_checkpoint_time']."</td>
+                </tr>
+                </table>
+
+        ");
+
+      print_r(" <h4>Checkpoints</h4>
+        <table>
+            <tr>
+                <th>Status</th>
+                <th>Status Friendly</th>
+                <th>Country</th>
+                <th>Zone</th>
+                <th>City</th>
+                <th>Zip</th>
+                <th>Location</th>
+                <th>Message</th>
+                <th>Time</th>
+            </tr>"
+      );
+        foreach ($response[0]['checkpoints'] as $checkpoint) {
+            print_r("<tr>
+                <td>" . $checkpoint['status'] . "</td>
+                <td>" . $checkpoint['status_friendly'] . "</td>
+                <td>" . $checkpoint['country'] . "</td>
+                <td>" . $checkpoint['zone'] . "</td>
+                <td>" . $checkpoint['city'] . "</td>
+                <td>" . $checkpoint['zip'] . "</td>
+                <td>" . $checkpoint['location'] . "</td>
+                <td>" . $checkpoint['message'] . "</td>
+                <td>" . $checkpoint['time'] . "</td>
+            </tr>
+            ");
+
+        }
+       print_r("</table>");
+
+        echo "</pre>";
+
         return $result;
     }
+    //rewrite function to include json response with formatted data
 
     /**
      * Collect and get rates for storefront
