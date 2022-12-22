@@ -63,14 +63,14 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
 
-                <field id="production_webservices_url" translate="label" type="text" sortOrder="90" showInDefault="1" showInWebsite="1" canRestore="1">
-                    <label>Get Rates(uAfrica)</label>
-                    <depends>
-                        <field id="sandbox_mode">0</field>
-             </depends>
-<!--- Not Functional at this stage-->
-                    <comment>URL To Get Shipping Rates</comment>
-                </field>
+<!--                <field id="production_webservices_url" translate="label" type="text" sortOrder="90" showInDefault="0" showInWebsite="1" canRestore="1">-->
+<!--                    <label>Get Rates(uAfrica)</label>-->
+<!--                    <depends>-->
+<!--                        <field id="sandbox_mode">0</field>-->
+<!--             </depends>-->
+<!--&lt;!&ndash;- Not Functional at this stage&ndash;&gt;-->
+<!--                    <comment>URL To Get Shipping Rates</comment>-->
+<!--                </field>-->
 
                 <field id="price" translate="label" type="text" sortOrder="4" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Shipping Cost</label>
@@ -86,6 +86,7 @@
                     <frontend_class>shipping-applicable-country</frontend_class>
                     <source_model>Magento\Shipping\Model\Config\Source\Allspecificcountries</source_model>
                 </field>
+
                 <field id="allowed_methods" translate="label" type="multiselect" sortOrder="95" showInDefault="1" showInWebsite="1" canRestore="1">
                     <label>Allowed Methods</label>
                     <source_model>uafrica\Customshipping\Model\Source\Method</source_model>
@@ -102,6 +103,10 @@
                     <label>Show Method if Not Applicable</label>
                     <frontend_class>shipping-skip-hide</frontend_class>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                </field>
+                <field id="access_token" translate="label" type="text" sortOrder="99" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>BobGo Access Token</label>
+                    <comment>The Access token you received from BobGo</comment>
                 </field>
 
                 <field id="sort_order" translate="label" type="text" sortOrder="100" showInDefault="1" showInWebsite="1" showInStore="0">
