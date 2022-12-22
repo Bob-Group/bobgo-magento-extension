@@ -18,7 +18,7 @@
             <uafrica>
                 <active>0</active>
                 <sallowspecific>0</sallowspecific>
-                <price>0</price>
+                <price>0.00</price>
                 <model>uafrica\Customshipping\Model\Carrier\Customshipping</model>
                 <name>Fixed</name>
                 <title>uafrica</title>
