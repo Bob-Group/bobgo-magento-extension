@@ -300,8 +300,6 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
          * 3. This method feels hacky, not sure if I will need to refactor, but it works for now,
          * I am open for suggestions.
          */
-
-        //Todo: Add Image dynamically to the result object
         echo "<pre>";
                 print_r("
         <img src='https://ik.imagekit.io/z1viz85yxs/dev-v3/provider-logos/devpanda_logo.png' alt='Dev Panda' width='100' height='100'>
@@ -468,7 +466,6 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
         $destStreet = $request->getDestStreet();
         $destStreet1 = $destStreet;
         $destStreet2 = $destStreet;
-        //  $destStreet3 = $destStreet[2];
 
         //Get all the origin data from the request
         $origin = $this->getConfigData('origin_postcode');
@@ -478,7 +475,6 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
         $originStreet = $this->getConfigData('origin_street');
         $originStreet1 = $originStreet;
         $originStreet2 = $originStreet;
-        // $originStreet3 = $originStreet[2];
 
 
         $items = $request->getAllItems();
