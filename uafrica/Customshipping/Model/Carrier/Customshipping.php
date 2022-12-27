@@ -388,9 +388,9 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
      * Make request to uAfrica API to get shipping rates
      *  @return array
      */
-    private function getRates(): array
+    private function getRates($payload): array
     {
-        $this->curl->post($this->getApiUrl(), $this->getPayload());
+        $this->curl->post($this->getApiUrl(), $payload);
 
         $response = $this->curl->getBody();
 
@@ -439,9 +439,107 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
         //}
         //Mock URL FOR NOW, will be replaced with the actual API URL
         //Like; $this->getConfigData('api_url')
+        //Fill in the payload with the data from the request
 
 
-        $rates = $this->getRates();
+        //TODO: Get the rates from the API and append them to the result object
+        //JSON data fed to post man mock server as a response to the request for rates
+        //{
+        //"rates": [
+        //{
+        //"id": "113810",
+        //"description": "Standard Economy Shipping Rate",
+        //"service_name": "Courier Door to Door Delivery - Economy",
+        //"service_code": "113810_23",
+        //"total_price": 7500,
+        //"currency": "ZAR",
+        //"min_delivery_date": "2022-12-29",
+        //"max_delivery_date": "2023-01-03"
+        //}
+        //]
+        //}
+        //Mock URL FOR NOW, will be replaced with the actual API URL
+        //Like; $this->getConfigData('api_url')
+        //GET ALL DESTINATION DATA FROM THE REQUEST
+        $destination = $request->getDestPostcode();
+        $destCountry = $request->getDestCountryId();
+        $destRegion = $request->getDestRegionCode();
+        $destCity = $request->getDestCity();
+        $destStreet = $request->getDestStreet();
+        $destStreet1 = $destStreet;
+        $destStreet2 = $destStreet;
+        //  $destStreet3 = $destStreet[2];
+
+        //Get all the origin data from the request
+        $origin = $this->getConfigData('origin_postcode');
+        $originCountry = $this->getConfigData('origin_country_id');
+        $originRegion = $this->getConfigData('origin_region_id');
+        $originCity = $this->getConfigData('origin_city');
+        $originStreet = $this->getConfigData('origin_street');
+        $originStreet1 = $originStreet;
+        $originStreet2 = $originStreet;
+        // $originStreet3 = $originStreet[2];
+
+
+        $items = $request->getAllItems();
+        $itemsArray = [];
+        foreach ($items as $item) {
+            $itemsArray[] = [
+                'name' => $item->getName(),
+                'sku' => $item->getSku(),
+                'quantity' => $item->getQty(),
+                'price' => $item->getPrice(),
+                'grams' => $item->getWeight() * 1000,
+                'requires_shipping' => $item->getIsVirtual(),
+                'taxable' => true,
+                'fulfillment_service' => 'manual',
+                'properties' => [],
+                'vendor' => $item->getStoreId(),
+                'product_id' => $item->getProductId(),
+                'variant_id' => $item->getProduct()->getId()
+            ];
+        }
+            $payload = [
+                'rate' => [
+                    //TODO: Get the data from the request object
+                    'origin' => [
+                        'country' => $originCountry,
+                        'postal_code' => $origin,
+                        'province' => $originRegion,
+                        'city' => $originCity,
+                        'name' => 'Gundo',
+                        'address1' => $originStreet1,
+                        'address2' => $originStreet2,
+                        'address3' => '',
+                        'phone' => '+27313039670',
+                        'fax' => '',
+                        'email' => '',
+                        'address_type' => '',
+                        'company_name' => 'Jam Clothing'
+                    ],
+                    //TODO: Get the destination from the request
+                    'destination' => [
+                        'country' => $destCountry,
+                        'postal_code' => $destination,
+                        'province' => $destRegion,
+                        'city' => $destCity,
+                        'name' => 'Brian Singh',
+                        'address1' => $destStreet1,
+                        'address2' => $destStreet2,
+                        'address3' => '',
+                        'phone' => '081 346 5923',
+                        'fax' => '',
+                        'email' => '',
+                        'address_type' => '',
+                        'company_name' => ''
+                    ],
+                    'items' => $itemsArray,
+                    'currency' => 'ZAR',
+                    'locale' => 'en-PT'
+                ]
+            ];
+
+        $rates = $this->getRates($payload);
 
         $method = $this->_rateMethodFactory->create();
 
@@ -469,78 +567,16 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
             'method' => 'uafrica',
 
         ];
+        //TODO: Get the allowed methods from the API and return them
+
+        //Get shipping methods dynamically from the API
+//        $arr = [];
+//        $rates = $this->getRates();
+//
+//        foreach ($rates['rates'] as $code => $title) {
+//            $arr[$code] = $title['service_name'];
+//        }
         return $arr;
-    }
-    /**
-     * Return all the extracted data from  The Current Sales Order
-     * @return array
-     */
-    private function getPayload(): array
-    {
-        return $this->extracted();
-    }
-
-    /**
-     * @return array[]
-     */
-    private function extracted(): array
-    {
-        //Get Information from the current sales order
-        //Static Payload for testing purposes only as aforementioned
-        $payload = [
-            'rate' => [
-                'origin' => [
-                    'country' => 'ZA',
-                    'postal_code' => '4001',
-                    'province' => 'NL',
-                    'city' => 'Durban',
-                    'name' => '',
-                    'address1' => '29 Livingstone Rd',
-                    'address2' => 'Durban',
-                    'address3' => '',
-                    'phone' => '+27313039670',
-                    'fax' => '',
-                    'email' => '',
-                    'address_type' => '',
-                    'company_name' => 'Jam Clothing'
-                ],
-                'destination' => [
-                    'country' => 'ZA',
-                    'postal_code' => '4068',
-                    'province' => 'NL',
-                    'city' => 'Phoenix',
-                    'name' => 'Brian Singh',
-                    'address1' => '3 cretemore road, stanmore, phoenix',
-                    'address2' => 'House',
-                    'address3' => '',
-                    'phone' => '081 346 5923',
-                    'fax' => '',
-                    'email' => '',
-                    'address_type' => '',
-                    'company_name' => ''
-                ],
-                'items' => [
-                    [
-                        'name' => 'Mens Gold\'s Gym Knapsack Bag - Black - NoSize',
-                        'sku' => 'AC91000336001',
-                        'quantity' => 2,
-                        'grams' => 0,
-                        'price' => 2000,
-                        'vendor' => 'Jam Clothing',
-                        'requires_shipping' => true,
-                        'taxable' => true,
-                        'fulfillment_service' => 'manual',
-                        'properties' => [],
-                        'product_id' => 7100074098825,
-                        'variant_id' => 41001616900233
-                    ]
-                ],
-                'currency' => 'ZAR',
-                'locale' => 'en-PT'
-            ]
-        ];
-
-        return $payload;
     }
 
 }
