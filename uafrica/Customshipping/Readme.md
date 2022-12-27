@@ -1,4 +1,4 @@
-<!--- Document The Magento Bobgo shipping plugin with Read Me Styling, Installation and everything--->
+
 
 # Magento 2 Bobgo Shipping Extension
 
