@@ -544,7 +544,6 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
             $method->setCarrierTitle('uafrica');
             $method->setMethod($code);
             $method->setMethodTitle($title['service_name']);
-            //Convert total price from cents to dollars
             $method->setPrice($title['total_price'] / 100);
             $method->setCost($title['total_price'] / 100);
             $result->append($method);
