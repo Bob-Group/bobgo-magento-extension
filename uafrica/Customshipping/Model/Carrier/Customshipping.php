@@ -374,11 +374,12 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
      */
     private function getApiUrl(): string
     {
-        //return $this->getConfigData('api_url');
        // return 'https://api.dev.ship.uafrica.com';
 
         //Used for testing purposes only on localhost, since there is not endpoint to get magento rates to work with
         //Basically, I am using the structure of the response from the uAfrica API to test the functionality of the module
+     //   return $this->getConfigData('rates_endpoint');
+
         return 'https://8390956f-c00b-497d-8742-87b1d6305bd2.mock.pstmn.io/putrates';
     }
 

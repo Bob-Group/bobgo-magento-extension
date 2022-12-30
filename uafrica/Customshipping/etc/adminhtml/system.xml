@@ -38,7 +38,7 @@
         </section>
         <section id="carriers" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="1">
             <group id="uafrica" translate="label" type="text" sortOrder="2" showInDefault="1" showInWebsite="1" showInStore="1">
-                <label>bobGo</label>
+                <label>uAfrica</label>
 
                 <field id="version" translate="label" type="label" sortOrder="0" showInDefault="1" showInWebsite="0" showInStore="0">
                     <label>Version</label>
@@ -133,8 +133,21 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
                 <field id="access_token" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>BobGo Access Token</label>
-                    <comment>The Access token you received from BobGo</comment>
+                    <label>uAfrica Access Token</label>
+                    <comment>The Access token you received from uAfrica</comment>
+                </field>
+          <field id="client_id" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>uAfrica Client ID</label>
+                    <comment>The Client ID you received from uAfrica</comment>
+                </field>
+                <field id="client_secret" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>uAfrica Client Secret</label>
+                    <comment>The Client Secret you received from uAfrica</comment>
+                </field>
+                <field id="rates_endpoint" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>uAfrica Rates</label>
+                    <comment>Rates at check out collection Endpoint</comment>
+
                 </field>
 
                 <field id="sort_order" translate="label" type="text" sortOrder="100" showInDefault="1" showInWebsite="1" showInStore="0">
