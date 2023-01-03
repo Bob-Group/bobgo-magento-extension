@@ -1,13 +1,18 @@
 <?php
 namespace uafrica\Customshipping\Helper;
 
+use Magento\Framework\App\Helper\AbstractHelper;
+use Magento\Framework\App\Helper\Context;
+use Magento\Framework\Module\ModuleListInterface;
+use Magento\Store\Model\ScopeInterface;
+
 /**
  * @category   uafrica
  * @package    uafrica_customshipping
  * @author      uafrica
  * @website    https://www.bob.co.za
  */
-class Data extends \Magento\Framework\App\Helper\AbstractHelper
+class Data extends AbstractHelper
 {
 
     const XML_PATH_ENABLED = 'uafrica_customshipping/general/enabled';
@@ -19,17 +24,17 @@ class Data extends \Magento\Framework\App\Helper\AbstractHelper
     protected $_logger;
 
     /**
-     * @var \Magento\Framework\Module\ModuleListInterface
+     * @var ModuleListInterface
      */
     protected $_moduleList;
 
     /**
-     * @param \Magento\Framework\App\Helper\Context $context
-     * @param \Magento\Framework\Module\ModuleListInterface $moduleList
+     * @param Context $context
+     * @param ModuleListInterface $moduleList
      */
     public function __construct(
-        \Magento\Framework\App\Helper\Context $context,
-        \Magento\Framework\Module\ModuleListInterface $moduleList
+        Context $context,
+        ModuleListInterface $moduleList
     ) {
         $this->_logger                  = $context->getLogger();
         $this->_moduleList              = $moduleList;
@@ -46,7 +51,7 @@ class Data extends \Magento\Framework\App\Helper\AbstractHelper
     {
         return $this->scopeConfig->getValue(
             self::XML_PATH_ENABLED,
-            \Magento\Store\Model\ScopeInterface::SCOPE_STORE
+            ScopeInterface::SCOPE_STORE
         );
     }
 
@@ -54,7 +59,7 @@ class Data extends \Magento\Framework\App\Helper\AbstractHelper
     {
         return $this->scopeConfig->getValue(
             self::XML_PATH_DEBUG,
-            \Magento\Store\Model\ScopeInterface::SCOPE_STORE
+            ScopeInterface::SCOPE_STORE
         );
     }
 

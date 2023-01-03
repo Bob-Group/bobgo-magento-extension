@@ -23,6 +23,11 @@ use Magento\Framework\HTTP\Client\CurlFactory;
  */
 class Customshipping extends AbstractCarrier implements CarrierInterface
 {
+    /** Tracking Endpoint */
+    const TRACKING = 'https://api.dev.ship.uafrica.com/tracking?channel=localhost&tracking_reference=';
+    /*** RATES API Endpoint*/
+    const RATES_ENDPOINT = 'https://8390956f-c00b-497d-8742-87b1d6305bd2.mock.pstmn.io/putrates';
+
     /**
      * Carrier's code
      *
@@ -47,9 +52,6 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
      */
     protected $_rateMethodFactory;
 
-
-
-    //TODO: REFACTOR THIS
     /**
      * @var \Magento\Framework\Controller\Result\JsonFactory
      */
@@ -281,14 +283,14 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
         //  $result = $this->_trackFactory->create();
         $result = new DataObject();
         //Insert tracking code dynamically here
-        $result->setUrl('https://api.dev.ship.uafrica.com/tracking?channel=localhost&tracking_reference='.$tracking);
+        $result->setUrl(self::TRACKING.$tracking);
         $result->setTracking($tracking);
 
         $result->setCarrierTitle($this->getConfigData('title'));
 
         //Perform curl request to get tracking info from uAfrica API
         //Inject tracking code into the url dynamically
-        $this->curl->get('https://api.dev.ship.uafrica.com/tracking?channel=localhost&tracking_reference='.$tracking);
+        $this->curl->get(self::TRACKING.$tracking);
 
         $response = $this->curl->getBody();
 
@@ -374,13 +376,8 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
      */
     private function getApiUrl(): string
     {
-       // return 'https://api.dev.ship.uafrica.com';
 
-        //Used for testing purposes only on localhost, since there is not endpoint to get magento rates to work with
-        //Basically, I am using the structure of the response from the uAfrica API to test the functionality of the module
-     //   return $this->getConfigData('rates_endpoint');
-
-        return 'https://8390956f-c00b-497d-8742-87b1d6305bd2.mock.pstmn.io/putrates';
+        return self::RATES_ENDPOINT;
     }
 
     /**
@@ -436,30 +433,6 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
         //}
         //]
         //}
-        //Mock URL FOR NOW, will be replaced with the actual API URL
-        //Like; $this->getConfigData('api_url')
-        //Fill in the payload with the data from the request
-
-
-        //TODO: Get the rates from the API and append them to the result object
-        //JSON data fed to post man mock server as a response to the request for rates
-        //{
-        //"rates": [
-        //{
-        //"id": "113810",
-        //"description": "Standard Economy Shipping Rate",
-        //"service_name": "Courier Door to Door Delivery - Economy",
-        //"service_code": "113810_23",
-        //"total_price": 7500,
-        //"currency": "ZAR",
-        //"min_delivery_date": "2022-12-29",
-        //"max_delivery_date": "2023-01-03"
-        //}
-        //]
-        //}
-        //Mock URL FOR NOW, will be replaced with the actual API URL
-        //Like; $this->getConfigData('api_url')
-        //GET ALL DESTINATION DATA FROM THE REQUEST
         $destination = $request->getDestPostcode();
         $destCountry = $request->getDestCountryId();
         $destRegion = $request->getDestRegionCode();
@@ -566,8 +539,6 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
             'method' => 'uafrica',
 
         ];
-        //TODO: Get the allowed methods from the API and return them
-
         //Get shipping methods dynamically from the API
 //        $arr = [];
 //        $rates = $this->getRates();
