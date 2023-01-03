@@ -30,10 +30,6 @@
                     <label>Debug Mode</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
-<!--                <field id="url" translate="label" type="select" sortOrder="10" showInDefault="1" showInStore="1" showInWebsite="1">-->
-<!--                    <label>Rates collection endpoint</label>-->
-<!--                </field>-->
-
             </group>
         </section>
         <section id="carriers" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="1">
@@ -62,21 +58,6 @@
                     <label>Residential Delivery</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
-
-<!--                <field id="production_webservices_url" translate="label" type="text" sortOrder="90" showInDefault="0" showInWebsite="1" canRestore="1">-->
-<!--                    <label>Get Rates(uAfrica)</label>-->
-<!--                    <depends>-->
-<!--                        <field id="sandbox_mode">0</field>-->
-<!--             </depends>-->
-<!--&lt;!&ndash;- Not Functional at this stage&ndash;&gt;-->
-<!--                    <comment>URL To Get Shipping Rates</comment>-->
-<!--                </field>-->
-
-<!--                <field id="price" translate="label" type="text" sortOrder="4" showInDefault="1" showInWebsite="1" showInStore="0">-->
-<!--                    <label>Shipping Cost</label>-->
-<!--                    <validate>validate-number validate-zero-or-greater</validate>-->
-<!--                </field>-->
-
                 <field id="specificerrmsg" translate="label" type="textarea" sortOrder="80" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Displayed Error Message</label>
                 </field>
@@ -145,7 +126,12 @@
                     <comment>The Client Secret you received from uAfrica</comment>
                 </field>
                 <field id="rates_endpoint" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>uAfrica Rates</label>
+                    <label>uAfrica Rates (Production)</label>
+                    <comment>Rates at check out collection Endpoint</comment>
+
+                </field>
+                 <field id="rates_endpoint_sandbox" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>uAfrica Rates (Sandbox)</label>
                     <comment>Rates at check out collection Endpoint</comment>
 
                 </field>
@@ -157,6 +143,14 @@
                 <field id="unit_of_measure" translate="label" type="select" sortOrder="73" showInDefault="1" showInWebsite="1" canRestore="1">
                     <label>Weight Unit</label>
                     <source_model>uafrica\Customshipping\Model\Source\Unitofmeasure</source_model>
+                </field>
+                <field id="debug" translate="label" type="select" sortOrder="1950" showInDefault="1" showInWebsite="1">
+                    <label>Debug</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                </field>
+                <field id="sandbox_mode" translate="label" type="select" sortOrder="1960" showInDefault="1" showInWebsite="1">
+                    <label>Sandbox Mode</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
             </group>
         </section>

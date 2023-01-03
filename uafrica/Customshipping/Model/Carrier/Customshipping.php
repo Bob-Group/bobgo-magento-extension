@@ -474,6 +474,8 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
         $originRegion = $this->getConfigData('origin_region_id');
         $originCity = $this->getConfigData('origin_city');
         $originStreet = $this->getConfigData('origin_street');
+        //URL to get the rates from
+        $url = $this->getConfigData('rates_endpoint');
         $originStreet1 = $originStreet;
         $originStreet2 = $originStreet;
 
@@ -504,7 +506,7 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
                         'postal_code' => $origin,
                         'province' => $originRegion,
                         'city' => $originCity,
-                        'name' => 'Gundo',
+                        'name' => $url,
                         'address1' => $originStreet1,
                         'address2' => $originStreet2,
                         'address3' => '',
@@ -514,7 +516,7 @@ class Customshipping extends AbstractCarrier implements CarrierInterface
                         'address_type' => '',
                         'company_name' => 'Jam Clothing'
                     ],
-                    //TODO: Get the destination from the request
+                    //TODO: Get the destination (Receiver Details) from the request
                     'destination' => [
                         'country' => $destCountry,
                         'postal_code' => $destination,

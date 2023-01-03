@@ -3,12 +3,13 @@
 namespace uafrica\customshipping\Model\Source;
 
 
+use Magento\Framework\Data\OptionSourceInterface;
 use uafrica\Customshipping\Model\Carrier\Customshipping;
 
 /**
  * uAfrica generic source implementation
  */
-class Generic implements \Magento\Framework\Data\OptionSourceInterface
+class Generic implements OptionSourceInterface
 {
     /**
      * @var Customshipping
