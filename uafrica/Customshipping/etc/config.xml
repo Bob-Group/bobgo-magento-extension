@@ -21,7 +21,7 @@
                 <price>0.00</price>
                 <model>uafrica\Customshipping\Model\Carrier\Customshipping</model>
                 <name>Fixed</name>
-                <title>uafrica</title>
+                <title>uAfrica</title>
                 <specificerrmsg>This shipping method is not available. To use this shipping method, please contact us.</specificerrmsg>
             </uafrica>
         </carriers>

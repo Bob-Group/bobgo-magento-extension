@@ -23,7 +23,7 @@
                     <frontend_model>uafrica\Customshipping\Block\System\Config\Form\Field\Version</frontend_model>
                 </field>
                 <field id="enabled" translate="label" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
-                    <label>Enabled</label>
+                    <label>Enabled for Checkout</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
                 <field id="debug" translate="label" type="select" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
@@ -50,28 +50,11 @@
                     <label>Title</label>
                 </field>
 
-<!--                <field id="name" translate="label" type="text" sortOrder="3" showInDefault="1" showInWebsite="1" showInStore="1">-->
-<!--                    <label>Method Name</label>-->
-<!--                </field>-->
 
                 <field id="residence_delivery" translate="label" type="select" sortOrder="7" showInDefault="1" showInWebsite="1">
                     <label>Residential Delivery</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
-<!--                <field id="production_webservices_url" translate="label" type="text" sortOrder="90" showInDefault="0" showInWebsite="1" canRestore="1">-->
-<!--                    <label>Get Rates(uAfrica)</label>-->
-<!--                    <depends>-->
-<!--                        <field id="sandbox_mode">0</field>-->
-<!--             </depends>-->
-<!--&lt;!&ndash;- Not Functional at this stage&ndash;&gt;-->
-<!--                    <comment>URL To Get Shipping Rates</comment>-->
-<!--                </field>-->
-
-<!--                <field id="price" translate="label" type="text" sortOrder="4" showInDefault="1" showInWebsite="1" showInStore="0">-->
-<!--                    <label>Shipping Cost</label>-->
-<!--                    <validate>validate-number validate-zero-or-greater</validate>-->
-<!--                </field>-->
-
                 <field id="specificerrmsg" translate="label" type="textarea" sortOrder="80" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Displayed Error Message</label>
                 </field>
@@ -82,40 +65,6 @@
                     <source_model>Magento\Shipping\Model\Config\Source\Allspecificcountries</source_model>
                 </field>
 
-                <field id="allowed_methods" translate="label" type="multiselect" sortOrder="95" showInDefault="1" showInWebsite="1" canRestore="1">
-                    <label>Allowed Methods</label>
-                    <source_model>uafrica\Customshipping\Model\Source\Method</source_model>
-                    <can_be_empty>1</can_be_empty>
-                </field>
-                <field id="free_method" translate="label" type="select" sortOrder="210" showInDefault="1" showInWebsite="1" canRestore="1">
-                    <label>Free Method</label>
-                    <frontend_class>free-method</frontend_class>
-                    <source_model>uafrica\Customshipping\Model\Source\Freemethod</source_model>
-                </field>
-                <field id="packaging" translate="label" type="select" sortOrder="120" showInDefault="1" showInWebsite="1" canRestore="1">
-                    <label>Packaging</label>
-                    <source_model>uafrica\Customshipping\Model\Source\Packaging</source_model>
-                </field>
-                <field id="dropoff" translate="label" type="select" sortOrder="130" showInDefault="1" showInWebsite="1" canRestore="1">
-                    <label>Dropoff</label>
-                    <source_model>uafrica\Customshipping\Model\Source\Dropoff</source_model>
-                </field>
-                <field id="handling_fee" translate="label" type="text" sortOrder="170" showInDefault="1" showInWebsite="1">
-                    <label>Handling Fee</label>
-                    <validate>validate-number validate-zero-or-greater</validate>
-                </field>
-                <field id="handling_type" translate="label" type="select" sortOrder="150" showInDefault="1" showInWebsite="1" canRestore="1">
-                    <label>Calculate Handling Fee</label>
-                    <source_model>Magento\Shipping\Model\Source\HandlingType</source_model>
-                </field>
-                <field id="handling_action" translate="label" type="select" sortOrder="160" showInDefault="1" showInWebsite="1" canRestore="1">
-                    <label>Handling Applied</label>
-                    <source_model>Magento\Shipping\Model\Source\HandlingAction</source_model>
-                </field>
-                <field id="free_shipping_enable" translate="label" type="select" sortOrder="220" showInDefault="1" showInWebsite="1">
-                    <label>Enable Free Shipping Threshold</label>
-                    <source_model>Magento\Config\Model\Config\Source\Enabledisable</source_model>
-                </field>
                 <field id="specificcountry" translate="label" type="multiselect" sortOrder="91" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Ship to Specific Countries</label>
                     <source_model>Magento\Directory\Model\Config\Source\Country</source_model>
@@ -127,33 +76,6 @@
                     <frontend_class>shipping-skip-hide</frontend_class>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
-                <field id="access_token" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>uAfrica Access Token</label>
-                    <comment>The Access token you received from uAfrica</comment>
-                </field>
-          <field id="client_id" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>uAfrica Client ID</label>
-                    <comment>The Client ID you received from uAfrica</comment>
-                </field>
-                <field id="client_secret" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>uAfrica Client Secret</label>
-                    <comment>The Client Secret you received from uAfrica</comment>
-                </field>
-                <field id="rates_endpoint" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>uAfrica Rates (Production)</label>
-                    <comment>Rates at check out collection Endpoint</comment>
-
-                </field>
-                 <field id="rates_endpoint_sandbox" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>uAfrica Rates (Sandbox)</label>
-                    <comment>Rates at check out collection Endpoint</comment>
-
-                </field>
-
-                <field id="sort_order" translate="label" type="text" sortOrder="100" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>Sort Order</label>
-                </field>
-
                 <field id="unit_of_measure" translate="label" type="select" sortOrder="73" showInDefault="1" showInWebsite="1" canRestore="1">
                     <label>Weight Unit</label>
                     <source_model>uafrica\Customshipping\Model\Source\Unitofmeasure</source_model>
