@@ -30,6 +30,7 @@
                     <label>Debug Mode</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
+
             </group>
         </section>
         <section id="carriers" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="1">
@@ -79,6 +80,11 @@
                 <field id="unit_of_measure" translate="label" type="select" sortOrder="73" showInDefault="1" showInWebsite="1" canRestore="1">
                     <label>Weight Unit</label>
                     <source_model>uafrica\Customshipping\Model\Source\Unitofmeasure</source_model>
+                </field>
+                <field id="additional_info" translate="label" type="select" sortOrder="7" showInDefault="1" showInWebsite="1">
+                    <label>Display Additional Information</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>Display additional information on the checkout page</comment>
                 </field>
                 <field id="debug" translate="label" type="select" sortOrder="1950" showInDefault="1" showInWebsite="1">
                     <label>Debug</label>

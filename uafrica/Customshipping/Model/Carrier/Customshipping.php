@@ -1,7 +1,9 @@
 <?php
+declare(strict_types=1);
 
 namespace uafrica\Customshipping\Model\Carrier;
 
+use DateTime;
 use Magento\Catalog\Model\ResourceModel\Product\CollectionFactory;
 use Magento\CatalogInventory\Api\StockRegistryInterface;
 use Magento\Directory\Helper\Data;
@@ -245,8 +247,10 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         return $response;
     }
 
+
     /**
-     * Collect and get rate
+     * Collect and get rates
+     *
      * @param RateRequest $request
      * @return Result|bool|null
      */
@@ -303,6 +307,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         }
 
         $payload = [
+            'identifier' => "https://bobgomagento.test/",
             'rate' => [
                 'origin' => [
                     'country' => $originCountry,
@@ -756,7 +761,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                 'activity' => $checkpoint['status'],
                 'deliverydate' => $this->formatDate($checkpoint['time']),
                 'deliverytime' => $this->formatTime($checkpoint['time']),
-                //TODO:Not Receiving Checkpoint location from the sample body of response so, this is temp
+                //Not Receiving Checkpoint location from the sample body of response so, this is temp
                 'deliverylocation' => 'Pretoria',
             ];
         }
@@ -780,15 +785,66 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
             $result->append($error);
         } else {
             foreach ($rates['rates'] as $code => $title) {
+
                 $method = $this->_rateMethodFactory->create();
                 $method->setCarrier('uafrica');
-                $method->setCarrierTitle('uafrica');
+                if ($this->getConfigData('additional_info') == 1) {
+                    $min_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['min_delivery_date']);
+                    $max_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['max_delivery_date']);
+                    $method->setCarrierTitle('Delivery in ' . $max_delivery_date .' - ' . $min_delivery_date .' Business Days');
+                } else {
+                    $method->setCarrierTitle($this->getConfigData('title'));
+                }
+
                 $method->setMethod($code);
                 $method->setMethodTitle($title['service_name']);
                 $method->setPrice($title['total_price'] / 100);
                 $method->setCost($title['total_price'] / 100);
+
                 $result->append($method);
             }
+        }
+    }
+
+    /**
+     * @param string $min_delivery_date
+     * @param string $max_delivery_date
+     * @return string
+     */
+    public function getDay(string $min_delivery_date, string $max_delivery_date): string
+    {
+        $min = date('d', strtotime($min_delivery_date));
+        $max = date('d', strtotime($max_delivery_date));
+
+        return $min . ' - ' . $max;
+    }
+    ///Write function fo get business days
+    /**
+     * @param string $startDate
+     * @param string $endDate
+     * @return int
+     */
+
+    public function getWorkingDays(string $startDate, string $endDate): int
+    {
+        $begin = strtotime($startDate);
+        $end = strtotime($endDate);
+        if ($begin > $end) {
+            echo "Start Date Cannot Be In The Future! <br />";
+            return 0;
+        } else {
+            $no_days = 0;
+            $weekends = 0;
+            while ($begin <= $end) {
+                $no_days++; // no of days in the given interval
+                $what_day = date("N", $begin);
+                if ($what_day > 5) { // 6 and 7 are weekend days
+                    $weekends++;
+                };
+                $begin += 86400; // +1 day
+            };
+            $working_days = $no_days - $weekends;
+            return $working_days;
         }
     }
 
