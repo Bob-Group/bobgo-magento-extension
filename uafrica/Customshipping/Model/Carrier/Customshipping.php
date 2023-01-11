@@ -26,6 +26,7 @@ use Magento\Shipping\Model\Rate\Result;
 use Magento\Shipping\Model\Rate\ResultFactory;
 use Magento\Shipping\Model\Simplexml\ElementFactory;
 use Magento\Shipping\Model\Tracking\Result\StatusFactory;
+use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
 
@@ -51,22 +52,8 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     /** Tracking Endpoint */
     const TRACKING = 'https://api.dev.ship.uafrica.com/tracking?channel=localhost&tracking_reference=';
     /*** RATES API Endpoint*/
-    const RATES_ENDPOINT = 'https://8390956f-c00b-497d-8742-87b1d6305bd2.mock.pstmn.io/putrates';
+    const RATES_ENDPOINT = 'https://api.dev.ship.uafrica.com/rates-at-checkout/woocommerce';
 
-
-    /**
-     * Purpose of rate request
-     *
-     * @var string
-     */
-    public const RATE_REQUEST_GENERAL = 'general';
-
-    /**
-     * Purpose of rate request
-     *
-     * @var string
-     */
-    public const RATE_REQUEST_SMARTPOST = 'SMART_POST';
 
     /**
      * Code of the carrier
@@ -247,6 +234,19 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         return $response;
     }
 
+    /**
+     * Store Base Url
+     * @var \Magento\Store\Model\StoreManagerInterface $this->_storeManager
+     * @return string
+     */
+    public function getBaseUrl(): string
+    {
+        $storeBase = $this->_storeManager->getStore()->getBaseUrl();
+        // Strip slashes and http:// or https:// and wwww. from the url leaving just "example.com"
+        $storeBase = preg_replace('/(http:\/\/|https:\/\/|www\.)/', '', $storeBase);
+        $storeBase = preg_replace('/(\/)/', '', $storeBase);
+        return $storeBase;
+    }
 
     /**
      * Collect and get rates
@@ -256,15 +256,20 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     public function collectRates(RateRequest $request)
     {
-       /*** Make sure that Shipping method is enabled*/
+
         if (!$this->isActive()) {
             return false;
         }
+        if (!$this->canCollectRates()) {
+            return $this->getErrorMessage();
+        }
+
 
         /** @var \Magento\Shipping\Model\Rate\Result $result */
 
         $result = $this->_rateFactory->create();
 
+        /**  Destination Information  */
         $destination = $request->getDestPostcode();
         $destCountry = $request->getDestCountryId();
         $destRegion = $request->getDestRegionCode();
@@ -273,22 +278,15 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         $destStreet1 = $destStreet;
         $destStreet2 = $destStreet;
 
-        //Get all the origin data from the request
-        $origin = $this->getConfigData('origin_postcode');
-        $originCountry = $this->getConfigData('origin_country_id');
-        $originRegion = $this->getConfigData('origin_region_id');
-        $originCity = $this->getConfigData('origin_city');
-        $originStreet = $this->getConfigData('origin_street');
-        //URL to get the rates from
-        $url = $this->getConfigData('rates_endpoint');
-        $originStreet1 = $originStreet;
-        $originStreet2 = $originStreet;
+        /**  Origin Information  */
+        list($originStreet, $originRegion, $originCity, $originStreet1, $originStreet2, $storeName, $storeEmail, $storePhoneNumber, $baseIdentifier) = $this->storeInformation();
 
 
+        /**  All Items In The Cart */
         $items = $request->getAllItems();
 
         $itemsArray = [];
-
+        /** Get each item's information and add it to the items array */
         foreach ($items as $item) {
             $itemsArray[] = [
                 'name' => $item->getName(),
@@ -300,29 +298,29 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                 'taxable' => true,
                 'fulfillment_service' => 'manual',
                 'properties' => [],
-                'vendor' => $item->getStoreId(),
+                'vendor' => $item->getName(),
                 'product_id' => $item->getProductId(),
                 'variant_id' => $item->getProduct()->getId()
             ];
         }
 
         $payload = [
-            'identifier' => "https://bobgomagento.test/",
+            'identifier' => $baseIdentifier,
             'rate' => [
                 'origin' => [
-                    'country' => $originCountry,
-                    'postal_code' => $origin,
+                    'country' => "ZA",
+                    'postal_code' => $originStreet,
                     'province' => $originRegion,
                     'city' => $originCity,
-                    'name' => $url,
+                    'name' => $storeName,
                     'address1' => $originStreet1,
                     'address2' => $originStreet2,
                     'address3' => '',
-                    'phone' => '+27313039670',
+                    'phone' => $storePhoneNumber,
                     'fax' => '',
-                    'email' => '',
+                    'email' => $storeEmail,
                     'address_type' => '',
-                    'company_name' => 'Jam Clothing'
+                    'company_name' => $storeName
                 ],
                 'destination' => [
                     'country' => $destCountry,
@@ -333,15 +331,13 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                     'address1' => $destStreet1,
                     'address2' => $destStreet2,
                     'address3' => '',
-                    'phone' => '081 346 5923',
+                    'phone' => '',
                     'fax' => '',
                     'email' => '',
                     'address_type' => '',
                     'company_name' => ''
                 ],
-                'items' => $itemsArray,
-                'currency' => 'ZAR',
-                'locale' => 'en-PT'
+                'items' => $itemsArray
             ]
         ];
 
@@ -362,6 +358,56 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
             $this->_result = $this->_trackFactory->create();
         }
         return $this->_result;
+    }
+
+    /**
+     * @return array
+     */
+    public function storeInformation(): array
+    {
+        /** Store Origin details */
+
+        $originRegion = $this->_scopeConfig->getValue(
+            'general/store_information/region_id',
+            ScopeInterface::SCOPE_STORE
+        );
+        $originCity = $this->_scopeConfig->getValue(
+            'general/store_information/city',
+            ScopeInterface::SCOPE_STORE
+        );
+
+        $originStreet = $this->_scopeConfig->getValue(
+            'general/store_information/postcode',
+            ScopeInterface::SCOPE_STORE
+        );
+
+        $originStreet1 = $this->_scopeConfig->getValue(
+            'general/store_information/street_line1',
+            ScopeInterface::SCOPE_STORE
+        );
+
+        $originStreet2 = $this->_scopeConfig->getValue(
+            'general/store_information/street_line2',
+            ScopeInterface::SCOPE_STORE
+        );
+
+        $storeName = $this->_scopeConfig->getValue(
+            'general/store_information/name',
+            ScopeInterface::SCOPE_STORE
+        );
+
+        $storeEmail = $this->_scopeConfig->getValue(
+            'general/store_information/email',
+            ScopeInterface::SCOPE_STORE
+        );
+
+        $storePhoneNumber = $this->_scopeConfig->getValue(
+            'general/store_information/phone',
+            ScopeInterface::SCOPE_STORE
+        );
+
+        $baseIdentifier = $this->getBaseUrl();
+        return array($originStreet, $originRegion, $originCity, $originStreet1, $originStreet2, $storeName, $storeEmail, $storePhoneNumber, $baseIdentifier);
     }
 
     /**
@@ -439,7 +485,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
 
 
     /**
-     * Get tracking
+     * Get tracking (Without this method, the tracking pop will show up with an error)
      *
      * @param string|string[] $trackings
      * @return Result|null
@@ -511,8 +557,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
             $result->append($tracking);
             $counter ++;
         }
-
-        // no available tracking details
+        // No tracking information received from carrier
         if (!$counter) {
             $this->appendTrackingError(
                 $trackingValue,
@@ -601,7 +646,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     public function getContainerTypes(\Magento\Framework\DataObject $params = null)
     {
-      //return null
         $result = [];
         $allowedContainers = $this->getConfigData('containers');
         if ($allowedContainers) {
@@ -671,7 +715,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     * Append error message to rate result instance
+     * Append error message to rate result instance and set it as error in result
      *
      * @param string $trackingValue
      * @param string $errorMessage
@@ -714,7 +758,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     *  Perfom API Request to uAfrica API and return response
+     *  Perform API Request to uAfrica API and return response
      * @param array $payload
      * @param Result $result
      * @return void
@@ -729,7 +773,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     * Perfom API Request for Shipment Tracking to uAfrica API and return response
+     * Perform API Request for Shipment Tracking to uAfrica API and return response
      * @param $trackInfo
      * @param array $result
      * @return array
@@ -751,18 +795,14 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     private function prepareActivity($response, array $result): array
     {
-        $result['shippeddate'] = $this->formatDate($response['shipment_time_created']);
-        $result['deliverydate'] = $this->formatDate('2022-12-14 09:40:41+00:00');
-        $result['deliverytime'] = $this->formatTime('2022-12-14 09:40:41+00:00');
-        $result['deliverylocation'] = 'Johannesburg';
 
         foreach ($response['checkpoints'] as $checkpoint) {
             $result['progressdetail'][] = [
                 'activity' => $checkpoint['status'],
                 'deliverydate' => $this->formatDate($checkpoint['time']),
                 'deliverytime' => $this->formatTime($checkpoint['time']),
-                //Not Receiving Checkpoint location from the sample body of response so, this is temp
-                'deliverylocation' => 'Pretoria',
+                //TODO: Add location or Find a way to get location from uAfrica API or remove it
+                'deliverylocation' => 'Unavailable',
             ];
         }
         return $result;
@@ -807,24 +847,11 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     * @param string $min_delivery_date
-     * @param string $max_delivery_date
-     * @return string
-     */
-    public function getDay(string $min_delivery_date, string $max_delivery_date): string
-    {
-        $min = date('d', strtotime($min_delivery_date));
-        $max = date('d', strtotime($max_delivery_date));
-
-        return $min . ' - ' . $max;
-    }
-    ///Write function fo get business days
-    /**
+     *  Get Working Days between time of checkout and delivery date (min and max)
      * @param string $startDate
      * @param string $endDate
      * @return int
      */
-
     public function getWorkingDays(string $startDate, string $endDate): int
     {
         $begin = strtotime($startDate);
@@ -867,10 +894,10 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      * @param array $payload
      * @return mixed
      */
-    protected function uRates(array $payload): mixed
+    private function uRates(array $payload): mixed
     {
-        $this->curl->post($this->getApiUrl(), $payload);
-
+        $this->curl->addHeader('Content-Type', 'application/json');
+        $this->curl->post($this->getApiUrl(), json_encode($payload));
         $rates = $this->curl->getBody();
 
         $rates = json_decode($rates, true);
