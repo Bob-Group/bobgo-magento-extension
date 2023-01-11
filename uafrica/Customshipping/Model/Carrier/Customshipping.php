@@ -831,7 +831,8 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                 if ($this->getConfigData('additional_info') == 1) {
                     $min_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['min_delivery_date']);
                     $max_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['max_delivery_date']);
-                    $method->setCarrierTitle('Delivery in ' . $max_delivery_date .' - ' . $min_delivery_date .' Business Days');
+                    $method->setCarrierTitle('Delivery in ' . $min_delivery_date .' - ' . $max_delivery_date .' Business Days');
+                    
                 } else {
                     $method->setCarrierTitle($this->getConfigData('title'));
                 }
@@ -857,7 +858,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         $begin = strtotime($startDate);
         $end = strtotime($endDate);
         if ($begin > $end) {
-            echo "Start Date Cannot Be In The Future! <br />";
+//            echo "Start Date Cannot Be In The Future! <br />";
             return 0;
         } else {
             $no_days = 0;
