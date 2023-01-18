@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace uafrica\Customshipping\Model\Carrier;
 
-use DateTime;
 use Magento\Catalog\Model\ResourceModel\Product\CollectionFactory;
 use Magento\CatalogInventory\Api\StockRegistryInterface;
 use Magento\Directory\Helper\Data;
@@ -52,8 +51,8 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     /** Tracking Endpoint */
     const TRACKING = 'https://api.dev.ship.uafrica.com/tracking?channel=localhost&tracking_reference=';
     /*** RATES API Endpoint*/
+//      const RATES_ENDPOINT = 'https://8390956f-c00b-497d-8742-87b1d6305bd2.mock.pstmn.io/putrates';
     const RATES_ENDPOINT = 'https://api.dev.ship.uafrica.com/rates-at-checkout/woocommerce';
-
 
     /**
      * Code of the carrier
@@ -223,18 +222,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
 
 
     /**
-     *  Make request to uAfrica API to get shipping rates
-     * @param $payload
-     * @return array
-     */
-    public function getRates($payload): array
-    {
-        $response = $this->uRates($payload);
-
-        return $response;
-    }
-
-    /**
      * Store Base Url
      * @var \Magento\Store\Model\StoreManagerInterface $this->_storeManager
      * @return string
@@ -248,6 +235,20 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         return $storeBase;
     }
 
+
+    /**
+     *  Make request to uAfrica API to get shipping rates
+     * @param $payload
+     * @return array
+     */
+    public function getRates($payload): array
+    {
+        $response = $this->uRates($payload);
+
+        return $response;
+    }
+
+
     /**
      * Collect and get rates
      *
@@ -256,20 +257,15 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     public function collectRates(RateRequest $request)
     {
-
+       /*** Make sure that Shipping method is enabled*/
         if (!$this->isActive()) {
             return false;
         }
-        if (!$this->canCollectRates()) {
-            return $this->getErrorMessage();
-        }
-
 
         /** @var \Magento\Shipping\Model\Rate\Result $result */
 
         $result = $this->_rateFactory->create();
 
-        /**  Destination Information  */
         $destination = $request->getDestPostcode();
         $destCountry = $request->getDestCountryId();
         $destRegion = $request->getDestRegionCode();
@@ -278,15 +274,17 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         $destStreet1 = $destStreet;
         $destStreet2 = $destStreet;
 
+        //Get all the origin data from the request
         /**  Origin Information  */
         list($originStreet, $originRegion, $originCity, $originStreet1, $originStreet2, $storeName, $storeEmail, $storePhoneNumber, $baseIdentifier) = $this->storeInformation();
 
 
-        /**  All Items In The Cart */
+
+
         $items = $request->getAllItems();
 
         $itemsArray = [];
-        /** Get each item's information and add it to the items array */
+
         foreach ($items as $item) {
             $itemsArray[] = [
                 'name' => $item->getName(),
@@ -308,7 +306,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
             'identifier' => $baseIdentifier,
             'rate' => [
                 'origin' => [
-                    'country' => "ZA",
+                    'country' => 'ZA',
                     'postal_code' => $originStreet,
                     'province' => $originRegion,
                     'city' => $originCity,
@@ -337,7 +335,9 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                     'address_type' => '',
                     'company_name' => ''
                 ],
-                'items' => $itemsArray
+                'items' => $itemsArray,
+                'currency' => '',
+                'locale' => 'en-PT'
             ]
         ];
 
@@ -346,19 +346,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         return $result;
     }
 
-
-    /**
-     * Get result of request
-     *
-     * @return Result|null
-     */
-    public function getResult()
-    {
-        if (!$this->_result) {
-            $this->_result = $this->_trackFactory->create();
-        }
-        return $this->_result;
-    }
 
     /**
      * @return array
@@ -409,6 +396,21 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         $baseIdentifier = $this->getBaseUrl();
         return array($originStreet, $originRegion, $originCity, $originStreet1, $originStreet2, $storeName, $storeEmail, $storePhoneNumber, $baseIdentifier);
     }
+
+
+    /**
+     * Get result of request
+     *
+     * @return Result|null
+     */
+    public function getResult()
+    {
+        if (!$this->_result) {
+            $this->_result = $this->_trackFactory->create();
+        }
+        return $this->_result;
+    }
+
 
     /**
      * Get final price for shipping method with handling fee per package
@@ -485,7 +487,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
 
 
     /**
-     * Get tracking (Without this method, the tracking pop will show up with an error)
+     * Get tracking
      *
      * @param string|string[] $trackings
      * @return Result|null
@@ -557,7 +559,8 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
             $result->append($tracking);
             $counter ++;
         }
-        // No tracking information received from carrier
+
+        // no available tracking details
         if (!$counter) {
             $this->appendTrackingError(
                 $trackingValue,
@@ -715,7 +718,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     * Append error message to rate result instance and set it as error in result
+     * Append error message to rate result instance
      *
      * @param string $trackingValue
      * @param string $errorMessage
@@ -758,7 +761,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     *  Perform API Request to uAfrica API and return response
+     *  Perfom API Request to uAfrica API and return response
      * @param array $payload
      * @param Result $result
      * @return void
@@ -788,27 +791,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     * Prepare received checkpoints and activity from uAfrica Shipment Tracking API
-     * @param $response
-     * @param array $result
-     * @return array
-     */
-    private function prepareActivity($response, array $result): array
-    {
-
-        foreach ($response['checkpoints'] as $checkpoint) {
-            $result['progressdetail'][] = [
-                'activity' => $checkpoint['status'],
-                'deliverydate' => $this->formatDate($checkpoint['time']),
-                'deliverytime' => $this->formatTime($checkpoint['time']),
-                //TODO: Add location or Find a way to get location from uAfrica API or remove it
-                'deliverylocation' => 'Unavailable',
-            ];
-        }
-        return $result;
-    }
-
-    /**
      * Format rates from uAfrica API response and append to rate result instance of carrier
      * @param mixed $rates
      * @param Result $result
@@ -818,7 +800,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     {
         if (empty($rates)) {
             $error = $this->_rateErrorFactory->create();
-            $error->setCarrier('uafrica');
             $error->setCarrierTitle($this->getConfigData('title'));
             $error->setErrorMessage($this->getConfigData('specificerrmsg'));
 
@@ -832,12 +813,12 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                     $min_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['min_delivery_date']);
                     $max_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['max_delivery_date']);
                     $method->setCarrierTitle('Delivery in ' . $min_delivery_date .' - ' . $max_delivery_date .' Business Days');
-                    
+
                 } else {
                     $method->setCarrierTitle($this->getConfigData('title'));
                 }
 
-                $method->setMethod($code);
+                $method->setMethod($title['service_code']);
                 $method->setMethodTitle($title['service_name']);
                 $method->setPrice($title['total_price'] / 100);
                 $method->setCost($title['total_price'] / 100);
@@ -845,6 +826,27 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                 $result->append($method);
             }
         }
+    }
+
+
+    /**
+     * Prepare received checkpoints and activity from uAfrica Shipment Tracking API
+     * @param $response
+     * @param array $result
+     * @return array
+     */
+    private function prepareActivity($response, array $result): array
+    {
+
+        foreach ($response['checkpoints'] as $checkpoint) {
+            $result['progressdetail'][] = [
+                'activity' => $checkpoint['status'],
+                'deliverydate' => $this->formatDate($checkpoint['time']),
+                'deliverytime' => $this->formatTime($checkpoint['time']),
+                'deliverylocation' => 'Unavailable',
+            ];
+        }
+        return $result;
     }
 
     /**
@@ -871,10 +873,10 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                 };
                 $begin += 86400; // +1 day
             };
-            $working_days = $no_days - $weekends;
-            return $working_days;
+            return $no_days - $weekends;
         }
     }
+
 
     /**
      * Curl request to uAfrica Shipment Tracking API
@@ -895,8 +897,9 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      * @param array $payload
      * @return mixed
      */
-    private function uRates(array $payload): mixed
+    protected function uRates(array $payload): mixed
     {
+
         $this->curl->addHeader('Content-Type', 'application/json');
         $this->curl->post($this->getApiUrl(), json_encode($payload));
         $rates = $this->curl->getBody();

@@ -1,36 +1,19 @@
 {
   "name": "uafrica/bobgo",
-  "description": "Get quotes from multiple couriers without having your own courier account and ship from multiple locations.",
+  "description": "Streamline your shipments fulfillments with bobgo",
   "type": "magento2-module",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "authors": [
     {
       "name": "Gundo",
       "email": "gundo@bob.co.za",
-      "homepage": "https://www.bob.co.za",
-        "role": "Developer"
+      "homepage": "https://www.bob.co.za"
     }
   ],
   "license": [
-    "proprietary"
+   "AFL-3.0",
+    "OSL-3.0"
   ],
-  "require": {
-    "php": "~7.1.3||~7.2.0 || ~7.3.0 || ~7.4.0 || ~8.0.0 || ~8.1.0 || ~8.2.0",
-    "magento/framework": "*",
-    "magento/module-backend": "*",
-    "magento/module-catalog": "*",
-    "magento/module-config": "*",
-    "magento/module-directory": "*",
-    "magento/module-quote": "*",
-    "magento/module-sales": "*",
-    "magento/module-sales-rule": "*",
-    "magento/module-shipping": "*",
-    "magento/module-store": "*"
-  },
-    "require-dev": {
-    "phpunit/phpunit": "*",
-    "magento/magento-coding-standard": "*"
-    },
   "autoload": {
     "files": [
       "registration.php"
