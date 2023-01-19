@@ -239,7 +239,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
 
         //Get all the origin data from the request
         /**  Origin Information  */
-        list($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier) = $this->storeInformation();
+        list($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb) = $this->storeInformation();
 
         $items = $request->getAllItems();
 
@@ -262,9 +262,11 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                     'address1' => $originStreet1,
                     'address2' => $originStreet2,
                     'city' => $originCity,
+                    'suburb' => $originSuburb,
                     'province' => $originRegion,
                     'country_code' => $originCountry,
                     'postal_code' => $originStreet,
+
                 ],
                 'destination' => [
                     'company' => '', // TODO :: Add this if available
@@ -290,7 +292,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     public function storeInformation(): array
     {
         /** Store Origin details */
-
         $originCountry = $this->_scopeConfig->getValue(
             'general/store_information/country_id',
             ScopeInterface::SCOPE_STORE
@@ -324,13 +325,13 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
             ScopeInterface::SCOPE_STORE
         );
 
-        $storePhoneNumber = $this->_scopeConfig->getValue(
-            'general/store_information/phone',
+        $originSuburb = $this->_scopeConfig->getValue(
+            'general/store_information/suburb',
             ScopeInterface::SCOPE_STORE
         );
 
         $baseIdentifier = $this->getBaseUrl();
-        return array($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier);
+        return array($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb);
     }
 
 
