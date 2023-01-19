@@ -51,7 +51,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     /** Tracking Endpoint */
     const TRACKING = 'https://api.dev.ship.uafrica.com/tracking?channel=localhost&tracking_reference=';
     /*** RATES API Endpoint*/
-//      const RATES_ENDPOINT = 'https://8390956f-c00b-497d-8742-87b1d6305bd2.mock.pstmn.io/putrates';
     const RATES_ENDPOINT = 'https://api.dev.ship.uafrica.com/rates-at-checkout/woocommerce';
 
     /**
@@ -61,21 +60,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     protected $_code = self::CODE;
 
-    /**
-     * Types of rates, order is important
-     *
-     * @var array
-     */
-    protected $_ratesOrder = [
-        'RATED_ACCOUNT_PACKAGE',
-        'PAYOR_ACCOUNT_PACKAGE',
-        'RATED_ACCOUNT_SHIPMENT',
-        'PAYOR_ACCOUNT_SHIPMENT',
-        'RATED_LIST_PACKAGE',
-        'PAYOR_LIST_PACKAGE',
-        'RATED_LIST_SHIPMENT',
-        'PAYOR_LIST_SHIPMENT',
-    ];
 
     /**
      * Rate request data
@@ -90,27 +74,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      * @var Result|null
      */
     protected $_result = null;
-
-    /**
-     * Path to wsdl file of rate service
-     *
-     * @var string
-     */
-    protected $_rateServiceWsdl;
-
-    /**
-     * Path to wsdl file of ship service
-     *
-     * @var string
-     */
-    protected $_shipServiceWsdl = null;
-
-    /**
-     * Path to wsdl file of track service
-     *
-     * @var string
-     */
-    protected $_trackServiceWsdl = null;
 
     /**
      * Container types that could be customized for uAfrica carrier
@@ -270,16 +233,13 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         $destCountry = $request->getDestCountryId();
         $destRegion = $request->getDestRegionCode();
         $destCity = $request->getDestCity();
-        $destStreet = $request->getDestStreet();
+        $destStreet = $request->getDestStreet() !== null ? str_replace("\n", '  ', $request->getDestStreet()) : '';
         $destStreet1 = $destStreet;
-        $destStreet2 = $destStreet;
+      //  $destStreet2 = $destStreet;
 
         //Get all the origin data from the request
         /**  Origin Information  */
-        list($originStreet, $originRegion, $originCity, $originStreet1, $originStreet2, $storeName, $storeEmail, $storePhoneNumber, $baseIdentifier) = $this->storeInformation();
-
-
-
+        list($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier) = $this->storeInformation();
 
         $items = $request->getAllItems();
 
@@ -287,18 +247,10 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
 
         foreach ($items as $item) {
             $itemsArray[] = [
-                'name' => $item->getName(),
                 'sku' => $item->getSku(),
                 'quantity' => $item->getQty(),
                 'price' => $item->getPrice(),
                 'grams' => $item->getWeight() * 1000,
-                'requires_shipping' => $item->getIsVirtual(),
-                'taxable' => true,
-                'fulfillment_service' => 'manual',
-                'properties' => [],
-                'vendor' => $item->getName(),
-                'product_id' => $item->getProductId(),
-                'variant_id' => $item->getProduct()->getId()
             ];
         }
 
@@ -306,38 +258,24 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
             'identifier' => $baseIdentifier,
             'rate' => [
                 'origin' => [
-                    'country' => 'ZA',
-                    'postal_code' => $originStreet,
-                    'province' => $originRegion,
-                    'city' => $originCity,
-                    'name' => $storeName,
+                    'company' => $storeName,
                     'address1' => $originStreet1,
                     'address2' => $originStreet2,
-                    'address3' => '',
-                    'phone' => $storePhoneNumber,
-                    'fax' => '',
-                    'email' => $storeEmail,
-                    'address_type' => '',
-                    'company_name' => $storeName
+                    'city' => $originCity,
+                    'province' => $originRegion,
+                    'country_code' => $originCountry,
+                    'postal_code' => $originStreet,
                 ],
                 'destination' => [
-                    'country' => $destCountry,
-                    'postal_code' => $destination,
-                    'province' => $destRegion,
-                    'city' => $destCity,
-                    'name' => 'Brian Singh',
+                    'company' => '', // TODO :: Add this if available
                     'address1' => $destStreet1,
-                    'address2' => $destStreet2,
-                    'address3' => '',
-                    'phone' => '',
-                    'fax' => '',
-                    'email' => '',
-                    'address_type' => '',
-                    'company_name' => ''
+                    'address2' => '',
+                    'city' => $destCity,
+                    'province' => $destRegion,
+                    'country_code' => $destCountry,
+                    'postal_code' => $destination,
                 ],
                 'items' => $itemsArray,
-                'currency' => '',
-                'locale' => 'en-PT'
             ]
         ];
 
@@ -346,7 +284,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         return $result;
     }
 
-
     /**
      * @return array
      */
@@ -354,6 +291,10 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     {
         /** Store Origin details */
 
+        $originCountry = $this->_scopeConfig->getValue(
+            'general/store_information/country_id',
+            ScopeInterface::SCOPE_STORE
+        );
         $originRegion = $this->_scopeConfig->getValue(
             'general/store_information/region_id',
             ScopeInterface::SCOPE_STORE
@@ -383,18 +324,13 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
             ScopeInterface::SCOPE_STORE
         );
 
-        $storeEmail = $this->_scopeConfig->getValue(
-            'general/store_information/email',
-            ScopeInterface::SCOPE_STORE
-        );
-
         $storePhoneNumber = $this->_scopeConfig->getValue(
             'general/store_information/phone',
             ScopeInterface::SCOPE_STORE
         );
 
         $baseIdentifier = $this->getBaseUrl();
-        return array($originStreet, $originRegion, $originCity, $originStreet1, $originStreet2, $storeName, $storeEmail, $storePhoneNumber, $baseIdentifier);
+        return array($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier);
     }
 
 
@@ -541,7 +477,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     protected function _parseTrackingResponse($trackingValue)
     {
-
         $result = $this->getResult();
         $carrierTitle = $this->getConfigData('title');
         $counter = 0;
@@ -560,7 +495,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
             $counter ++;
         }
 
-        // no available tracking details
+        //Tracking Details Not Available
         if (!$counter) {
             $this->appendTrackingError(
                 $trackingValue,
@@ -700,7 +635,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      * @return array
      * @SuppressWarnings(PHPMD.CyclomaticComplexity)
      * @SuppressWarnings(PHPMD.NPathComplexity)
-     */
+     **/
     private function processTrackingDetails($trackInfo): array
     {
         $result = [
@@ -726,7 +661,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     private function appendTrackingError($trackingValue, $errorMessage)
     {
         $error = $this->_trackErrorFactory->create();
-        $error->setCarrier('uafrica');
+        $error->setCarrier(self::CODE);
         $error->setCarrierTitle($this->getConfigData('title'));
         $error->setTracking($trackingValue);
         $error->setErrorMessage($errorMessage);
@@ -808,7 +743,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
             foreach ($rates['rates'] as $code => $title) {
 
                 $method = $this->_rateMethodFactory->create();
-                $method->setCarrier('uafrica');
+                $method->setCarrier(self::CODE);
                 if ($this->getConfigData('additional_info') == 1) {
                     $min_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['min_delivery_date']);
                     $max_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['max_delivery_date']);
