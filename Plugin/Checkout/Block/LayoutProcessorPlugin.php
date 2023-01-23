@@ -1,30 +1,40 @@
 <?php
 namespace uafrica\Customshipping\Plugin\Checkout\Block;
 
+use Magento\Checkout\Block\Checkout\LayoutProcessor;
+
 class LayoutProcessorPlugin
 {
     /**
-     * @param \Magento\Checkout\Block\Checkout\LayoutProcessor $subject
+     * This is the Class That Allows The Field To Appear As Required On Checkout,
+     * But It Does Not Save The Data To The Quote Table In The Database For The Order
+     * To Be Processed Correctly In The Backend And Frontend It Works With Shipping
+     * Information Management Class
+     * @param LayoutProcessor $subject
      * @param array $jsLayout
      * @return array
      */
     public function afterProcess(
-        \Magento\Checkout\Block\Checkout\LayoutProcessor $subject,
+        LayoutProcessor $subject,
         array  $jsLayout
-    ) {
+    ): array
+    {
 
         $jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']['children']
-        ['shippingAddress']['children']['shipping-address-fieldset']['children']['custom_field_text'] = [
-            'component' => 'Magento_Ui/js/form/element/abstract',
+        ['shippingAddress']['children']['shipping-address-fieldset']['children']['suburb'] = [
+            'component' => 'Magento_Ui/js/form/element/textarea',
             'config' => [
-                'customScope' => 'shippingAddress.custom_attributes',
+                'customScope' => 'shippingAddress.extension_attributes',
                 'customEntry' => null,
                 'template' => 'ui/form/field',
                 'elementTmpl' => 'ui/form/element/input',
                 'options' => [],
+                'tooltip' => [
+                    'description' => __('Necessary for shipping.')
+                ],
                 'id' => 'suburb'
             ],
-            'dataScope' => 'shippingAddress.custom_attributes.custom_field_text',
+            'dataScope' => 'shippingAddress.extension_attributes.suburb',
             'label' => 'Suburb',
             'provider' => 'checkoutProvider',
             'visible' => true,

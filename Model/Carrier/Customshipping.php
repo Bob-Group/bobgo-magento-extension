@@ -5,6 +5,7 @@ namespace uafrica\Customshipping\Model\Carrier;
 
 use Magento\Catalog\Model\ResourceModel\Product\CollectionFactory;
 use Magento\CatalogInventory\Api\StockRegistryInterface;
+use Magento\Checkout\Api\Data\ShippingInformationInterface;
 use Magento\Directory\Helper\Data;
 use Magento\Directory\Model\CountryFactory;
 use Magento\Directory\Model\CurrencyFactory;
@@ -31,7 +32,7 @@ use Psr\Log\LoggerInterface;
 
 /**
  * uAfrica shipping implementation
- * @category   uafrica
+ * @category   bob
  * @package    uafrica_Customshipping
  * @author     info@bob.co.za
  * @website    https://www.bob.co.za
@@ -48,10 +49,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     public const CODE = 'uafrica';
 
-    /** Tracking Endpoint */
-    const TRACKING = 'https://api.dev.ship.uafrica.com/tracking?channel=localhost&tracking_reference=';
-    /*** RATES API Endpoint*/
-    const RATES_ENDPOINT = 'https://api.dev.ship.uafrica.com/rates-at-checkout/woocommerce';
+    const UNITS = 100;
 
     /**
      * Code of the carrier
@@ -108,6 +106,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      * @param \Magento\Framework\Controller\Result\JsonFactory $jsonFactory
      */
     protected JsonFactory $jsonFactory;
+    private $cartRepository;
 
 
     /**
@@ -212,6 +211,15 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
 
+    public function beforeSaveAddressInformation($subject, $cartId, ShippingInformationInterface $addressInformation)
+    {
+        $quote = $this->cartRepository->getActive($cartId);
+        $deliveryNote = $addressInformation->getShippingAddress()->getExtensionAttributes()->getSuburb();
+        $quote->setSuburb($deliveryNote);
+        //$this->cartRepository->save($quote);
+        return $addressInformation;
+    }
+
     /**
      * Collect and get rates
      *
@@ -225,6 +233,9 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
             return false;
         }
 
+
+
+
         /** @var \Magento\Shipping\Model\Rate\Result $result */
 
         $result = $this->_rateFactory->create();
@@ -235,9 +246,9 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         $destCity = $request->getDestCity();
         $destStreet = $request->getDestStreet() !== null ? str_replace("\n", '  ', $request->getDestStreet()) : '';
         $destStreet1 = $destStreet;
-      //  $destStreet2 = $destStreet;
 
-        //Get all the origin data from the request
+
+
         /**  Origin Information  */
         list($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb) = $this->storeInformation();
 
@@ -271,7 +282,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                 'destination' => [
                     'company' => '', // TODO :: Add this if available
                     'address1' => $destStreet1,
-                    'address2' => '',
+                    'suburb' => '',
                     'city' => $destCity,
                     'province' => $destRegion,
                     'country_code' => $destCountry,
@@ -360,7 +371,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     protected function _getPerpackagePrice($cost, $handlingType, $handlingFee)
     {
         if ($handlingType == AbstractCarrier::HANDLING_TYPE_PERCENT) {
-            return $cost + $cost * $this->_numBoxes * $handlingFee / 100;
+            return $cost + $cost * $this->_numBoxes * $handlingFee / self::UNITS;
         }
 
         return $cost + $this->_numBoxes * $handlingFee;
@@ -377,7 +388,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     protected function _getPerorderPrice($cost, $handlingType, $handlingFee)
     {
         if ($handlingType == self::HANDLING_TYPE_PERCENT) {
-            return $cost + $cost * $handlingFee / 100;
+            return $cost + $cost * $handlingFee / self::UNITS;
         }
 
         return $cost + $handlingFee;
@@ -489,7 +500,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
 
             $tracking->setCarrier(self::CODE);
             $tracking->setCarrierTitle($carrierTitle);
-            $tracking->setUrl(self::TRACKING.$item);
+            $tracking->setUrl(uData::TRACKING .$item);
             $tracking->setTracking($item);
             $tracking->addData($this->processTrackingDetails($item));
             $result->append($tracking);
@@ -693,7 +704,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     private function getApiUrl(): string
     {
-        return self::RATES_ENDPOINT;
+        return uData::RATES_ENDPOINT;
     }
 
     /**
@@ -741,23 +752,26 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
 
             $result->append($error);
         } else {
-            foreach ($rates['rates'] as $code => $title) {
+            foreach ($rates['rates'] as $title) {
 
                 $method = $this->_rateMethodFactory->create();
-                $method->setCarrier(self::CODE);
+                if (isset($title)){
+                    $method->setCarrier(self::CODE);
+
                 if ($this->getConfigData('additional_info') == 1) {
                     $min_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['min_delivery_date']);
                     $max_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['max_delivery_date']);
                     $method->setCarrierTitle('Delivery in ' . $min_delivery_date .' - ' . $max_delivery_date .' Business Days');
-
                 } else {
-                    $method->setCarrierTitle($this->getConfigData('title'));
+
+                        $method->setCarrierTitle($this->getConfigData('title'));
+                    }
                 }
 
                 $method->setMethod($title['service_code']);
                 $method->setMethodTitle($title['service_name']);
-                $method->setPrice($title['total_price'] / 100);
-                $method->setCost($title['total_price'] / 100);
+                $method->setPrice($title['total_price'] / self::UNITS);
+                $method->setCost($title['total_price'] / self::UNITS);
 
                 $result->append($method);
             }
@@ -821,7 +835,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     private function trackUafricaShipment($trackInfo): mixed
     {
-        $this->curl->get(self::TRACKING . $trackInfo);
+        $this->curl->get(uData::TRACKING . $trackInfo);
 
         $response = $this->curl->getBody();
 

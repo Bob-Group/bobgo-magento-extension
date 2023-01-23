@@ -2,7 +2,7 @@
   "name": "uafrica/bobgo",
   "description": "Streamline your shipments fulfillments with bobgo",
   "type": "magento2-module",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "authors": [
     {
       "name": "Gundo",
