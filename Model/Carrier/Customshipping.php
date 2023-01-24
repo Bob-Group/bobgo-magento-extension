@@ -210,16 +210,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         return $response;
     }
 
-
-    public function beforeSaveAddressInformation($subject, $cartId, ShippingInformationInterface $addressInformation)
-    {
-        $quote = $this->cartRepository->getActive($cartId);
-        $deliveryNote = $addressInformation->getShippingAddress()->getExtensionAttributes()->getSuburb();
-        $quote->setSuburb($deliveryNote);
-        //$this->cartRepository->save($quote);
-        return $addressInformation;
-    }
-
     /**
      * Collect and get rates
      *
@@ -233,23 +223,21 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
             return false;
         }
 
-
-
+        $destComp = $this->getDestComp();
 
         /** @var \Magento\Shipping\Model\Rate\Result $result */
 
         $result = $this->_rateFactory->create();
-
+        /** Shippng Address Information **/
         $destination = $request->getDestPostcode();
         $destCountry = $request->getDestCountryId();
         $destRegion = $request->getDestRegionCode();
         $destCity = $request->getDestCity();
-        $destStreet = $request->getDestStreet() !== null ? str_replace("\n", '  ', $request->getDestStreet()) : '';
-        $destStreet1 = $destStreet;
+        $destStreet = $request->getDestStreet();
 
+        list($destStreet1, $destStreet2) = $this->destStreet($destStreet);
 
-
-        /**  Origin Information  */
+        /**  Collection Origin Information  */
         list($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb) = $this->storeInformation();
 
         $items = $request->getAllItems();
@@ -280,8 +268,9 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
 
                 ],
                 'destination' => [
-                    'company' => '', // TODO :: Add this if available
+                    'company' => $destComp,
                     'address1' => $destStreet1,
+                    'address2' => $destStreet2,
                     'suburb' => '',
                     'city' => $destCity,
                     'province' => $destRegion,
@@ -856,5 +845,37 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
 
         $rates = json_decode($rates, true);
         return $rates;
+    }
+
+    /**
+     * @return mixed|string
+     */
+    protected function getDestComp(): mixed
+    {
+        $data = json_decode(file_get_contents('php://input'), true);
+
+        if (isset($data['address']['company'])) {
+            $destComp = $data['address']['company'];
+        } else {
+            $destComp = '';
+        }
+        return $destComp;
+    }
+
+    /**
+     * @param string $destStreet
+     * @return string[]
+     */
+    protected function destStreet(string $destStreet): array
+    {
+        if (strpos($destStreet, "\n") !== false) {
+            $destStreet = explode("\n", $destStreet);
+            $destStreet1 = $destStreet[0];
+            $destStreet2 = $destStreet[1];
+        } else {
+            $destStreet1 = $destStreet;
+            $destStreet2 = '';
+        }
+        return array($destStreet1, $destStreet2);
     }
 }
