@@ -14,6 +14,7 @@ use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\DataObject;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Magento\Framework\Module\Dir\Reader;
 use Magento\Framework\Xml\Security;
@@ -235,7 +236,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         $destCity = $request->getDestCity();
         $destStreet = $request->getDestStreet();
 
-        list($destStreet1, $destStreet2) = $this->destStreet($destStreet);
+        list($destStreet1, $destStreet2, $destStreet3) = $this->destStreet($destStreet);
 
         /**  Collection Origin Information  */
         list($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb) = $this->storeInformation();
@@ -271,7 +272,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                     'company' => $destComp,
                     'address1' => $destStreet1,
                     'address2' => $destStreet2,
-                    'suburb' => '',
+                    'suburb' => $destStreet3,
                     'city' => $destCity,
                     'province' => $destRegion,
                     'country_code' => $destCountry,
@@ -872,10 +873,12 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
             $destStreet = explode("\n", $destStreet);
             $destStreet1 = $destStreet[0];
             $destStreet2 = $destStreet[1];
+            $destStreet3 = $destStreet[2] ?? '';
         } else {
             $destStreet1 = $destStreet;
             $destStreet2 = '';
+            $destStreet3 = '';
         }
-        return array($destStreet1, $destStreet2);
+        return array($destStreet1, $destStreet2, $destStreet3);
     }
 }

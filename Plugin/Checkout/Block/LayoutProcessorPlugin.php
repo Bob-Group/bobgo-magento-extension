@@ -35,11 +35,11 @@ class LayoutProcessorPlugin
                 'id' => 'suburb'
             ],
             'dataScope' => 'shippingAddress.extension_attributes.suburb',
-            'label' => 'Suburb',
+            'label' => 'Suburb(BobGo Required)',
             'provider' => 'checkoutProvider',
-            'visible' => true,
+            'visible' => false,
             'validation' => [
-                'required-entry' => true
+                'required-entry' => false
             ],
             'sortOrder' => 110,
             /*'customEntry' => null,*/
