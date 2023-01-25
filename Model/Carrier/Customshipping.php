@@ -45,7 +45,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
 {
     /**
      * Code of the carrier
-     *`
      * @var string
      */
     public const CODE = 'uafrica';
@@ -753,7 +752,13 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                 if ($this->getConfigData('additional_info') == 1) {
                     $min_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['min_delivery_date']);
                     $max_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['max_delivery_date']);
-                    $method->setCarrierTitle('Delivery in ' . $min_delivery_date .' - ' . $max_delivery_date .' Business Days');
+
+                    if ($min_delivery_date == 1 && $max_delivery_date == 1) {
+                        $method->setCarrierTitle('delivery in ' . $min_delivery_date .' business day');
+                    } else {
+                        $method->setCarrierTitle('delivery in ' . $min_delivery_date .' - ' . $max_delivery_date .' business days');
+                    }
+
                 } else {
 
                         $method->setCarrierTitle($this->getConfigData('title'));
