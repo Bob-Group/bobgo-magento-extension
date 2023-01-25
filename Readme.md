@@ -64,6 +64,7 @@ Bin/magento setup:di:compile
 _____________________________________________________________________________________________________________________
 # After installation
 
+
 ## How to configure Magento 2 uAfrica Shipping Extension 
 
 ### ✓ Step 1: Create an account on Bobgo
@@ -98,8 +99,21 @@ Please visit [Bobgo](https://uafrica.co.za) to create an account.
 [//]: # ()
 [//]: # (3. Clear generated files&#40;`rm -rf var/generation/*`&#41;)
 
-## How it works 
+### ✓ Step 4: Address Configurations
+#### Admin Configurations: Update Customer Address Fields*
+1. `Stores`>`Configurations`>`Customers`
+2. `Customer Configuration`>`Name and Address Options`
+3. In Input Field `Number of Lines in a Street Address` 
+4. Change to `3` Lines.
 
+#### Admin Configurations: Update Store Information*
+
+When the extension is **installed** and **enabled**, a new field will be created in the `Store Information` : `Suburb` and Fill in necessary information;
+
+1. `Stores`>`General`>`General`
+2. `Store Information`>`Suburb`
+
+## How it works
 
 ## How to use Magento 2 Bobgo Shipping Extension (carrier) to Ship Orders
 
