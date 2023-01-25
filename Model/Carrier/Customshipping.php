@@ -108,6 +108,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     protected JsonFactory $jsonFactory;
     private $cartRepository;
+    private uSubs $uSubs;
 
 
     /**
@@ -181,6 +182,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         );
         $this->jsonFactory = $jsonFactory;
         $this->curl = $curlFactory->create();
+        $this->uSubs = new uSubs();
     }
 
 
@@ -783,7 +785,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                 'activity' => $checkpoint['status'],
                 'deliverydate' => $this->formatDate($checkpoint['time']),
                 'deliverytime' => $this->formatTime($checkpoint['time']),
-                'deliverylocation' => 'Unavailable',
+                //'deliverylocation' => 'Unavailable',
             ];
         }
         return $result;
@@ -853,14 +855,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     protected function getDestComp(): mixed
     {
-        $data = json_decode(file_get_contents('php://input'), true);
-
-        if (isset($data['address']['company'])) {
-            $destComp = $data['address']['company'];
-        } else {
-            $destComp = '';
-        }
-        return $destComp;
+        return $this->uSubs->getDestComp();
     }
 
     /**
