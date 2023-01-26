@@ -885,10 +885,13 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     protected function deliveryDays(int $min_delivery_date, int $max_delivery_date, $method): void
     {
-        if ($min_delivery_date == 1 && $max_delivery_date == 1) {
-              $method->setCarrierTitle('delivery in'.$min_delivery_date . ' day');
-         }elseif ($min_delivery_date == $max_delivery_date) {
-              $method->setCarrierTitle('delivery in '.$min_delivery_date . ' days');
+       if ($min_delivery_date == $max_delivery_date) {
+           if ($min_delivery_date && $max_delivery_date == 1) {
+               $method->setCarrierTitle('delivery in '.$min_delivery_date . ' day');
+           }else {
+               $method->setCarrierTitle('delivery in ' . $min_delivery_date . ' days');
+           }
+
          }else{
               $method->setCarrierTitle('delivery in '.$min_delivery_date . ' - ' . $max_delivery_date . ' days');
         }
