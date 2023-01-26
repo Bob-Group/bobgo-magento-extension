@@ -753,14 +753,9 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                     $min_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['min_delivery_date']);
                     $max_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['max_delivery_date']);
 
-                    if ($min_delivery_date == 1 && $max_delivery_date == 1) {
-                        $method->setCarrierTitle('delivery in ' . $min_delivery_date .' business day');
-                    } else {
-                        $method->setCarrierTitle('delivery in ' . $min_delivery_date .' - ' . $max_delivery_date .' business days');
-                    }
+                    $this->deliveryDays($min_delivery_date, $max_delivery_date, $method);
 
                 } else {
-
                         $method->setCarrierTitle($this->getConfigData('title'));
                     }
                 }
@@ -860,7 +855,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     protected function getDestComp(): mixed
     {
-        return $this->uSubs->getDestComp();
+        return $this->uSubs->getDestCompany();
     }
 
     /**
@@ -880,5 +875,22 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
             $destStreet3 = '';
         }
         return array($destStreet1, $destStreet2, $destStreet3);
+    }
+
+    /**
+     * @param int $min_delivery_date
+     * @param int $max_delivery_date
+     * @param $method
+     * @return void
+     */
+    protected function deliveryDays(int $min_delivery_date, int $max_delivery_date, $method): void
+    {
+        if ($min_delivery_date == 1 && $max_delivery_date == 1) {
+              $method->setCarrierTitle('delivery in'.$min_delivery_date . ' day');
+         }elseif ($min_delivery_date == $max_delivery_date) {
+              $method->setCarrierTitle('delivery in '.$min_delivery_date . ' days');
+         }else{
+              $method->setCarrierTitle('delivery in '.$min_delivery_date . ' - ' . $max_delivery_date . ' days');
+        }
     }
 }
