@@ -83,34 +83,29 @@ Please visit [Bobgo](https://uafrica.co.za) to create an account.
 ### ✓ Step 3: Configure Bobgo Shipping Extension
 
 
-1. Select `Bobgo` as shipping method
+1. Select `Bobgo` as shipping method.
 
-[//]: # (2. Enter API key and API secret)
 
-2. Select `Enable` to enable the extension
+2. Select `Enable` to enable the extension.
 
-[//]: # (4. Select `Enable Debug Mode` to enable debug mode)
 
-1. Click `Save Config`
+3.  Click `Save Config`
 
-[//]: # ()
-[//]: # (2. Flush cache &#40;System > Cache Management&#41; and reindex &#40;System > Index Management&#41; &#40;might be optional&#41;)
-
-[//]: # ()
-[//]: # (3. Clear generated files&#40;`rm -rf var/generation/*`&#41;)
 
 ### ✓ Step 4: Address Configurations
 #### Admin Configurations: Update Customer Address Fields*
 1. `Stores`>`Configurations`>`Customers`
 2. `Customer Configuration`>`Name and Address Options`
 3. In Input Field `Number of Lines in a Street Address` 
-4. Change to `3` Lines.
+4. Disable System Value `2` > 
+5. Lastly ,Change to `3` Lines.
 
 #### Admin Configurations: Update Store Information*
 
 When the extension is **installed** and **enabled**, a new field will be created in the `Store Information` : `Suburb` and Fill in necessary information;
 
-1. `Stores`>`General`>`General`
+1. `Stores`> `Configuration`> `General`>`General`
+
 2. `Store Information`>`Suburb`
 
 ## How it works

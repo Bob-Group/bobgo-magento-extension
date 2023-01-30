@@ -14,7 +14,6 @@ use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\DataObject;
 use Magento\Framework\Exception\LocalizedException;
-use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Magento\Framework\Module\Dir\Reader;
 use Magento\Framework\Xml\Security;
@@ -107,7 +106,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     protected JsonFactory $jsonFactory;
     private $cartRepository;
-    private uSubs $uSubs;
+    private Company $company;
 
 
     /**
@@ -181,7 +180,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         );
         $this->jsonFactory = $jsonFactory;
         $this->curl = $curlFactory->create();
-        $this->uSubs = new uSubs();
+        $this->company = new Company();
     }
 
 
@@ -230,7 +229,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         /** @var \Magento\Shipping\Model\Rate\Result $result */
 
         $result = $this->_rateFactory->create();
-        /** Shippng Address Information **/
+
         $destination = $request->getDestPostcode();
         $destCountry = $request->getDestCountryId();
         $destRegion = $request->getDestRegionCode();
@@ -239,7 +238,9 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
 
         list($destStreet1, $destStreet2, $destStreet3) = $this->destStreet($destStreet);
 
-        /**  Collection Origin Information  */
+
+
+        /**  Origin Information  */
         list($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb) = $this->storeInformation();
 
         $items = $request->getAllItems();
@@ -749,15 +750,17 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                 if (isset($title)){
                     $method->setCarrier(self::CODE);
 
-                if ($this->getConfigData('additional_info') == 1) {
-                    $min_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['min_delivery_date']);
-                    $max_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['max_delivery_date']);
 
-                    $this->deliveryDays($min_delivery_date, $max_delivery_date, $method);
+                    if ($this->getConfigData('additional_info') == 1) {
+                        $min_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['min_delivery_date']);
+                        $max_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['max_delivery_date']);
 
-                } else {
+                        $this->deliveryDays($min_delivery_date, $max_delivery_date, $method);
+
+                    } else {
                         $method->setCarrierTitle($this->getConfigData('title'));
                     }
+
                 }
 
                 $method->setMethod($title['service_code']);
@@ -850,13 +853,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         return $rates;
     }
 
-    /**
-     * @return mixed|string
-     */
-    protected function getDestComp(): mixed
-    {
-        return $this->uSubs->getDestCompany();
-    }
 
     /**
      * @param string $destStreet
@@ -885,15 +881,21 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     protected function deliveryDays(int $min_delivery_date, int $max_delivery_date, $method): void
     {
-       if ($min_delivery_date == $max_delivery_date) {
-           if ($min_delivery_date && $max_delivery_date == 1) {
-               $method->setCarrierTitle('delivery in '.$min_delivery_date . ' day');
-           }else {
-               $method->setCarrierTitle('delivery in ' . $min_delivery_date . ' days');
-           }
-
-         }else{
-              $method->setCarrierTitle('delivery in '.$min_delivery_date . ' - ' . $max_delivery_date . ' days');
+        if ($min_delivery_date !== $max_delivery_date) {
+            $method->setCarrierTitle('delivery in '.$min_delivery_date . ' - ' . $max_delivery_date . ' days');
+        }else{
+            $method->setCarrierTitle('delivery in ' . $min_delivery_date . ' days');
+            if ($min_delivery_date && $max_delivery_date == 1) {
+                $method->setCarrierTitle('delivery in '.$min_delivery_date . ' day');
+            }
         }
+    }
+
+    /**
+     * @return mixed|string
+     */
+    protected function getDestComp(): mixed
+    {
+        return $this->company->getDestComp();
     }
 }
