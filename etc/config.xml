@@ -2,26 +2,26 @@
 <!--
 /**
  * @category   bobgo
- * @package    bobgo_customshipping
+ * @package    bobgo_CustomShipping
  * @author     bobgo
  */
 -->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
     <default>
-        <bobgo_customshipping>
+        <bobgo_CustomShipping>
             <general>
                 <debug>0</debug>
             </general>
-        </bobgo_customshipping>
+        </bobgo_CustomShipping>
 
         <carriers>
             <bobgo>
                 <active>0</active>
                 <sallowspecific>0</sallowspecific>
                 <price>0.00</price>
-                <model>bobgo\Customshipping\Model\Carrier\Customshipping</model>
+                <model>bobgo\CustomShipping\Model\Carrier\CustomShipping</model>
                 <name>Fixed</name>
-                <title>bobgo</title>
+                <title>Bob Go</title>
                 <specificerrmsg>This shipping method is not available. To use this shipping method, please contact us.</specificerrmsg>
             </bobgo>
         </carriers>

@@ -1,7 +1,10 @@
 <?php
 
-namespace bobgo\Customshipping\Model\Carrier;
+namespace bobgo\CustomShipping\Model\Carrier;
 
+/**
+ * Get the Company information from the request body and return it
+ */
 class Company
 {
 

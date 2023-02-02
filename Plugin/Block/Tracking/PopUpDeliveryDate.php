@@ -1,6 +1,6 @@
 <?php
 
-namespace bobgo\Customshipping\Plugin\Block\Tracking;
+namespace bobgo\CustomShipping\Plugin\Block\Tracking;
 
 use Magento\Shipping\Block\Tracking\Popup;
 use Magento\Shipping\Model\Tracking\Result\Status;

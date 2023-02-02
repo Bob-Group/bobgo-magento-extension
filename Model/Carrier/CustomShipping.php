@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace bobgo\Customshipping\Model\Carrier;
+namespace bobgo\CustomShipping\Model\Carrier;
 
 use Magento\Catalog\Model\ResourceModel\Product\CollectionFactory;
 use Magento\CatalogInventory\Api\StockRegistryInterface;
@@ -33,14 +33,14 @@ use Psr\Log\LoggerInterface;
 /**
  * bobgo shipping implementation
  * @category   bob
- * @package    bobgo_Customshipping
+ * @package    bobgo_CustomShipping
  * @author     info@bob.co.za
  * @website    https://www.bob.co.za
  * @SuppressWarnings(PHPMD.ExcessiveClassComplexity)
  * @SuppressWarnings(PHPMD.CouplingBetweenObjects)
  * @SuppressWarnings(PHPMD.TooManyFields)
  */
-class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\Model\Carrier\CarrierInterface
+class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\Model\Carrier\CarrierInterface
 {
     /**
      * Code of the carrier
@@ -73,12 +73,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     protected $_result = null;
 
-    /**
-     * Container types that could be customized for bobgo carrier
-     *
-     * @var string[]
-     */
-    protected $_customizableContainerTypes = ['YOUR_PACKAGING'];
 
     /**
      * @var \Magento\Store\Model\StoreManagerInterface
@@ -701,7 +695,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     *  Perfom API Request to bobgo API and return response
+     *  Perform API Request to bobgo API and return response
      * @param array $payload
      * @param Result $result
      * @return void

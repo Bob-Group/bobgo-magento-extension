@@ -1,11 +1,11 @@
 <?php
 
-namespace bobgo\Customshipping\Model\Carrier;
+namespace bobgo\CustomShipping\Model\Carrier;
 
 /**
  * Class uData
- * bobGo API Resources
- * @package bobgo\Customshipping\Model\Carrier
+ * bobGo API Resources for Custom Shipping
+ * @package bobgo\CustomShipping\Model\Carrier
  */
 class uData
 {

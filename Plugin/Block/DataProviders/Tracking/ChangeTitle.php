@@ -1,8 +1,8 @@
 <?php
 
-namespace bobgo\Customshipping\Plugin\Block\DataProviders\Tracking;
+namespace bobgo\CustomShipping\Plugin\Block\DataProviders\Tracking;
 
-use bobgo\Customshipping\Model\Carrier;
+use bobgo\CustomShipping\Model\Carrier;
 use Magento\Shipping\Model\Tracking\Result\Status;
 use Magento\Shipping\Block\DataProviders\Tracking\DeliveryDateTitle as Subject;
 

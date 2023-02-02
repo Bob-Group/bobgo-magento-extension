@@ -1,6 +1,6 @@
 <?php
 
-namespace bobgo\Customshipping\Model\Source;
+namespace bobgo\CustomShipping\Model\Source;
 
 /**
  * bobgo Free Method source implementation

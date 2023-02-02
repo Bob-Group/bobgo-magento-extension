@@ -1,20 +1,17 @@
 <?php
-namespace bobgo\Customshipping\Plugin\Checkout\Block;
+namespace bobgo\CustomShipping\Plugin\Checkout\Block;
 
 use Magento\Checkout\Block\Checkout\LayoutProcessor;
 
+/**
+ * Class LayoutProcessorPlugin
+ * @package bobgo\CustomShipping\Plugin\Checkout\Block
+ * This class is supposed to add a new field to the checkout page for the suburb. It is supposed to be used in conjunction with the SaveOrderBeforeSalesModelQuote observer.
+ * At the moment, it overrides the 2 Address fields and adds a new 3 Address field to accommodate the suburb on the checkout page( including placeholders).
+ * This is not the best way to do it, but it is the only way I could get it to work.
+ */
 class LayoutProcessorPlugin
 {
-//    /**
-//     * This is the Class That Allows The Field To Appear As Required On Checkout,
-//     * But It Does Not Save The Data To The Quote Table In The Database For The Order
-//     * To Be Processed Correctly In The Backend And Frontend It Works With Shipping
-//     * Information Management Class
-//     * @param LayoutProcessor $subject
-//     * @param array $jsLayout
-//     * @return array
-//     */
-
     /**
      * @param \Magento\Checkout\Block\Checkout\LayoutProcessor $subject
      * @param array $jsLayout

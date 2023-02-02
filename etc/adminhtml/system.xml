@@ -2,7 +2,7 @@
 <!--
 /**
  * @category   bobgo
- * @package    bobgo_Customshipping
+ * @package    bobgo_CustomShipping
  * @author     bobgo
  */
 -->
@@ -10,17 +10,17 @@
     <system>
 
         <tab id="bobgo" translate="label" sortOrder="200">
-            <label>bobgo</label>
+            <label>Bob Go</label>
         </tab>
-        <section id="bobgo_Customshipping"  showInDefault="1">
-            <tab>bobgo</tab>
-            <label>bobGo</label>
+        <section id="bobgo_CustomShipping"  showInDefault="1">
+            <tab>BobGo</tab>
+            <label>Bob Go</label>
             <resource>Magento_Config::config</resource>
             <group id="general"  showInDefault="1">
                 <label>General Settings</label>
                 <field id="version" translate="label" type="label" sortOrder="1" showInDefault="1" showInWebsite="0" showInStore="0">
                     <label>Version</label>
-                    <frontend_model>bobgo\Customshipping\Block\System\Config\Form\Field\Version</frontend_model>
+                    <frontend_model>bobgo\CustomShipping\Block\System\Config\Form\Field\Version</frontend_model>
                 </field>
                 <field id="enabled" translate="label" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Enabled for Checkout</label>
@@ -46,7 +46,7 @@
 
                 <field id="version" translate="label" type="label" sortOrder="0" showInDefault="1" showInWebsite="0" showInStore="0">
                     <label>Version</label>
-                    <frontend_model>bobgo\Customshipping\Block\System\Config\Form\Field\Version</frontend_model>
+                    <frontend_model>bobgo\CustomShipping\Block\System\Config\Form\Field\Version</frontend_model>
                 </field>
 
                 <field id="active" translate="label" type="select" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
@@ -86,7 +86,7 @@
                 </field>
                 <field id="unit_of_measure" translate="label" type="select" sortOrder="73" showInDefault="1" showInWebsite="1" canRestore="1">
                     <label>Weight Unit</label>
-                    <source_model>bobgo\Customshipping\Model\Source\Unitofmeasure</source_model>
+                    <source_model>bobgo\CustomShipping\Model\Source\Unitofmeasure</source_model>
                 </field>
                 <field id="additional_info" translate="label" type="select" sortOrder="7" showInDefault="1" showInWebsite="1">
                     <label>Display Additional Information</label>
