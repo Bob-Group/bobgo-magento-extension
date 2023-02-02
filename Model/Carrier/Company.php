@@ -1,6 +1,6 @@
 <?php
 
-namespace uafrica\Customshipping\Model\Carrier;
+namespace bobgo\Customshipping\Model\Carrier;
 
 class Company
 {

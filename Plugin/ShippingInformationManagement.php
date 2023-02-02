@@ -1,6 +1,6 @@
 <?php
 
-namespace uafrica\Customshipping\Plugin;
+namespace bobgo\Customshipping\Plugin;
 
 use Magento\Quote\Api\CartRepositoryInterface;
 

@@ -1,11 +1,11 @@
 <?php
-namespace uafrica\Customshipping\Block\System\Config\Form\Field;
+namespace bobgo\Customshipping\Block\System\Config\Form\Field;
 
 use Magento\Framework\Data\Form\Element\AbstractElement;
 
 /**
  * @category   BobGroup
- * @package    uafrica_customshipping
+ * @package    bobgo_Customshipping
  * @author     info@bob.co.za
  * @website    https://www.bob.co.za
  */
@@ -14,17 +14,17 @@ class Version extends \Magento\Config\Block\System\Config\Form\Field
     const EXTENSION_URL = 'https://www.bob.co.za';
 
     /**
-     * @var \uafrica\Customshipping\Helper\Data $helper
+     * @var \bobgo\Customshipping\Helper\Data $helper
      */
     protected $_helper;
 
     /**
      * @param \Magento\Backend\Block\Template\Context $context
-     * @param \uafrica\Customshipping\Helper\Data $helper
+     * @param \bobgo\Customshipping\Helper\Data $helper
      */
     public function __construct(
         \Magento\Backend\Block\Template\Context $context,
-        \uafrica\Customshipping\Helper\Data $helper
+        \bobgo\Customshipping\Helper\Data $helper
     ) {
         $this->_helper = $helper;
         parent::__construct($context);

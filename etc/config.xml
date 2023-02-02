@@ -1,29 +1,29 @@
 <?xml version="1.0"?>
 <!--
 /**
- * @category   Uafrica
- * @package    Uafrica_Customshipping
- * @author     Uafrica
+ * @category   bobgo
+ * @package    bobgo_customshipping
+ * @author     bobgo
  */
 -->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
     <default>
-        <uafrica_customshipping>
+        <bobgo_customshipping>
             <general>
                 <debug>0</debug>
             </general>
-        </uafrica_customshipping>
+        </bobgo_customshipping>
 
         <carriers>
-            <uafrica>
+            <bobgo>
                 <active>0</active>
                 <sallowspecific>0</sallowspecific>
                 <price>0.00</price>
-                <model>uafrica\Customshipping\Model\Carrier\Customshipping</model>
+                <model>bobgo\Customshipping\Model\Carrier\Customshipping</model>
                 <name>Fixed</name>
-                <title>uAfrica</title>
+                <title>bobgo</title>
                 <specificerrmsg>This shipping method is not available. To use this shipping method, please contact us.</specificerrmsg>
-            </uafrica>
+            </bobgo>
         </carriers>
 
     </default>

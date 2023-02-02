@@ -1,6 +1,6 @@
 <?php
 
-namespace uafrica\Customshipping\Observer;
+namespace bobgo\Customshipping\Observer;
 
 use Magento\Framework\DataObject\Copy;
 use Magento\Framework\Event\Observer;

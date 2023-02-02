@@ -1,6 +1,6 @@
 <?php
 
-namespace uafrica\Customshipping\Model\Carrier;
+namespace bobgo\Customshipping\Model\Carrier;
 use Magento\Checkout\Api\Data\ShippingInformationInterface;
 use Magento\Framework\App\ObjectManager;
 use Magento\Framework\Exception\NoSuchEntityException;

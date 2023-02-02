@@ -1,5 +1,5 @@
 {
-  "name": "uafrica/bobgo",
+  "name": "bobgo/bobgo",
   "description": "Streamline your shipments fulfillments with bobgo",
   "type": "magento2-module",
   "version": "1.0.0",
@@ -19,7 +19,7 @@
       "registration.php"
     ],
     "psr-4": {
-      "uafrica\\Customshipping\\": ""
+      "bobgo\\Customshipping\\": ""
     }
   }
 }

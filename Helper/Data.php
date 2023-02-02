@@ -1,5 +1,5 @@
 <?php
-namespace uafrica\Customshipping\Helper;
+namespace bobgo\Customshipping\Helper;
 
 use Magento\Framework\App\Helper\AbstractHelper;
 use Magento\Framework\App\Helper\Context;
@@ -7,16 +7,16 @@ use Magento\Framework\Module\ModuleListInterface;
 use Magento\Store\Model\ScopeInterface;
 
 /**
- * @category   uafrica
- * @package    uafrica_customshipping
- * @author      uafrica
+ * @category   bobgo
+ * @package    bobgo_Customshipping
+ * @author      bobgo
  * @website    https://www.bob.co.za
  */
 class Data extends AbstractHelper
 {
 
-    const XML_PATH_ENABLED = 'uafrica_customshipping/general/enabled';
-    const XML_PATH_DEBUG   = 'uafrica_customshipping/general/debug';
+    const XML_PATH_ENABLED = 'bobgo_Customshipping/general/enabled';
+    const XML_PATH_DEBUG   = 'bobgo_Customshipping/general/debug';
 
     /**
      * @var \Psr\Log\LoggerInterface
@@ -65,7 +65,7 @@ class Data extends AbstractHelper
 
     public function getExtensionVersion()
     {
-        $moduleCode = 'uafrica_Customshipping';
+        $moduleCode = 'bobgo_Customshipping';
         $moduleInfo = $this->_moduleList->getOne($moduleCode);
         return $moduleInfo['setup_version'];
     }

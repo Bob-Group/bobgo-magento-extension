@@ -1,6 +1,6 @@
 <?php
 
-namespace uafrica\Customshipping\Model\Source;
+namespace bobgo\Customshipping\Model\Source;
 
 class Unitofmeasure extends Generic
 {

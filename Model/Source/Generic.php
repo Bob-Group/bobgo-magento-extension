@@ -1,13 +1,13 @@
 <?php
 
-namespace uafrica\customshipping\Model\Source;
+namespace bobgo\Customshipping\Model\Source;
 
 
 use Magento\Framework\Data\OptionSourceInterface;
-use uafrica\Customshipping\Model\Carrier\Customshipping;
+use bobgo\Customshipping\Model\Carrier\Customshipping;
 
 /**
- * uAfrica generic source implementation
+ * bobgo generic source implementation
  */
 class Generic implements OptionSourceInterface
 {

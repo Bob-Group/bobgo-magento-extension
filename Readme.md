@@ -1,17 +1,17 @@
 
 
-# Magento 2 uAfrica Shipping Extension
+# Magento 2 BobGo Shipping Extension
 
 ## Introduction
 
-A complete guide to install Magento uAfrica Shipping extension in Magento 2. 
+A complete guide to install Magento Bob Go Shipping extension in Magento 2. 
 
 ## Features
->This extension allows you to get real-time shipping rates from BobGo shipping services and display them to your customers during checkout.
+>This extension allows you to get real-time shipping rates from Bob Go shipping services and display them to your customers during checkout.
 
->This extension also allows you to track shipments and get delivery status updates from BobGo shipping services.
+>This extension also allows you to track shipments and get delivery status updates from Bob Go shipping services.
 
-## How to install Magento 2 Bobgo Shipping Extension
+## How to install Magento 2 Bob Go Shipping Extension
 
 ### Option 1 (recommended): Install via composer 
 
@@ -23,12 +23,12 @@ Run the following command in Magento 2 root folder:</br>
 #### 1. Execute the following command to install the module:
 
 ``` 
-composer require uafrica/customshipping
+composer require bobgo/customshipping
 ```
 #### 2. Enter following commands to enable the module:
 
 ```
-bin/magento module:enable uafrica_Customshipping
+bin/magento module:enable bobgo_Customshipping
 bin/magento cache:clean
 bin/magento cache:flush
 bin/magento setup:upgrade
@@ -41,20 +41,20 @@ bin/magento setup:static-content:deploy
 
 1. Download the extension zip file from the link below: </br>
 
-    <a href="https://github.com/uafrica/magento-uafrica-shipping-extension/archive/refs/heads/main.zip"> Download Magento 2 uAfrica Shipping Extension </a>
+    <a href="https://gitlab.bob.co.za/bobgo/bobgo-magento-extension/-/archive/main/bobgo-magento-extension-main.zip"> Download Magento 2 Bob Go Shipping Extension </a>
 
 2. Unzip the file and copy contents
 
-3. Create `uafrica/Customshipping` <em>Directory</em>
+3. Create `bobgo/Customshipping` <em>Directory</em>
 
 **It should look like this:** </br>
->{Magento root}/app/code/uafrica/Customshipping/
+>{Magento root}/app/code/bobgo/Customshipping/
 
 
->**{Magento root}**`/app/code/uafrica/Customshipping/`**{Paste here}**
+>**{Magento root}**`/app/code/bobgo/Customshipping/`**{Paste here}**
 
 
-3. Go to Magento root folder and run all commands below  to install `uafrica_Customshipping`: </br>
+3. Go to Magento root folder and run all commands below  to install `bobgo_Customshipping`: </br>
 ```
 bin/magento cache:clean
 Bin/magento cache:flush
@@ -65,22 +65,22 @@ ________________________________________________________________________________
 # After installation
 
 
-## How to configure Magento 2 uAfrica Shipping Extension 
+## How to configure Magento 2 Bob Go Shipping Extension 
 
-### ✓ Step 1: Create an account on Bobgo
+### ✓ Step 1: Create an account on Bob Go
 
-You need to create an account on Bobgo to get your Store Identified by the API. 
+You need to create an account on Bob Go to get your Store Identified by the API. 
 
-Please visit [Bobgo](https://uafrica.co.za) to create an account.
+Please visit [Bob Go](https://bobgo.co.za) to create an account.
 
 ### ✓ Step 2: Login to Magento Admin
 
-1. Click on **UAFRICA** > bobGo > Enabled for Checkout > Yes </br>
+1. Click on **bobgo** > bobGo > Enabled for Checkout > Yes </br>
 
 
 2. and go to `Stores > Configuration > Sales > Delivery Methods` to configure the extension.
 
-### ✓ Step 3: Configure Bobgo Shipping Extension
+### ✓ Step 3: Configure Bob Go Shipping Extension
 
 
 1. Select `Bobgo` as shipping method.
@@ -110,13 +110,13 @@ When the extension is **installed** and **enabled**, a new field will be created
 
 ## How it works
 
-## How to use Magento 2 Bobgo Shipping Extension (carrier) to Ship Orders
+## How to use Magento 2 Bob Go Shipping Extension (carrier) to Ship Orders
 
 ### ✓ Step 1: Add products to cart(Checkout)
 
 >1. Go to checkout page.
 >2. Select shipping address.
->3. BobGo will collect **Shipping Rates** From various couriers.
+>3. Bob Go will collect **Shipping Rates** From various couriers.
 >4. Select shipping method.
 >5. Place order.
 
@@ -126,5 +126,5 @@ When the extension is **installed** and **enabled**, a new field will be created
 >1. Go to `Sales > Orders` in Magento Admin
 >2. Select an order
 >3. Click `Ship` button
->4. Select `uAfrica` as shipping method
+>4. Select `bobgo` as shipping method
 >5. Click `Submit Shipment` button

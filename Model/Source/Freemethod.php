@@ -1,9 +1,9 @@
 <?php
 
-namespace uafrica\Customshipping\Model\Source;
+namespace bobgo\Customshipping\Model\Source;
 
 /**
- * uafrica Free Method source implementation
+ * bobgo Free Method source implementation
  */
 class Freemethod extends Method
 {
