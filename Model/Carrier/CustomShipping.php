@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace uafrica\Customshipping\Model\Carrier;
+namespace bobgo\CustomShipping\Model\Carrier;
 
 use Magento\Catalog\Model\ResourceModel\Product\CollectionFactory;
 use Magento\CatalogInventory\Api\StockRegistryInterface;
@@ -22,6 +22,7 @@ use Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory;
 use Magento\Quote\Model\Quote\Address\RateResult\MethodFactory;
 use Magento\Shipping\Model\Carrier\AbstractCarrier;
 use Magento\Shipping\Model\Carrier\AbstractCarrierOnline;
+use Magento\Shipping\Model\Carrier\CarrierInterface;
 use Magento\Shipping\Model\Rate\Result;
 use Magento\Shipping\Model\Rate\ResultFactory;
 use Magento\Shipping\Model\Simplexml\ElementFactory;
@@ -31,22 +32,23 @@ use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
 
 /**
- * uAfrica shipping implementation
+ * bobgo shipping implementation
  * @category   bob
- * @package    uafrica_Customshipping
+ * @package    bobgo_CustomShipping
  * @author     info@bob.co.za
  * @website    https://www.bob.co.za
  * @SuppressWarnings(PHPMD.ExcessiveClassComplexity)
  * @SuppressWarnings(PHPMD.CouplingBetweenObjects)
  * @SuppressWarnings(PHPMD.TooManyFields)
  */
-class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\Model\Carrier\CarrierInterface
+class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
 {
     /**
      * Code of the carrier
+     *`
      * @var string
      */
-    public const CODE = 'uafrica';
+    public const CODE = 'bobgo';
 
     const UNITS = 100;
 
@@ -72,12 +74,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     protected $_result = null;
 
-    /**
-     * Container types that could be customized for uAfrica carrier
-     *
-     * @var string[]
-     */
-    protected $_customizableContainerTypes = ['YOUR_PACKAGING'];
 
     /**
      * @var \Magento\Store\Model\StoreManagerInterface
@@ -184,8 +180,9 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
 
-    /**
-     * Store Base Url
+    /*
+     * Gets the base url of the store by stripping the http:// or https:// and wwww. from the url
+     * leaving just "example.com" since bobgo API uses this format and not the full url as the Identifier
      * @var \Magento\Store\Model\StoreManagerInterface $this->_storeManager
      * @return string
      */
@@ -198,35 +195,36 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         return $storeBase;
     }
 
-
     /**
-     *  Make request to uAfrica API to get shipping rates
+     *  Make request to bobgo API to get shipping rates for the cart
+     * After all the required data is collected, it makes a request to the bobgo API to get the shipping rates
      * @param $payload
      * @return array
      */
     public function getRates($payload): array
     {
-        $response = $this->uRates($payload);
-
-        return $response;
+        return $this->uRates($payload);
     }
 
     /**
-     * Collect and get rates
-     *
+     * Collect and get rates for this shipping method based on information in $request
+     * This is a default function that is called by Magento to get the shipping rates for the cart
      * @param RateRequest $request
      * @return Result|bool|null
      */
-    public function collectRates(RateRequest $request)
+    public function collectRates(RateRequest $request): Result|bool|null
     {
        /*** Make sure that Shipping method is enabled*/
         if (!$this->isActive()) {
             return false;
         }
-
+        /**
+         * Gets the destination company name from Company Name field in the checkout page
+         * This method is used is the last resort to get the company name since the company name is not available in _rateFactory
+         */
         $destComp = $this->getDestComp();
 
-        /** @var \Magento\Shipping\Model\Rate\Result $result */
+        /** @var Result $result */
 
         $result = $this->_rateFactory->create();
 
@@ -236,13 +234,12 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         $destCity = $request->getDestCity();
         $destStreet = $request->getDestStreet();
 
+        /**  Destination Information  */
         list($destStreet1, $destStreet2, $destStreet3) = $this->destStreet($destStreet);
-
-
 
         /**  Origin Information  */
         list($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb) = $this->storeInformation();
-
+        /**  Get all the items in the cart  */
         $items = $request->getAllItems();
 
         $itemsArray = [];
@@ -290,6 +287,10 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
+     * Get The store information from the Magento store configuration and return it as an array
+     * In magento 2 there is origin information in the store information section of the configuration, so we get it from there
+     * since Store Information has the origin information including suburb field that we Injected upon Bob Go Extension installation
+     *  which is not available in the origin section
      * @return array
      */
     public function storeInformation(): array
@@ -334,23 +335,22 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         );
 
         $baseIdentifier = $this->getBaseUrl();
+
         return array($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb);
     }
-
 
     /**
      * Get result of request
      *
      * @return Result|null
      */
-    public function getResult()
+    public function getResult(): ?Result
     {
         if (!$this->_result) {
             $this->_result = $this->_trackFactory->create();
         }
         return $this->_result;
     }
-
 
     /**
      * Get final price for shipping method with handling fee per package
@@ -360,7 +360,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      * @param float $handlingFee
      * @return float
      */
-    protected function _getPerpackagePrice($cost, $handlingType, $handlingFee)
+    protected function _getPerpackagePrice($cost, $handlingType, $handlingFee): float
     {
         if ($handlingType == AbstractCarrier::HANDLING_TYPE_PERCENT) {
             return $cost + $cost * $this->_numBoxes * $handlingFee / self::UNITS;
@@ -377,7 +377,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      * @param float $handlingFee
      * @return float
      */
-    protected function _getPerorderPrice($cost, $handlingType, $handlingFee)
+    protected function _getPerorderPrice($cost, $handlingType, $handlingFee): float
     {
         if ($handlingType == self::HANDLING_TYPE_PERCENT) {
             return $cost + $cost * $handlingFee / self::UNITS;
@@ -385,7 +385,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
 
         return $cost + $handlingFee;
     }
-
 
     /**
      * Get configuration data of carrier
@@ -395,11 +394,11 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      * @return array|false
      * @SuppressWarnings(PHPMD.ExcessiveMethodLength)
      */
-    public function getCode($type, $code = '')
+    public function getCode($type, $code = ''): bool|array
     {
         $codes = [
             'method' => [
-                'UAFRICA_SHIPPING' => __('uAfrica Shipping'),
+                'bobGo' => __('Bob Go'),
             ],
             'delivery_confirmation_types' => [
                 'NO_SIGNATURE_REQUIRED' => __('Not Required'),
@@ -425,14 +424,14 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         }
     }
 
-
     /**
-     * Get tracking
+     * Get tracking info by tracking number or tracking request
+     * Without getTrackingInfo() method, Magento will not show tracking info on frontend
      *
      * @param string|string[] $trackings
      * @return Result|null
      */
-    public function getTracking($trackings)
+    public function getTracking($trackings): ?Result
     {
         $this->setTrackingReqeust();
 
@@ -448,11 +447,11 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     * Set tracking request
+     * Set tracking request data for request by getting context from Magento
      *
      * @return void
      */
-    protected function setTrackingReqeust()
+    protected function setTrackingReqeust(): void
     {
         $r = new \Magento\Framework\DataObject();
 
@@ -463,23 +462,23 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     * Send request for tracking
+     * Send request for the actual tracking info and process response
      *
      * @param string[] $tracking
      * @return void
      */
-    protected function _getXMLTracking($tracking)
+    protected function _getXMLTracking($tracking): void
     {
         $this->_parseTrackingResponse($tracking);
     }
 
     /**
-     * Parse tracking response
+     * Parse tracking response and set tracking info
      *
      * @param string $trackingValue
      * @return void
      */
-    protected function _parseTrackingResponse($trackingValue)
+    protected function _parseTrackingResponse($trackingValue): void
     {
         $result = $this->getResult();
         $carrierTitle = $this->getConfigData('title');
@@ -513,7 +512,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      *
      * @return string
      */
-    public function getResponse()
+    public function getResponse(): string
     {
         $statuses = '';
         if ($this->_result instanceof \Magento\Shipping\Model\Tracking\Result) {
@@ -542,7 +541,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      *
      * @return array
      */
-    public function getAllowedMethods()
+    public function getAllowedMethods(): array
     {
         $allowed = explode(',', $this->getConfigData('allowed_methods'));
         $arr = [];
@@ -553,14 +552,13 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         return $arr;
     }
 
-
     /**
      * Do shipment request to carrier web service, obtain Print Shipping Labels and process errors in response
-     *
+     * Also another magic function that is required to be implemented by carrier model
      * @param \Magento\Framework\DataObject $request
      * @return \Magento\Framework\DataObject
      */
-    protected function _doShipmentRequest(\Magento\Framework\DataObject $request)
+    protected function _doShipmentRequest(\Magento\Framework\DataObject $request): ?DataObject
     {
         return null;
 
@@ -573,7 +571,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      *
      * @return bool
      */
-    public function rollBack($data)
+    public function rollBack($data): bool
     {
         return true;
     }
@@ -586,7 +584,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
      * @return array|bool
      * @SuppressWarnings(PHPMD.CyclomaticComplexity)
      */
-    public function getContainerTypes(\Magento\Framework\DataObject $params = null)
+    public function getContainerTypes(\Magento\Framework\DataObject $params = null): bool|array
     {
         $result = [];
         $allowedContainers = $this->getConfigData('containers');
@@ -634,7 +632,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     * Parse track details response from uAfrica
+     * Parse track details response from bobgo
      *
      * @return array
      * @SuppressWarnings(PHPMD.CyclomaticComplexity)
@@ -700,7 +698,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     *  Perfom API Request to uAfrica API and return response
+     *  Perform API Request to bobgo API and return response
      * @param array $payload
      * @param Result $result
      * @return void
@@ -715,14 +713,14 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     * Perform API Request for Shipment Tracking to uAfrica API and return response
+     * Perform API Request for Shipment Tracking to bobgo API and return response
      * @param $trackInfo
      * @param array $result
      * @return array
      */
     private function _requestTracking($trackInfo, array $result): array
     {
-        $response = $this->trackUafricaShipment($trackInfo);
+        $response = $this->trackBobgoShipment($trackInfo);
 
         $result = $this->prepareActivity($response[0], $result);
 
@@ -730,7 +728,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     * Format rates from uAfrica API response and append to rate result instance of carrier
+     * Format rates from bobgo API response and append to rate result instance of carrier
      * @param mixed $rates
      * @param Result $result
      * @return void
@@ -773,9 +771,8 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         }
     }
 
-
     /**
-     * Prepare received checkpoints and activity from uAfrica Shipment Tracking API
+     * Prepare received checkpoints and activity from bobgo Shipment Tracking API
      * @param $response
      * @param array $result
      * @return array
@@ -788,7 +785,7 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
                 'activity' => $checkpoint['status'],
                 'deliverydate' => $this->formatDate($checkpoint['time']),
                 'deliverytime' => $this->formatTime($checkpoint['time']),
-                //'deliverylocation' => 'Unavailable',
+              //  'deliverylocation' => 'Unavailable',//TODO: remove this line
             ];
         }
         return $result;
@@ -822,23 +819,22 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         }
     }
 
-
     /**
-     * Curl request to uAfrica Shipment Tracking API
+     * Curl request to bobgo Shipment Tracking API
      * @param $trackInfo
      * @return mixed
      */
-    private function trackUafricaShipment($trackInfo): mixed
+    private function trackBobgoShipment($trackInfo): mixed
     {
         $this->curl->get(uData::TRACKING . $trackInfo);
 
         $response = $this->curl->getBody();
 
-        $response = json_decode($response, true);
-        return $response;
+        return json_decode($response, true);
     }
 
     /**
+     * Build The Payload for bobgo API Request and return response
      * @param array $payload
      * @return mixed
      */
@@ -852,7 +848,6 @@ class Customshipping extends AbstractCarrierOnline implements \Magento\Shipping\
         $rates = json_decode($rates, true);
         return $rates;
     }
-
 
     /**
      * @param string $destStreet

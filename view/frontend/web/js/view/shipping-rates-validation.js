@@ -20,8 +20,8 @@ define(
         sampleShippingProviderShippingRatesValidationRules
     ) {
         "use strict";
-        defaultShippingRatesValidator.registerValidator('uafrica', sampleShippingProviderShippingRatesValidator);
-        defaultShippingRatesValidationRules.registerRules('uafrica', sampleShippingProviderShippingRatesValidationRules);
+        defaultShippingRatesValidator.registerValidator('bobgo', sampleShippingProviderShippingRatesValidator);
+        defaultShippingRatesValidationRules.registerRules('bobgo', sampleShippingProviderShippingRatesValidationRules);
         return Component;
     }
 );

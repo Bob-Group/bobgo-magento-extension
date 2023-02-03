@@ -9,8 +9,8 @@
                             <item name="children" xsi:type="array">
                                 <item name="shipping-rates-validation" xsi:type="array">
                                     <item name="children" xsi:type="array">
-                                        <item name="uafrica-rates-validation" xsi:type="array">
-                                            <item name="component" xsi:type="string">uafrica_Customshipping/js/view/shipping-rates-validation</item>
+                                        <item name="bobgo-rates-validation" xsi:type="array">
+                                            <item name="component" xsi:type="string">bobgo_CustomShipping/js/view/shipping-rates-validation</item>
                                         </item>
                                     </item>
                                 </item>

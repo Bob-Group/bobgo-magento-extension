@@ -1,12 +1,12 @@
 {
-  "name": "uafrica/bobgo",
-  "description": "Streamline your shipments fulfillments with bobgo",
+  "name": "bobgo/bobgo",
+  "description": "Streamline your shipments fulfillment's with bobgo",
   "type": "magento2-module",
   "version": "1.0.0",
   "authors": [
     {
-      "name": "Gundo",
-      "email": "gundo@bob.co.za",
+      "name": "Bob Go",
+      "email": "info@bob.co.za",
       "homepage": "https://www.bob.co.za"
     }
   ],
@@ -19,7 +19,7 @@
       "registration.php"
     ],
     "psr-4": {
-      "uafrica\\Customshipping\\": ""
+      "bobgo\\CustomShipping\\": ""
     }
   }
 }

@@ -1,6 +1,6 @@
 <?php
 
-namespace uafrica\Customshipping\Model\Source;
+namespace bobgo\CustomShipping\Model\Source;
 
 class Dropoff extends Generic
 {

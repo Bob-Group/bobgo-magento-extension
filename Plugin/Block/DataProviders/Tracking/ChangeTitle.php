@@ -1,20 +1,20 @@
 <?php
 
-namespace uafrica\Customshipping\Plugin\Block\DataProviders\Tracking;
+namespace bobgo\CustomShipping\Plugin\Block\DataProviders\Tracking;
 
-use uafrica\Customshipping\Model\Carrier;
+use bobgo\CustomShipping\Model\Carrier;
 use Magento\Shipping\Model\Tracking\Result\Status;
 use Magento\Shipping\Block\DataProviders\Tracking\DeliveryDateTitle as Subject;
 
 
 /**
- * Plugin to change delivery date title with UAfrica customized value
+ * Plugin to change delivery date title with bobgo customized value
  */
 
 class ChangeTitle
 {
     /**
-     * Title modification in case if UAfrica used as carrier
+     * Title modification in case if bobgo used as carrier
      *
      * @param Subject $subject
      * @param \Magento\Framework\Phrase|string $result

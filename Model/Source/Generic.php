@@ -1,20 +1,20 @@
 <?php
 
-namespace uafrica\customshipping\Model\Source;
+namespace bobgo\CustomShipping\Model\Source;
 
 
 use Magento\Framework\Data\OptionSourceInterface;
-use uafrica\Customshipping\Model\Carrier\Customshipping;
+use bobgo\CustomShipping\Model\Carrier\CustomShipping;
 
 /**
- * uAfrica generic source implementation
+ * bobgo generic source implementation
  */
 class Generic implements OptionSourceInterface
 {
     /**
-     * @var Customshipping
+     * @var CustomShipping
      */
-    protected Customshipping $_shippingCustomshipping;
+    protected CustomShipping $_shippingCustomShipping;
 
     /**
      * Carrier code
@@ -23,11 +23,11 @@ class Generic implements OptionSourceInterface
     protected string $_code = '';
 
     /**
-     * @param Customshipping $shippingCustomshipping
+     * @param CustomShipping $shippingCustomShipping
      */
-    public function __construct(Customshipping $shippingCustomshipping)
+    public function __construct(CustomShipping $shippingCustomShipping)
     {
-        $this->_shippingCustomshipping = $shippingCustomshipping;
+        $this->_shippingCustomShipping = $shippingCustomShipping;
     }
 
     /**
@@ -36,7 +36,7 @@ class Generic implements OptionSourceInterface
      */
     public function toOptionArray()
     {
-        $configData = $this->_shippingCustomshipping->getCode($this->_code);
+        $configData = $this->_shippingCustomShipping->getCode($this->_code);
         $arr = [];
         if ($configData) {
             $arr = array_map(
