@@ -40,8 +40,7 @@ class PopupDeliveryDate
         foreach ($subject->getTrackingInfo() as $trackingData) {
             foreach ($trackingData as $trackingInfo) {
                 if ($trackingInfo instanceof Status) {
-                    $carrier = $trackingInfo->getCarrier();
-                    return $carrier;
+                    return $trackingInfo->getCarrier();
                 }
             }
         }
