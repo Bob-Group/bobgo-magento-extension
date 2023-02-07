@@ -4,7 +4,7 @@ namespace bobgo\CustomShipping\Model\Carrier;
 
 /**
  * Class uData
- * bobGo API Resources for Custom Shipping
+ * Bob Go API Resources for Custom Shipping
  * @package bobgo\CustomShipping\Model\Carrier
  */
 class uData

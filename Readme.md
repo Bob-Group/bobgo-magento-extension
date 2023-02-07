@@ -1,6 +1,6 @@
 
 
-# Magento 2 BobGo Shipping Extension
+# Magento 2 Bob Go Shipping Extension
 
 ## Introduction
 
@@ -75,7 +75,7 @@ Please visit [Bob Go](https://bobgo.co.za) to create an account.
 
 ### ✓ Step 2: Login to Magento Admin
 
-1. Click on **bobgo** > bobGo > Enabled for Checkout > Yes </br>
+1. Click on **Bob Go** > Bob Go > Enabled for Checkout > Yes </br>
 
 
 2. and go to `Stores > Configuration > Sales > Delivery Methods` to configure the extension.
@@ -83,7 +83,7 @@ Please visit [Bob Go](https://bobgo.co.za) to create an account.
 ### ✓ Step 3: Configure Bob Go Shipping Extension
 
 
-1. Select `Bobgo` as shipping method.
+1. Select `Bob Go` as shipping method.
 
 
 2. Select `Enable` to enable the extension.
@@ -126,5 +126,5 @@ When the extension is **installed** and **enabled**, a new field will be created
 >1. Go to `Sales > Orders` in Magento Admin
 >2. Select an order
 >3. Click `Ship` button
->4. Select `bobgo` as shipping method
+>4. Select `Bob Go` as shipping method
 >5. Click `Submit Shipment` button

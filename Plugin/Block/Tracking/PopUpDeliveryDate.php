@@ -7,12 +7,12 @@ use Magento\Shipping\Model\Tracking\Result\Status;
 use Magento\Shiiping\Model\Carrier;
 
 /*
- * Plugin to update delivery date value in case if bobgo is a carrier used
+ * Plugin to update delivery date value in case if Bob Go is a carrier used
  */
 class PopupDeliveryDate
 {
     /**
-     * Show only date for expected delivery in case if bobgo is a carrier
+     * Show only date for expected delivery in case if Bob Go is a carrier
      *
      * @param Popup $subject
      * @param string $result

@@ -32,7 +32,7 @@ use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
 
 /**
- * bobgo shipping implementation
+ * Bob Go shipping implementation
  * @category   bob
  * @package    bobgo_CustomShipping
  * @author     info@bob.co.za
@@ -182,7 +182,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
 
     /*
      * Gets the base url of the store by stripping the http:// or https:// and wwww. from the url
-     * leaving just "example.com" since bobgo API uses this format and not the full url as the Identifier
+     * leaving just "example.com" since Bob Go API uses this format and not the full url as the Identifier
      * @var \Magento\Store\Model\StoreManagerInterface $this->_storeManager
      * @return string
      */
@@ -196,8 +196,8 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
     }
 
     /**
-     *  Make request to bobgo API to get shipping rates for the cart
-     * After all the required data is collected, it makes a request to the bobgo API to get the shipping rates
+     *  Make request to Bob Go API to get shipping rates for the cart
+     * After all the required data is collected, it makes a request to the Bob Go API to get the shipping rates
      * @param $payload
      * @return array
      */
@@ -235,10 +235,10 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
         $destStreet = $request->getDestStreet();
 
         /**  Destination Information  */
-        list($destStreet1, $destStreet2, $destStreet3) = $this->destStreet($destStreet);
+        [$destStreet1, $destStreet2, $destStreet3] = $this->destStreet($destStreet);
 
         /**  Origin Information  */
-        list($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb) = $this->storeInformation();
+        [$originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb] = $this->storeInformation();
         /**  Get all the items in the cart  */
         $items = $request->getAllItems();
 
@@ -398,7 +398,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
     {
         $codes = [
             'method' => [
-                'bobGo' => __('Bob Go'),
+                'bobgo' => __('Bob Go'),
             ],
             'delivery_confirmation_types' => [
                 'NO_SIGNATURE_REQUIRED' => __('Not Required'),
@@ -720,7 +720,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
      */
     private function _requestTracking($trackInfo, array $result): array
     {
-        $response = $this->trackBobgoShipment($trackInfo);
+        $response = $this->trackBobGoShipment($trackInfo);
 
         $result = $this->prepareActivity($response[0], $result);
 
@@ -820,11 +820,11 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
     }
 
     /**
-     * Curl request to bobgo Shipment Tracking API
+     * Curl request to Bob Go Shipment Tracking API
      * @param $trackInfo
      * @return mixed
      */
-    private function trackBobgoShipment($trackInfo): mixed
+    private function trackBobGoShipment($trackInfo): mixed
     {
         $this->curl->get(uData::TRACKING . $trackInfo);
 

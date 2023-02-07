@@ -9,7 +9,7 @@ use Magento\Store\Model\ScopeInterface;
 /**
  * @category   bobgo
  * @package    bobgo_CustomShipping
- * @author      bobgo
+ * @author     Bob Go
  * @website    https://www.bob.co.za
  */
 class Data extends AbstractHelper

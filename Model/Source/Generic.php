@@ -7,7 +7,7 @@ use Magento\Framework\Data\OptionSourceInterface;
 use bobgo\CustomShipping\Model\Carrier\CustomShipping;
 
 /**
- * bobgo generic source implementation
+ * Bob Go generic source implementation
  */
 class Generic implements OptionSourceInterface
 {

@@ -3,7 +3,7 @@
 namespace bobgo\CustomShipping\Model\Source;
 
 /**
- * bobgo Free Method source implementation
+ * Bob Go Free Method source implementation
  */
 class Freemethod extends Method
 {

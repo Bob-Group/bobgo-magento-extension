@@ -5,14 +5,14 @@ use Magento\Framework\Data\Form\Element\AbstractElement;
 
 /**
  * Displays Version number in System Configuration
- * @category   BobGroup
+ * @category   Bob Go
  * @package    bobgo_CustomShipping
  * @author     info@bob.co.za
  * @website    https://www.bob.co.za
  */
 class Version extends \Magento\Config\Block\System\Config\Form\Field
 {
-    const EXTENSION_URL = 'https://www.bob.co.za';
+    const EXTENSION_URL = 'https://www.bobgo.co.za';
 
     /**
      * @var \bobgo\CustomShipping\Helper\Data $helper
@@ -39,7 +39,7 @@ class Version extends \Magento\Config\Block\System\Config\Form\Field
     protected function _getElementHtml(AbstractElement $element)
     {
         $extensionVersion   = $this->_helper->getExtensionVersion();
-        $extensionTitle     = 'BobGo';
+        $extensionTitle     = 'Bob Go';
         $versionLabel       = sprintf(
             '<a href="%s" title="%s" target="_blank">%s</a>',
             self::EXTENSION_URL,

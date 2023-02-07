@@ -8,13 +8,13 @@ use Magento\Shipping\Block\DataProviders\Tracking\DeliveryDateTitle as Subject;
 
 
 /**
- * Plugin to change delivery date title with bobgo customized value
+ * Plugin to change delivery date title with Bob Go customized value
  */
 
 class ChangeTitle
 {
     /**
-     * Title modification in case if bobgo used as carrier
+     * Title modification in case if Bob Go used as carrier
      *
      * @param Subject $subject
      * @param \Magento\Framework\Phrase|string $result
