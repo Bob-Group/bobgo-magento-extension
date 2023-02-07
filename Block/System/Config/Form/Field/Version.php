@@ -7,8 +7,8 @@ use Magento\Framework\Data\Form\Element\AbstractElement;
  * Displays Version number in System Configuration
  * @category   Bob Go
  * @package    bobgo_CustomShipping
- * @author     info@bob.co.za
- * @website    https://www.bob.co.za
+ * @author     Bob Go
+ * @website    https://www.bobgo.co.za
  */
 class Version extends \Magento\Config\Block\System\Config\Form\Field
 {

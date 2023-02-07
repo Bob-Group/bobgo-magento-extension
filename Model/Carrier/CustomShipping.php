@@ -33,10 +33,10 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Bob Go shipping implementation
- * @category   bob
+ * @category   Bob Go
  * @package    bobgo_CustomShipping
- * @author     info@bob.co.za
- * @website    https://www.bob.co.za
+ * @author     Bob Go
+ * @website    https://www.bobgo.co.za
  * @SuppressWarnings(PHPMD.ExcessiveClassComplexity)
  * @SuppressWarnings(PHPMD.CouplingBetweenObjects)
  * @SuppressWarnings(PHPMD.TooManyFields)
@@ -632,7 +632,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
     }
 
     /**
-     * Parse track details response from bobgo
+     * Parse track details response from Bob Go
      *
      * @return array
      * @SuppressWarnings(PHPMD.CyclomaticComplexity)
@@ -698,7 +698,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
     }
 
     /**
-     *  Perform API Request to bobgo API and return response
+     *  Perform API Request to Bob Go API and return response
      * @param array $payload
      * @param Result $result
      * @return void
@@ -713,7 +713,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
     }
 
     /**
-     * Perform API Request for Shipment Tracking to bobgo API and return response
+     * Perform API Request for Shipment Tracking to Bob Go API and return response
      * @param $trackInfo
      * @param array $result
      * @return array
@@ -728,7 +728,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
     }
 
     /**
-     * Format rates from bobgo API response and append to rate result instance of carrier
+     * Format rates from Bob Go API response and append to rate result instance of carrier
      * @param mixed $rates
      * @param Result $result
      * @return void
@@ -772,7 +772,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
     }
 
     /**
-     * Prepare received checkpoints and activity from bobgo Shipment Tracking API
+     * Prepare received checkpoints and activity from Bob Go Shipment Tracking API
      * @param $response
      * @param array $result
      * @return array
@@ -834,7 +834,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
     }
 
     /**
-     * Build The Payload for bobgo API Request and return response
+     * Build The Payload for Bob Go API Request and return response
      * @param array $payload
      * @return mixed
      */

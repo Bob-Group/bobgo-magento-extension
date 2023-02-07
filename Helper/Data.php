@@ -7,10 +7,10 @@ use Magento\Framework\Module\ModuleListInterface;
 use Magento\Store\Model\ScopeInterface;
 
 /**
- * @category   bobgo
+ * @category   Bob Go
  * @package    bobgo_CustomShipping
  * @author     Bob Go
- * @website    https://www.bob.co.za
+ * @website    https://www.bobgo.co.za
  */
 class Data extends AbstractHelper
 {
