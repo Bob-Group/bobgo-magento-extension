@@ -13,7 +13,7 @@
             <label>Bob Go</label>
         </tab>
         <section id="bobgo_CustomShipping"  showInDefault="1">
-            <tab>Bob Go</tab>
+            <tab>bobgo</tab>
             <label>Bob Go</label>
             <resource>Magento_Config::config</resource>
             <group id="general"  showInDefault="1">
