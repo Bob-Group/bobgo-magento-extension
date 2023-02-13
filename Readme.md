@@ -1,6 +1,6 @@
 # Installing Magento locally 
 
-Note: For more information, visit https://github.com/markshust/docker-magento
+**Note:** For more information, visit https://github.com/markshust/docker-magento
 
 1. Create a new folder, ie: `Documents/Magento`
 2. `cd` into the folder 
