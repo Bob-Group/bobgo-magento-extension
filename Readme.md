@@ -1,3 +1,8 @@
+# Installing Magento locally 
+
+1. Create a new folder, ie: `Documents/Magento`
+2. `cd` into the folder 
+3. Run command `curl -s https://raw.githubusercontent.com/markshust/docker-magento/master/lib/onelinesetup | bash -s -- bobgomagento.test 2.4.4-p1 community`
 
 
 # Magento 2 Bob Go Shipping Extension
