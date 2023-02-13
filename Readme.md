@@ -11,6 +11,13 @@
 - Public key: `***REMOVED***`
 - Private key: `***REMOVED***`
 
+Once configured, do the following to create an admin user (and make life easier for yourself):
+
+- Create Admin User: `bin/magento admin:user:create`
+- Disable 2FA: `bin/magento module:disable Magento_TwoFactorAuth`
+- Disable Admin Captcha: `bin/magento config:set admin/captcha/enable 0`
+
+
 ### Adobe account details
 
 - Email: `***REMOVED***`
