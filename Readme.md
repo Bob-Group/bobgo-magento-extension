@@ -3,6 +3,15 @@
 1. Create a new folder, ie: `Documents/Magento`
 2. `cd` into the folder 
 3. Run command `curl -s https://raw.githubusercontent.com/markshust/docker-magento/master/lib/onelinesetup | bash -s -- bobgomagento.test 2.4.4-p1 community`
+4. When askd for the username and password, provide the public and private key: 
+
+- Public key: `***REMOVED***`
+- Private key: `***REMOVED***`
+
+### Adobe account details
+
+Email: `***REMOVED***`
+Password: `***REMOVED***`
 
 
 # Magento 2 Bob Go Shipping Extension
