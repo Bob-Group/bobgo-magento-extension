@@ -6,7 +6,7 @@
 2. Create a new folder, ie: `Documents/Magento`
 3. `cd` into the folder 
 4. Run command `curl -s https://raw.githubusercontent.com/markshust/docker-magento/master/lib/onelinesetup | bash -s -- bobgomagento.test 2.4.4-p1 community`
-5. When askd for the username and password, provide the public and private key: 
+5. When asked for the username and password, provide the Abobe public and private key: 
 
 - Public key: `***REMOVED***`
 - Private key: `***REMOVED***`
