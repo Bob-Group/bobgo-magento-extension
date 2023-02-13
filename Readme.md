@@ -10,8 +10,8 @@
 
 ### Adobe account details
 
-Email: `***REMOVED***`
-Password: `***REMOVED***`
+- Email: `***REMOVED***`
+- Password: `***REMOVED***`
 
 
 # Magento 2 Bob Go Shipping Extension
