@@ -483,16 +483,16 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
         if (!is_array($trackingValue)) {
             $trackingValue = [$trackingValue];
         }
-        foreach ($trackingValue as $item) {
+        foreach ($trackingValue as $trackingReference) {
             $tracking = $this->_trackStatusFactory->create();
-
             $tracking->setCarrier(self::CODE);
             $tracking->setCarrierTitle($carrierTitle);
-            $tracking->setUrl(uData::TRACKING .$item);
-            $tracking->setTracking($item);
-            $tracking->addData($this->processTrackingDetails($item));
+            $tracking->setUrl(sprintf(uData::TRACKING, $this->getBaseUrl(), $trackingReference));
+            $tracking->setTracking($trackingReference);
+            $tracking->addData($this->processTrackingDetails($trackingReference));
             $result->append($tracking);
             $counter ++;
+            echo (sprintf(uData::TRACKING, $this->getBaseUrl(), $trackingReference));
         }
 
         //Tracking Details Not Available
