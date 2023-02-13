@@ -188,11 +188,8 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
      */
     public function getBaseUrl(): string
     {
-        $storeBase = $this->_storeManager->getStore()->getBaseUrl();
-        // Strip slashes and http:// or https:// and wwww. from the url leaving just "example.com"
-        $storeBase = preg_replace('/(http:\/\/|https:\/\/|www\.)/', '', $storeBase);
-        $storeBase = preg_replace('/(\/)/', '', $storeBase);
-        return $storeBase;
+        $storeBaseUrl = $this->_storeManager->getStore()->getBaseUrl();
+        return parse_url($storeBaseUrl)["host"];
     }
 
     /**
