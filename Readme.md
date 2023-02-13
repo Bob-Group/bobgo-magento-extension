@@ -2,10 +2,11 @@
 
 **Note:** For more information, visit https://github.com/markshust/docker-magento
 
-1. Create a new folder, ie: `Documents/Magento`
-2. `cd` into the folder 
-3. Run command `curl -s https://raw.githubusercontent.com/markshust/docker-magento/master/lib/onelinesetup | bash -s -- bobgomagento.test 2.4.4-p1 community`
-4. When askd for the username and password, provide the public and private key: 
+1. Make sure you have `composer` installed globally and a GitHub personal access token configured using `composer global config github-oauth.github.com <YOUR_PERSONAL_ACCESS_TOKEN>`
+2. Create a new folder, ie: `Documents/Magento`
+3. `cd` into the folder 
+4. Run command `curl -s https://raw.githubusercontent.com/markshust/docker-magento/master/lib/onelinesetup | bash -s -- bobgomagento.test 2.4.4-p1 community`
+5. When askd for the username and password, provide the public and private key: 
 
 - Public key: `***REMOVED***`
 - Private key: `***REMOVED***`
