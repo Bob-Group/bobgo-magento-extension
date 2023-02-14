@@ -1,6 +1,6 @@
 <?php
 
-namespace uafrica\Customshipping\Model\Carrier;
+namespace bobgo\Customshipping\Model\Carrier;
 
 /** Get Company information if available from the Estimate Shipping Methods Request Body */
 class uSubs
