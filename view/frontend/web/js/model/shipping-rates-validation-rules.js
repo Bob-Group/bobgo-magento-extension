@@ -18,6 +18,9 @@ define(
                     },
                     'city': {
                         'required': true
+                    },
+                    'suburb': {
+                        'required': true
                     }
                 };
             }

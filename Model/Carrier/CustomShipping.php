@@ -16,6 +16,7 @@ use Magento\Framework\DataObject;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Magento\Framework\Module\Dir\Reader;
+use Magento\Framework\View\Element\Template\Context;
 use Magento\Framework\Xml\Security;
 use Magento\Quote\Model\Quote\Address\RateRequest;
 use Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory;
@@ -102,6 +103,7 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
     protected JsonFactory $jsonFactory;
     private $cartRepository;
     private Company $company;
+    private uSub $newSub;
 
 
     /**
@@ -175,6 +177,7 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
         );
         $this->jsonFactory = $jsonFactory;
         $this->curl = $curlFactory->create();
+        $this->newSub = new uSub();
         $this->company = new Company();
     }
 
@@ -250,6 +253,7 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
             ];
         }
 
+        $destSubs = $this->getDestStreet();
         $payload = [
             'identifier' => $baseIdentifier,
             'rate' => [
@@ -268,7 +272,8 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
                     'company' => $destComp,
                     'address1' => $destStreet1,
                     'address2' => $destStreet2,
-                    'suburb' => $destStreet3,
+                    'suburb' => $destSubs,//$destStreet3,
+
                     'city' => $destCity,
                     'province' => $destRegion,
                     'country_code' => $destCountry,
@@ -904,8 +909,17 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
     /**
      * @return mixed|string
      */
-    protected function getDestComp(): mixed
+    public function getDestComp(): mixed
     {
         return $this->company->getDestComp();
+    }
+
+    /*
+     * Get the suburb from the uSub class
+     * @return mixed|string
+     */
+    protected function getDestStreet(): mixed
+    {
+        return $this->newSub->getSuburb();
     }
 }
