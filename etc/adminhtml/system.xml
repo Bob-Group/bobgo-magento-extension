@@ -70,7 +70,7 @@
                 <field id="showmethod" translate="label" type="select" sortOrder="92" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Show Method if Not Applicable</label>
                     <frontend_class>shipping-skip-hide</frontend_class>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <source_model>bobgo\CustomShipping\Model\Source\Showmethod</source_model>
                 </field>
                 <field id="unit_of_measure" translate="label" type="select" sortOrder="73" showInDefault="1" showInWebsite="1" canRestore="1">
                     <label>Weight Unit</label>

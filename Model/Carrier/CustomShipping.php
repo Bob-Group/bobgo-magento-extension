@@ -408,6 +408,9 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
             'allspecificcountries' => [
                 'ZA' => __('South Africa'),
             ],
+            'showmethod' => [
+                '0' => __('No'),
+            ],
         ];
 
         if (!isset($codes[$type])) {

@@ -39,7 +39,7 @@ class Version extends \Magento\Config\Block\System\Config\Form\Field
     protected function _getElementHtml(AbstractElement $element)
     {
         $extensionVersion   = $this->_helper->getExtensionVersion();
-        $extensionTitle     = 'BobGo';
+        $extensionTitle     = 'Bob Go';
         $versionLabel       = sprintf(
             '<a href="%s" title="%s" target="_blank">%s</a>',
             self::EXTENSION_URL,
