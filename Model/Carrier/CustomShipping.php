@@ -22,7 +22,6 @@ use Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory;
 use Magento\Quote\Model\Quote\Address\RateResult\MethodFactory;
 use Magento\Shipping\Model\Carrier\AbstractCarrier;
 use Magento\Shipping\Model\Carrier\AbstractCarrierOnline;
-use Magento\Shipping\Model\Carrier\CarrierInterface;
 use Magento\Shipping\Model\Rate\Result;
 use Magento\Shipping\Model\Rate\ResultFactory;
 use Magento\Shipping\Model\Simplexml\ElementFactory;
@@ -41,7 +40,7 @@ use Psr\Log\LoggerInterface;
  * @SuppressWarnings(PHPMD.CouplingBetweenObjects)
  * @SuppressWarnings(PHPMD.TooManyFields)
  */
-class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
+class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\Model\Carrier\CarrierInterface
 {
     /**
      * Code of the carrier
@@ -192,6 +191,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
         return parse_url($storeBaseUrl)["host"];
     }
 
+
     /**
      *  Make request to Bob Go API to get shipping rates for the cart
      * After all the required data is collected, it makes a request to the Bob Go API to get the shipping rates
@@ -209,9 +209,9 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
      * @param RateRequest $request
      * @return Result|bool|null
      */
-    public function collectRates(RateRequest $request): Result|bool|null
+    public function collectRates(RateRequest $request)
     {
-       /*** Make sure that Shipping method is enabled*/
+        /*** Make sure that Shipping method is enabled*/
         if (!$this->isActive()) {
             return false;
         }
@@ -221,7 +221,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
          */
         $destComp = $this->getDestComp();
 
-        /** @var Result $result */
+        /** @var \Magento\Shipping\Model\Rate\Result $result */
 
         $result = $this->_rateFactory->create();
 
@@ -332,22 +332,23 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
         );
 
         $baseIdentifier = $this->getBaseUrl();
-
         return array($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb);
     }
+
 
     /**
      * Get result of request
      *
      * @return Result|null
      */
-    public function getResult(): ?Result
+    public function getResult()
     {
         if (!$this->_result) {
             $this->_result = $this->_trackFactory->create();
         }
         return $this->_result;
     }
+
 
     /**
      * Get final price for shipping method with handling fee per package
@@ -357,7 +358,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
      * @param float $handlingFee
      * @return float
      */
-    protected function _getPerpackagePrice($cost, $handlingType, $handlingFee): float
+    protected function _getPerpackagePrice($cost, $handlingType, $handlingFee)
     {
         if ($handlingType == AbstractCarrier::HANDLING_TYPE_PERCENT) {
             return $cost + $cost * $this->_numBoxes * $handlingFee / self::UNITS;
@@ -374,7 +375,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
      * @param float $handlingFee
      * @return float
      */
-    protected function _getPerorderPrice($cost, $handlingType, $handlingFee): float
+    protected function _getPerorderPrice($cost, $handlingType, $handlingFee)
     {
         if ($handlingType == self::HANDLING_TYPE_PERCENT) {
             return $cost + $cost * $handlingFee / self::UNITS;
@@ -383,28 +384,29 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
         return $cost + $handlingFee;
     }
 
+
     /**
      * Get configuration data of carrier
-     *
+     * Interact with the
      * @param string $type
      * @param string $code
      * @return array|false
      * @SuppressWarnings(PHPMD.ExcessiveMethodLength)
      */
-    public function getCode($type, $code = ''): bool|array
+    public function getCode($type, $code = '')
     {
         $codes = [
             'method' => [
-                'bobgo' => __('Bob Go'),
-            ],
-            'delivery_confirmation_types' => [
-                'NO_SIGNATURE_REQUIRED' => __('Not Required'),
-                'ADULT' => __('Adult'),
-                'DIRECT' => __('Direct'),
-                'INDIRECT' => __('Indirect'),
+                'bobgo_SHIPPING' => __('bobgo Shipping'),
             ],
             'unit_of_measure' => [
                 'KG' => __('Kilograms'),
+            ],
+            'specificcountry' => [
+                'ZA' => __('South Africa'),
+            ],
+            'allspecificcountries' => [
+                'ZA' => __('South Africa'),
             ],
         ];
 
@@ -421,6 +423,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
         }
     }
 
+
     /**
      * Get tracking info by tracking number or tracking request
      * Without getTrackingInfo() method, Magento will not show tracking info on frontend
@@ -428,7 +431,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
      * @param string|string[] $trackings
      * @return Result|null
      */
-    public function getTracking($trackings): ?Result
+    public function getTracking($trackings)
     {
         $this->setTrackingReqeust();
 
@@ -448,7 +451,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
      *
      * @return void
      */
-    protected function setTrackingReqeust(): void
+    protected function setTrackingReqeust()
     {
         $r = new \Magento\Framework\DataObject();
 
@@ -464,18 +467,18 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
      * @param string[] $tracking
      * @return void
      */
-    protected function _getXMLTracking($tracking): void
+    protected function _getXMLTracking($tracking)
     {
         $this->_parseTrackingResponse($tracking);
     }
 
     /**
-     * Parse tracking response and set tracking info
+     * Parse tracking response
      *
      * @param string $trackingValue
      * @return void
      */
-    protected function _parseTrackingResponse($trackingValue): void
+    protected function _parseTrackingResponse($trackingValue)
     {
         $result = $this->getResult();
         $carrierTitle = $this->getConfigData('title');
@@ -487,12 +490,20 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
             $tracking = $this->_trackStatusFactory->create();
             $tracking->setCarrier(self::CODE);
             $tracking->setCarrierTitle($carrierTitle);
-            $tracking->setUrl(sprintf(uData::TRACKING, $this->getBaseUrl(), $trackingReference));
+
+            //Production
+            /*   $tracking->setUrl(sprintf(uData::TRACKING, $this->getBaseUrl(), $trackingReference));
             $tracking->setTracking($trackingReference);
             $tracking->addData($this->processTrackingDetails($trackingReference));
+           */
+
+            //Dev
+            $tracking->setUrl(uData::TRACKING .$trackingReference);
+            $tracking->setTracking($trackingReference);
+            $tracking->addData($this->processTrackingDetails($trackingReference));
+
             $result->append($tracking);
             $counter ++;
-            echo (sprintf(uData::TRACKING, $this->getBaseUrl(), $trackingReference));
         }
 
         //Tracking Details Not Available
@@ -509,7 +520,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
      *
      * @return string
      */
-    public function getResponse(): string
+    public function getResponse()
     {
         $statuses = '';
         if ($this->_result instanceof \Magento\Shipping\Model\Tracking\Result) {
@@ -538,7 +549,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
      *
      * @return array
      */
-    public function getAllowedMethods(): array
+    public function getAllowedMethods()
     {
         $allowed = explode(',', $this->getConfigData('allowed_methods'));
         $arr = [];
@@ -549,13 +560,14 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
         return $arr;
     }
 
+
     /**
      * Do shipment request to carrier web service, obtain Print Shipping Labels and process errors in response
      * Also another magic function that is required to be implemented by carrier model
      * @param \Magento\Framework\DataObject $request
      * @return \Magento\Framework\DataObject
      */
-    protected function _doShipmentRequest(\Magento\Framework\DataObject $request): ?DataObject
+    protected function _doShipmentRequest(\Magento\Framework\DataObject $request)
     {
         return null;
 
@@ -568,7 +580,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
      *
      * @return bool
      */
-    public function rollBack($data): bool
+    public function rollBack($data)
     {
         return true;
     }
@@ -581,7 +593,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
      * @return array|bool
      * @SuppressWarnings(PHPMD.CyclomaticComplexity)
      */
-    public function getContainerTypes(\Magento\Framework\DataObject $params = null): bool|array
+    public function getContainerTypes(\Magento\Framework\DataObject $params = null)
     {
         $result = [];
         $allowedContainers = $this->getConfigData('containers');
@@ -717,7 +729,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
      */
     private function _requestTracking($trackInfo, array $result): array
     {
-        $response = $this->trackBobGoShipment($trackInfo);
+        $response = $this->trackbobgoShipment($trackInfo);
 
         $result = $this->prepareActivity($response[0], $result);
 
@@ -768,6 +780,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
         }
     }
 
+
     /**
      * Prepare received checkpoints and activity from Bob Go Shipment Tracking API
      * @param $response
@@ -816,12 +829,13 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
         }
     }
 
+
     /**
      * Curl request to Bob Go Shipment Tracking API
      * @param $trackInfo
      * @return mixed
      */
-    private function trackBobGoShipment($trackInfo): mixed
+    private function trackbobgoShipment($trackInfo): mixed
     {
         $this->curl->get(uData::TRACKING . $trackInfo);
 
@@ -845,6 +859,7 @@ class CustomShipping extends AbstractCarrierOnline implements CarrierInterface
         $rates = json_decode($rates, true);
         return $rates;
     }
+
 
     /**
      * @param string $destStreet

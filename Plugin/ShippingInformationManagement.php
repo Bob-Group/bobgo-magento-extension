@@ -16,7 +16,7 @@ class ShippingInformationManagement
     public CartRepositoryInterface $cartRepository;
 
     public function __construct(
-        CartRepositoryInterface $cartRepository
+        CartRepositoryInterface $cartRepository,
     )
     {
         $this->cartRepository = $cartRepository;

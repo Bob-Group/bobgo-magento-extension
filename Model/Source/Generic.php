@@ -20,7 +20,7 @@ class Generic implements OptionSourceInterface
      * Carrier code
      * @var string
      */
-    protected string $_code = '';
+    protected string $_code = 'bobgo';
 
     /**
      * @param CustomShipping $shippingCustomShipping
