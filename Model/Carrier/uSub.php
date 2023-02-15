@@ -7,21 +7,13 @@ use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Quote\Api\CartRepositoryInterface;
 
 
-class uSub {
-
-
-    /**
-     * This is supposed to get the suburb from the shipping address extension attributes.
-     * Does not work for now, was supposed to access the suburb attribute from the shipping address extension attributes.
-     * @throws NoSuchEntityException
-     */
-    public function getDestSuburb()
+class uSub
+{
+    public function getSuburb(): mixed
     {
-        $objectManager = ObjectManager::getInstance();
-        $quote = $objectManager->get('Magento\Checkout\Model\ShippingInformation')->getExtensionAttributes();
-        return $quote->getSuburb();
+        //address.custom_attributes[0].value = "suburb value"
+        $data = json_decode(file_get_contents('php://input'), true);
+        return $data['address']['custom_attributes'][0]['value'] ?? '';
     }
-
-
 
 }
