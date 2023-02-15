@@ -1,18 +1,10 @@
 <?xml version="1.0"?>
-<!--
-/**
- * @category   Bob Go
- * @package    bobgo_CustomShipping
- * @author     Bob Go
- */
--->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Config:etc/system_file.xsd">
     <system>
 
-        <tab id="BobGo" translate="label" sortOrder="20">
+        <tab id="BobGo" translate="label" sortOrder="1">
             <label>Bob Go</label>
         </tab>
-
         <section id="bobgo_CustomShipping"  showInDefault="1">
             <tab>BobGo</tab>
             <label>Settings</label>
@@ -59,18 +51,19 @@
                 <field id="sallowspecific" translate="label" type="select" sortOrder="90" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Ship to Applicable Countries</label>
                     <frontend_class>shipping-applicable-country</frontend_class>
-                    <source_model>bobgo\CustomShipping\Model\Source\Allspecificcountries</source_model>
+                    <source_model>Magento\Shipping\Model\Config\Source\Allspecificcountries</source_model>
                 </field>
-                <field id="specificcountry" translate="label" type="select" sortOrder="91" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>Applicable Countries</label>
-                    <source_model>bobgo\CustomShipping\Model\Source\Country</source_model>
+
+                <field id="specificcountry" translate="label" type="multiselect" sortOrder="91" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Ship to Specific Countries</label>
+                    <source_model>Magento\Directory\Model\Config\Source\Country</source_model>
                     <can_be_empty>1</can_be_empty>
                 </field>
 
                 <field id="showmethod" translate="label" type="select" sortOrder="92" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Show Method if Not Applicable</label>
                     <frontend_class>shipping-skip-hide</frontend_class>
-                    <source_model>bobgo\CustomShipping\Model\Source\Showmethod</source_model>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
                 <field id="unit_of_measure" translate="label" type="select" sortOrder="73" showInDefault="1" showInWebsite="1" canRestore="1">
                     <label>Weight Unit</label>
@@ -87,3 +80,4 @@
 
     </system>
 </config>
+

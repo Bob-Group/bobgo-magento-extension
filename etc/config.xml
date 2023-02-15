@@ -1,11 +1,4 @@
 <?xml version="1.0"?>
-<!--
-/**
- * @category   bobgo
- * @package    bobgo_CustomShipping
- * @author     bobgo
- */
--->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
     <default>
         <bobgo_CustomShipping>
@@ -16,7 +9,7 @@
 
         <carriers>
             <bobgo>
-                <active>1</active>
+                <active>0</active>
                 <sallowspecific>0</sallowspecific>
                 <price>0.00</price>
                 <model>bobgo\CustomShipping\Model\Carrier\CustomShipping</model>
