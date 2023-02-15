@@ -22,7 +22,7 @@
                 <model>bobgo\CustomShipping\Model\Carrier\CustomShipping</model>
                 <name>Fixed</name>
                 <title>Bob Go</title>
-                <specificerrmsg>This shipping method is not available. To use this shipping method, please contact us.</specificerrmsg>
+                <specificerrmsg>We could not find any shipping rates for your delivery address. Please make sure your address. If you are experiencing problem, please contact us.</specificerrmsg>
             </bobgo>
         </carriers>
 
