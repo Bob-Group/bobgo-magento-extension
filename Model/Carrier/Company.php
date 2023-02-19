@@ -1,6 +1,6 @@
 <?php
 
-namespace bobgo\CustomShipping\Model\Carrier;
+namespace BobGroup\BobGo\Model\Carrier;
 
 /**
  * Get the Company information from the request body and return it
@@ -21,5 +21,19 @@ class Company
             $destComp = '';
         }
         return $destComp;
+    }
+
+    public function getSuburb(): mixed
+    {
+
+        $data = json_decode(file_get_contents('php://input'), true);
+
+        if (isset($data['address']['custom_attributes'][0]['value'])) {
+            $destSub = $data['address']['custom_attributes'][0]['value'];
+            //print_r($destSub);
+        } else {
+            $destSub = '';
+        }
+        return $destSub;
     }
 }

@@ -4,7 +4,7 @@ var config = {
     config: {
         mixins: {
             'Magento_Checkout/js/action/set-shipping-information': {
-                'bobgo_CustomShipping/js/action/set-shipping-information-mixin': true
+                'BobGroup_BobGo/js/action/set-shipping-information-mixin': true
             }
         }
     }

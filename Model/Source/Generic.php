@@ -1,33 +1,33 @@
 <?php
 
-namespace bobgo\CustomShipping\Model\Source;
+namespace BobGroup\BobGo\Model\Source;
 
 
 use Magento\Framework\Data\OptionSourceInterface;
-use bobgo\CustomShipping\Model\Carrier\CustomShipping;
+use BobGroup\BobGo\Model\Carrier\BobGo;
 
 /**
- * Bob Go generic source implementation
+ * bobgo generic source implementation
  */
 class Generic implements OptionSourceInterface
 {
     /**
-     * @var CustomShipping
+     * @var BobGo
      */
-    protected CustomShipping $_shippingCustomShipping;
+    protected BobGo $_shippingBobGo;
 
     /**
      * Carrier code
      * @var string
      */
-    protected string $_code = 'bobgo';
+    protected string $_code = '';
 
     /**
-     * @param CustomShipping $shippingCustomShipping
+     * @param BobGo $shippingBobGo
      */
-    public function __construct(CustomShipping $shippingCustomShipping)
+    public function __construct(BobGo $shippingBobGo)
     {
-        $this->_shippingCustomShipping = $shippingCustomShipping;
+        $this->_shippingBobGo = $shippingBobGo;
     }
 
     /**
@@ -36,7 +36,7 @@ class Generic implements OptionSourceInterface
      */
     public function toOptionArray()
     {
-        $configData = $this->_shippingCustomShipping->getCode($this->_code);
+        $configData = $this->_shippingBobGo->getCode($this->_code);
         $arr = [];
         if ($configData) {
             $arr = array_map(

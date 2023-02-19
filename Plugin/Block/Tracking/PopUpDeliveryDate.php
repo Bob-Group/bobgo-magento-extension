@@ -1,10 +1,10 @@
 <?php
 
-namespace bobgo\CustomShipping\Plugin\Block\Tracking;
+namespace BobGroup\BobGo\Plugin\Block\Tracking;
 
 use Magento\Shipping\Block\Tracking\Popup;
 use Magento\Shipping\Model\Tracking\Result\Status;
-use Magento\Shiiping\Model\Carrier;
+use Magento\Shipping\Model\Carrier;
 
 /*
  * Plugin to update delivery date value in case if Bob Go is a carrier used

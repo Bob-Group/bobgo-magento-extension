@@ -1,11 +1,11 @@
 <?php
-namespace bobgo\CustomShipping\Plugin\Checkout\Block;
+namespace BobGroup\BobGo\Plugin\Checkout\Block;
 
 use Magento\Checkout\Block\Checkout\LayoutProcessor;
 
 /**
  * Class LayoutProcessorPlugin
- * @package bobgo\CustomShipping\Plugin\Checkout\Block
+ * @package BobGroup\BobGo\Plugin\Checkout\Block
  * This class is supposed to add a new field to the checkout page for the suburb. It is supposed to be used in conjunction with the SaveOrderBeforeSalesModelQuote observer.
  * At the moment, it overrides the 2 Address fields and adds a new 3 Address field to accommodate the suburb on the checkout page( including placeholders).
  * This is not the best way to do it, but it is the only way I could get it to work.
@@ -26,7 +26,7 @@ class LayoutProcessorPlugin
         $suburb = [
             'component' => 'Magento_Ui/js/form/element/abstract',
             'config' => [
-            'customScope' => 'shippingAddress.custom_attributes',
+                'customScope' => 'shippingAddress.custom_attributes',
                 'customEntry' => null,
                 'template' => 'ui/form/field',
                 'elementTmpl' => 'ui/form/element/input',

@@ -1,1 +1,24 @@
-"Enabled","Enabled"
+"The shipping module is not available.","The shipping module is not available."
+"This shipping method is not available. Please specify the zip code.","This shipping method is not available. Please specify the zip code."
+BobGo,BobGo
+Kilograms,Kilograms
+Pounds,Pounds
+"For some reason we can't retrieve tracking info right now.","For some reason we can't retrieve tracking info right now."
+status,status
+"Empty response","Empty response"
+None,None
+"Expected Delivery:","Expected Delivery:"
+"Field ","Field "
+" is required."," is required."
+"Bob Go","Bob Go"
+"Extension enabled","Extension enabled"
+Suburb,Suburb
+Version,Version
+"Show rates for checkout","Show rates for checkout"
+"Displayed Error Message","Displayed Error Message"
+"Ship to Applicable Countries","Ship to Applicable Countries"
+"Ship to Specific Countries","Ship to Specific Countries"
+"Show Method if Not Applicable","Show Method if Not Applicable"
+"Weight Unit","Weight Unit"
+"Maximum Package Weight (Please consult your shipping carrier for maximum supported shipping weight)","Maximum Package Weight (Please consult your shipping carrier for maximum supported shipping weight)"
+"Show additional rate information","Show additional rate information"

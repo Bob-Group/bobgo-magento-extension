@@ -1,5 +1,5 @@
 <?php
-namespace bobgo\CustomShipping\Block\System\Config\Form\Field;
+namespace BobGroup\BobGo\Block\System\Config\Form\Field;
 
 use Magento\Framework\Data\Form\Element\AbstractElement;
 
@@ -15,17 +15,17 @@ class Version extends \Magento\Config\Block\System\Config\Form\Field
     const EXTENSION_URL = 'https://www.bob.co.za';
 
     /**
-     * @var \bobgo\CustomShipping\Helper\Data $helper
+     * @var \BobGroup\BobGo\Helper\Data $helper
      */
     protected $_helper;
 
     /**
      * @param \Magento\Backend\Block\Template\Context $context
-     * @param \bobgo\CustomShipping\Helper\Data $helper
+     * @param \BobGroup\BobGo\Helper\Data $helper
      */
     public function __construct(
         \Magento\Backend\Block\Template\Context $context,
-        \bobgo\CustomShipping\Helper\Data $helper
+        \BobGroup\BobGo\Helper\Data $helper
     ) {
         $this->_helper = $helper;
         parent::__construct($context);
@@ -39,7 +39,7 @@ class Version extends \Magento\Config\Block\System\Config\Form\Field
     protected function _getElementHtml(AbstractElement $element)
     {
         $extensionVersion   = $this->_helper->getExtensionVersion();
-        $extensionTitle     = 'Bob Go';
+        $extensionTitle     = 'BobGo';
         $versionLabel       = sprintf(
             '<a href="%s" title="%s" target="_blank">%s</a>',
             self::EXTENSION_URL,

@@ -2,19 +2,15 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Config:etc/system_file.xsd">
     <system>
 
-        <tab id="BobGo" translate="label" sortOrder="1">
+        <tab id="bobgo" translate="label" sortOrder="2">
             <label>Bob Go</label>
         </tab>
-        <section id="bobgo_CustomShipping"  showInDefault="1">
-            <tab>BobGo</tab>
+        <section id="BobGroup_BobGo"  showInDefault="1">
+            <tab>bobgo</tab>
             <label>Settings</label>
             <resource>Magento_Config::config</resource>
             <group id="general"  showInDefault="1">
                 <label>Settings</label>
-                <field id="version" translate="label" type="label" sortOrder="1" showInDefault="1" showInWebsite="0" showInStore="0">
-                    <label>Version</label>
-                    <frontend_model>bobgo\CustomShipping\Block\System\Config\Form\Field\Version</frontend_model>
-                </field>
                 <field id="enabled" translate="label" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Extension enabled</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
@@ -22,7 +18,6 @@
             </group>
         </section>
 
-<!-- General Section(Store Information) -->
         <section id="general" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
             <group id="store_information" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
                 <field id="suburb" translate="label" type="text" sortOrder="50" showInDefault="1" showInWebsite="1" showInStore="0">
@@ -31,17 +26,18 @@
                 </field>
             </group>
         </section>
-        <!--- End General Section -->
 
-<!--- Delivery Methods Section -->
         <section id="carriers" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="1">
             <group id="bobgo" translate="label" type="text" sortOrder="2" showInDefault="1" showInWebsite="1" showInStore="1">
                 <label>Bob Go</label>
-
+                <field id="version" translate="label" type="label" sortOrder="0" showInDefault="1" showInWebsite="0" showInStore="0">
+                    <label>Version</label>
+                    <frontend_model>BobGroup\BobGo\Block\System\Config\Form\Field\Version</frontend_model>
+                </field>
                 <field id="active" translate="label" type="select" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Show rates for checkout</label>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <comment>When this setting is enabled, your customers will be presented with shipping rates at checkout, as configured on the Bob Go platform under Rates at checkout.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
                 <field id="specificerrmsg" translate="label" type="textarea" sortOrder="80" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Displayed Error Message</label>
@@ -65,9 +61,13 @@
                     <frontend_class>shipping-skip-hide</frontend_class>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
-                <field id="unit_of_measure" translate="label" type="select" sortOrder="73" showInDefault="1" showInWebsite="1" canRestore="1">
+                <field id="unit_of_measure" translate="label" type="select" sortOrder="73" showInDefault="1" showInWebsite="1">
                     <label>Weight Unit</label>
-                    <source_model>bobgo\CustomShipping\Model\Source\Unitofmeasure</source_model>
+                    <source_model>BobGroup\BobGo\Model\Source\Unitofmeasure</source_model>
+                </field>
+                <field id="max_package_weight" translate="label" type="text" sortOrder="90" showInDefault="1" showInWebsite="1">
+                    <label>Maximum Package Weight (Please consult your shipping carrier for maximum supported shipping weight)</label>
+                    <validate>validate-number validate-zero-or-greater</validate>
                 </field>
                 <field id="additional_info" translate="label" type="select" sortOrder="7" showInDefault="1" showInWebsite="1">
                     <label>Show additional rate information</label>
@@ -80,4 +80,3 @@
 
     </system>
 </config>
-

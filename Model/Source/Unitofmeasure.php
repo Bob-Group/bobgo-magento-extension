@@ -1,6 +1,6 @@
 <?php
 
-namespace bobgo\CustomShipping\Model\Source;
+namespace BobGroup\BobGo\Model\Source;
 
 class Unitofmeasure extends Generic
 {
@@ -9,4 +9,5 @@ class Unitofmeasure extends Generic
      * @var string
      */
     protected string $_code = 'unit_of_measure';
+
 }

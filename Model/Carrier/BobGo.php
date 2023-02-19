@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace bobgo\CustomShipping\Model\Carrier;
+namespace BobGroup\BobGo\Model\Carrier;
 
 use Magento\Catalog\Model\ResourceModel\Product\CollectionFactory;
 use Magento\CatalogInventory\Api\StockRegistryInterface;
@@ -16,11 +16,11 @@ use Magento\Framework\DataObject;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Magento\Framework\Module\Dir\Reader;
-use Magento\Framework\View\Element\Template\Context;
 use Magento\Framework\Xml\Security;
 use Magento\Quote\Model\Quote\Address\RateRequest;
 use Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory;
 use Magento\Quote\Model\Quote\Address\RateResult\MethodFactory;
+use Magento\Sales\Model\Order\Shipment;
 use Magento\Shipping\Model\Carrier\AbstractCarrier;
 use Magento\Shipping\Model\Carrier\AbstractCarrierOnline;
 use Magento\Shipping\Model\Rate\Result;
@@ -41,11 +41,10 @@ use Psr\Log\LoggerInterface;
  * @SuppressWarnings(PHPMD.CouplingBetweenObjects)
  * @SuppressWarnings(PHPMD.TooManyFields)
  */
-class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\Model\Carrier\CarrierInterface
+class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Carrier\CarrierInterface
 {
     /**
      * Code of the carrier
-     *`
      * @var string
      */
     public const CODE = 'bobgo';
@@ -74,6 +73,12 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     protected $_result = null;
 
+    /**
+     * Container types that could be customized for bobgo carrier
+     *
+     * @var string[]
+     */
+    protected $_customizableContainerTypes = ['YOUR_PACKAGING'];
 
     /**
      * @var \Magento\Store\Model\StoreManagerInterface
@@ -102,8 +107,7 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     protected JsonFactory $jsonFactory;
     private $cartRepository;
-    private Company $company;
-    private uSub $newSub;
+    public Company $company;
 
 
     /**
@@ -177,7 +181,6 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
         );
         $this->jsonFactory = $jsonFactory;
         $this->curl = $curlFactory->create();
-        $this->newSub = new uSub();
         $this->company = new Company();
     }
 
@@ -190,8 +193,8 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
      */
     public function getBaseUrl(): string
     {
-        $storeBaseUrl = $this->_storeManager->getStore()->getBaseUrl();
-        return parse_url($storeBaseUrl)["host"];
+        $storeBase = $this->_storeManager->getStore()->getBaseUrl();
+        return parse_url($storeBase, PHP_URL_HOST);
     }
 
 
@@ -204,6 +207,79 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
     public function getRates($payload): array
     {
         return $this->uRates($payload);
+    }
+
+    /**
+     * Processing additional validation to check if carrier applicable.
+     *
+     * @param \Magento\Framework\DataObject $request
+     * @return $this|bool|\Magento\Framework\DataObject
+     */
+    public function processAdditionalValidation(\Magento\Framework\DataObject $request)
+    {
+        if (!count($this->getAllItems($request))) {
+            return false;
+        }
+
+        $maxAllowedWeight = 500; //$this->getConfigData('max_package_weight');
+        $errorMsg = '';
+        $configErrorMsg = $this->getConfigData('specificerrmsg');
+        $defaultErrorMsg = __('The shipping module is not available.');
+        $showMethod = $this->getConfigData('showmethod');
+
+        /** @var $item \Magento\Quote\Model\Quote\Item */
+        foreach ($this->getAllItems($request) as $item) {
+            $product = $item->getProduct();
+            if ($product && $product->getId()) {
+                $weight = $product->getWeight();
+                $stockItemData = $this->stockRegistry->getStockItem(
+                    $product->getId(),
+                    $item->getStore()->getWebsiteId()
+                );
+                $doValidation = true;
+
+                if ($stockItemData->getIsQtyDecimal() && $stockItemData->getIsDecimalDivided()) {
+                    if ($stockItemData->getEnableQtyIncrements() && $stockItemData->getQtyIncrements()
+                    ) {
+                        $weight = $weight * $stockItemData->getQtyIncrements();
+                    } else {
+                        $doValidation = false;
+                    }
+                } elseif ($stockItemData->getIsQtyDecimal() && !$stockItemData->getIsDecimalDivided()) {
+                    $weight = $weight * $item->getQty();
+                }
+
+
+                if ($doValidation && $weight > $maxAllowedWeight) {
+                    $errorMsg = $configErrorMsg ? $configErrorMsg : $defaultErrorMsg;
+                    break;
+                }
+            }
+        }
+
+        if (!$errorMsg && !$request->getDestPostcode() && $this->isZipCodeRequired($request->getDestCountryId())) {
+
+            $errorMsg = __('This shipping method is not available. Please specify the zip code.');
+        }
+
+        if ($request->getDestCountryId() == 'ZA') {
+            $errorMsg = '';
+        } else {
+            $errorMsg = $configErrorMsg ? $configErrorMsg : $defaultErrorMsg;
+        }
+
+        if ($errorMsg && $showMethod) {
+            $error = $this->_rateErrorFactory->create();
+            $error->setCarrier($this->_code);
+            $error->setCarrierTitle($this->getConfigData('title'));
+            $error->setErrorMessage($errorMsg);
+
+            return $error;
+        } elseif ($errorMsg) {
+            return false;
+        }
+
+        return $this;
     }
 
     /**
@@ -223,6 +299,7 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
          * This method is used is the last resort to get the company name since the company name is not available in _rateFactory
          */
         $destComp = $this->getDestComp();
+        $destSuburb = $this->getDestSuburb();
 
         /** @var \Magento\Shipping\Model\Rate\Result $result */
 
@@ -237,23 +314,16 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
         /**  Destination Information  */
         [$destStreet1, $destStreet2, $destStreet3] = $this->destStreet($destStreet);
 
+
+
         /**  Origin Information  */
-        [$originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb] = $this->storeInformation();
-        /**  Get all the items in the cart  */
+        [$originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb,$weightUnit] = $this->storeInformation();
+
+        /**  Get all items in cart  */
         $items = $request->getAllItems();
-
         $itemsArray = [];
+        $itemsArray = $this->getStoreItems($items, $weightUnit, $itemsArray);
 
-        foreach ($items as $item) {
-            $itemsArray[] = [
-                'sku' => $item->getSku(),
-                'quantity' => $item->getQty(),
-                'price' => $item->getPrice(),
-                'grams' => $item->getWeight() * 1000,
-            ];
-        }
-
-        $destSubs = $this->getDestStreet();
         $payload = [
             'identifier' => $baseIdentifier,
             'rate' => [
@@ -272,8 +342,7 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
                     'company' => $destComp,
                     'address1' => $destStreet1,
                     'address2' => $destStreet2,
-                    'suburb' => $destSubs,//$destStreet3,
-
+                    'suburb' => $destSuburb,
                     'city' => $destCity,
                     'province' => $destRegion,
                     'country_code' => $destCountry,
@@ -289,10 +358,6 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     * Get The store information from the Magento store configuration and return it as an array
-     * In magento 2 there is origin information in the store information section of the configuration, so we get it from there
-     * since Store Information has the origin information including suburb field that we Injected upon Bob Go Extension installation
-     *  which is not available in the origin section
      * @return array
      */
     public function storeInformation(): array
@@ -335,9 +400,14 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
             'general/store_information/suburb',
             ScopeInterface::SCOPE_STORE
         );
+        $weightUnit = $this->_scopeConfig->getValue(
+            'general/locale/weight_unit',
+            ScopeInterface::SCOPE_STORE
+        );
 
         $baseIdentifier = $this->getBaseUrl();
-        return array($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb);
+
+        return array($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb, $weightUnit);
     }
 
 
@@ -392,7 +462,7 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
 
     /**
      * Get configuration data of carrier
-     * Interact with the
+     *
      * @param string $type
      * @param string $code
      * @return array|false
@@ -402,19 +472,11 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
     {
         $codes = [
             'method' => [
-                'bobgo_SHIPPING' => __('bobgo Shipping'),
+                'bobGo' => __('BobGo'),
             ],
             'unit_of_measure' => [
-                'KG' => __('Kilograms'),
-            ],
-            'specificcountry' => [
-                'ZA' => __('South Africa'),
-            ],
-            'allspecificcountries' => [
-                'ZA' => __('South Africa'),
-            ],
-            'showmethod' => [
-                '0' => __('No'),
+                'KGS' => __('Kilograms'),
+                'LBS' => __('Pounds'),
             ],
         ];
 
@@ -433,8 +495,7 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
 
 
     /**
-     * Get tracking info by tracking number or tracking request
-     * Without getTrackingInfo() method, Magento will not show tracking info on frontend
+     * Get tracking
      *
      * @param string|string[] $trackings
      * @return Result|null
@@ -455,7 +516,7 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     * Set tracking request data for request by getting context from Magento
+     * Set tracking request
      *
      * @return void
      */
@@ -470,7 +531,7 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     * Send request for the actual tracking info and process response
+     * Send request for tracking
      *
      * @param string[] $tracking
      * @return void
@@ -496,6 +557,7 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
         }
         foreach ($trackingValue as $trackingReference) {
             $tracking = $this->_trackStatusFactory->create();
+
             $tracking->setCarrier(self::CODE);
             $tracking->setCarrierTitle($carrierTitle);
 
@@ -715,7 +777,7 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
     }
 
     /**
-     *  Perform API Request to Bob Go API and return response
+     *  Perfom API Request to bobgo API and return response
      * @param array $payload
      * @param Result $result
      * @return void
@@ -913,13 +975,69 @@ class CustomShipping extends AbstractCarrierOnline implements \Magento\Shipping\
     {
         return $this->company->getDestComp();
     }
-
-    /*
-     * Get the suburb from the uSub class
+    /**
      * @return mixed|string
      */
-    protected function getDestStreet(): mixed
+    public function getDestSuburb(): mixed
     {
-        return $this->newSub->getSuburb();
+        return $this->company->getSuburb();
+    }
+
+    /**
+     * @param mixed $weightUnit
+     * @param mixed $item
+     * @return float|int
+     */
+    public function getItemWeight(mixed $weightUnit, mixed $item): int|float
+    {
+        //1 lb = 453.59237 g exact. 1 kg = 1000 g. 1 lb = 0.45359237 kg
+        if ($weightUnit == 'KGS') {
+            $mass = $item->getWeight() ? $item->getWeight() * 1000 : 0;
+        } else {
+            $mass = $item->getWeight() ? $item->getWeight() * 0.45359237 * 1000 : 0;//Pound to Kilogram Conversion Formula
+        }
+        return $mass;
+    }
+
+    /**
+     * @param array $items
+     * @param mixed $weightUnit
+     * @param array $itemsArray
+     * @return array
+     */
+    public function getStoreItems(array $items, mixed $weightUnit, array $itemsArray): array
+    {
+        foreach ($items as $item) {
+
+            $mass = $this->getItemWeight($weightUnit, $item);
+
+            $itemsArray[] = [
+                'sku' => $item->getSku(),
+                'quantity' => $item->getQty(),
+                'price' => $item->getPrice(),
+                'weight' => round($mass),
+            ];
+
+        }
+        return $itemsArray;
+    }
+
+    /**
+     * Get the list of required data fields
+     * @return bool
+     */
+    public function hasRequiredData(DataObject $request): bool
+    {
+        $requiredFields = [
+            'dest_country_id',
+            'dest_region_id',
+        ];
+
+        foreach ($requiredFields as $field) {
+            if (!$request->getData($field)) {
+                return false;
+            }
+        }
+        return true;
     }
 }

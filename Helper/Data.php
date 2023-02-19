@@ -1,5 +1,5 @@
 <?php
-namespace bobgo\CustomShipping\Helper;
+namespace BobGroup\BobGo\Helper;
 
 use Magento\Framework\App\Helper\AbstractHelper;
 use Magento\Framework\App\Helper\Context;
@@ -15,8 +15,8 @@ use Magento\Store\Model\ScopeInterface;
 class Data extends AbstractHelper
 {
 
-    const XML_PATH_ENABLED = 'bobgo_CustomShipping/general/enabled';
-    const XML_PATH_DEBUG   = 'bobgo_CustomShipping/general/debug';
+    const XML_PATH_ENABLED = 'BobGroup_BobGo/general/enabled';
+    const XML_PATH_DEBUG   = 'BobGroup_BobGo/general/debug';
 
     /**
      * @var \Psr\Log\LoggerInterface
@@ -65,7 +65,7 @@ class Data extends AbstractHelper
 
     public function getExtensionVersion()
     {
-        $moduleCode = 'bobgo_CustomShipping';
+        $moduleCode = 'BobGroup_BobGo';
         $moduleInfo = $this->_moduleList->getOne($moduleCode);
         return $moduleInfo['setup_version'];
     }

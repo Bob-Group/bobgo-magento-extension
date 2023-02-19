@@ -1,14 +1,14 @@
 <?php
 
-namespace bobgo\CustomShipping\Model\Carrier;
+namespace BobGroup\BobGo\Model\Carrier;
 
 /**
  * Class uData
- * bobGo API Resources for Custom Shipping
- * @package bobgo\CustomShipping\Model\Carrier
+ * @package BobGroup\BobGo\Model\Carrier
  */
 class uData
 {
+
     /** Tracking Endpoint */
     //dev
     public const TRACKING = 'https://api.dev.bobgo.co.za/tracking?channel=localhost&tracking_reference=';

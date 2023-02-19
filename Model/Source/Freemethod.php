@@ -1,6 +1,6 @@
 <?php
 
-namespace bobgo\CustomShipping\Model\Source;
+namespace BobGroup\BobGo\Model\Source;
 
 /**
  * Bob Go Free Method source implementation
