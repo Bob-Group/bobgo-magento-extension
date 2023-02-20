@@ -47,12 +47,12 @@ Run the following command in Magento 2 root folder:</br>
 #### 1. Execute the following command to install the module:
 
 ``` 
-composer require bobgo/CustomShipping
+composer require BobGroup/BobGo
 ```
 #### 2. Enter following commands to enable the module:
 
 ```
-bin/magento module:enable bobgo_CustomShipping
+bin/magento module:enable BobGroup_BobGo
 bin/magento cache:clean
 bin/magento cache:flush
 bin/magento setup:upgrade
@@ -69,21 +69,22 @@ bin/magento setup:static-content:deploy
 
 2. Unzip the file and copy contents
 
-3. Create `bobgo/CustomShipping` <em>Directory</em>
+3. Create `BobGroup/BobGo` <em>Directory</em>
 
 **It should look like this:** </br>
->{Magento root}/app/code/bobgo/CustomShipping/
+>{Magento root}/app/code/BobGroup/BobGo/
 
 
->**{Magento root}**`/app/code/bobgo/CustomShipping/`**{Paste here}**
+>**{Magento root}**`/app/code/BobGroup/BobGo/`**{Paste here}**
 
 
-3. Go to Magento root folder and run all commands below  to install `bobgo_CustomShipping`: </br>
+3. Go to Magento root folder and run all commands below  to install `BobGroup_BobGo`: </br>
 ```
 bin/magento cache:clean
-Bin/magento cache:flush
-Bin/magento setup:upgrade
-Bin/magento setup:di:compile
+bin/magento cache:flush
+bin/magento setup:upgrade
+bin/magento setup:di:compile
+bin/magento setup:static-content:deploy
 ```
 _____________________________________________________________________________________________________________________
 # After installation
