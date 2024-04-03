@@ -1041,6 +1041,8 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     {
         foreach ($items as $item) {
 
+            if ($item->getParentItem()) continue;
+
             $productID = $item->getProductId();
             $product = $item->getProduct();             // Product Object
             $description = "";
