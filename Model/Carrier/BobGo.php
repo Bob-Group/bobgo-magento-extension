@@ -107,7 +107,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     protected JsonFactory $jsonFactory;
     private $cartRepository;
-    public Company $company;
+    public AdditionalInfo $additionalInfo;
 
 
     /**
@@ -135,29 +135,29 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @SuppressWarnings(PHPMD.ExcessiveParameterList)
      */
     public function __construct(
-        \Magento\Framework\App\Config\ScopeConfigInterface $scopeConfig,
-        \Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory $rateErrorFactory,
-        \Psr\Log\LoggerInterface $logger,
-        Security $xmlSecurity,
-        \Magento\Shipping\Model\Simplexml\ElementFactory $xmlElFactory,
-        \Magento\Shipping\Model\Rate\ResultFactory $rateFactory,
-        \Magento\Quote\Model\Quote\Address\RateResult\MethodFactory $rateMethodFactory,
-        \Magento\Shipping\Model\Tracking\ResultFactory $trackFactory,
-        \Magento\Shipping\Model\Tracking\Result\ErrorFactory $trackErrorFactory,
-        \Magento\Shipping\Model\Tracking\Result\StatusFactory $trackStatusFactory,
-        \Magento\Directory\Model\RegionFactory $regionFactory,
-        \Magento\Directory\Model\CountryFactory $countryFactory,
-        \Magento\Directory\Model\CurrencyFactory $currencyFactory,
-        \Magento\Directory\Helper\Data $directoryData,
-        \Magento\CatalogInventory\Api\StockRegistryInterface $stockRegistry,
-        \Magento\Store\Model\StoreManagerInterface $storeManager,
-        \Magento\Framework\Module\Dir\Reader $configReader,
+        \Magento\Framework\App\Config\ScopeConfigInterface             $scopeConfig,
+        \Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory     $rateErrorFactory,
+        \Psr\Log\LoggerInterface                                       $logger,
+        Security                                                       $xmlSecurity,
+        \Magento\Shipping\Model\Simplexml\ElementFactory               $xmlElFactory,
+        \Magento\Shipping\Model\Rate\ResultFactory                     $rateFactory,
+        \Magento\Quote\Model\Quote\Address\RateResult\MethodFactory    $rateMethodFactory,
+        \Magento\Shipping\Model\Tracking\ResultFactory                 $trackFactory,
+        \Magento\Shipping\Model\Tracking\Result\ErrorFactory           $trackErrorFactory,
+        \Magento\Shipping\Model\Tracking\Result\StatusFactory          $trackStatusFactory,
+        \Magento\Directory\Model\RegionFactory                         $regionFactory,
+        \Magento\Directory\Model\CountryFactory                        $countryFactory,
+        \Magento\Directory\Model\CurrencyFactory                       $currencyFactory,
+        \Magento\Directory\Helper\Data                                 $directoryData,
+        \Magento\CatalogInventory\Api\StockRegistryInterface           $stockRegistry,
+        \Magento\Store\Model\StoreManagerInterface                     $storeManager,
+        \Magento\Framework\Module\Dir\Reader                           $configReader,
         \Magento\Catalog\Model\ResourceModel\Product\CollectionFactory $productCollectionFactory,
-        JsonFactory $jsonFactory,
-        CurlFactory $curlFactory,
-        array $data = []
-
-    ) {
+        JsonFactory                                                    $jsonFactory,
+        CurlFactory                                                    $curlFactory,
+        array                                                          $data = []
+    )
+    {
 
         $this->_storeManager = $storeManager;
         $this->_productCollectionFactory = $productCollectionFactory;
@@ -181,7 +181,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         );
         $this->jsonFactory = $jsonFactory;
         $this->curl = $curlFactory->create();
-        $this->company = new Company();
+        $this->additionalInfo = new AdditionalInfo($countryFactory);
     }
 
 
@@ -295,34 +295,39 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             return false;
         }
         /**
-         * Gets the destination company name from Company Name field in the checkout page
+         * Gets the destination company name from AdditionalInfo Name field in the checkout page
          * This method is used is the last resort to get the company name since the company name is not available in _rateFactory
          */
         $destComp = $this->getDestComp();
         $destSuburb = $this->getDestSuburb();
+        $destPhone = $this->getDestTelephone();
 
         /** @var \Magento\Shipping\Model\Rate\Result $result */
 
         $result = $this->_rateFactory->create();
 
         $destination = $request->getDestPostcode();
-        $destCountry = $request->getDestCountryId();
+        $destCountryCode = $request->getDestCountryId();
         $destRegion = $request->getDestRegionCode();
         $destCity = $request->getDestCity();
         $destStreet = $request->getDestStreet();
+
+        $destCountry = $this->getCountryName($destCountryCode);
 
         /**  Destination Information  */
         [$destStreet1, $destStreet2, $destStreet3] = $this->destStreet($destStreet);
 
 
-
         /**  Origin Information  */
-        [$originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb,$weightUnit] = $this->storeInformation();
+        [$originStreet, $originRegion, $originCountryCode, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb, $weightUnit, $originPhone] = $this->storeInformation();
 
         /**  Get all items in cart  */
         $items = $request->getAllItems();
         $itemsArray = [];
         $itemsArray = $this->getStoreItems($items, $weightUnit, $itemsArray);
+
+        $originCountry = $this->getCountryName($originCountryCode);
+
 
         $payload = [
             'identifier' => $baseIdentifier,
@@ -334,8 +339,10 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                     'city' => $originCity,
                     'suburb' => $originSuburb,
                     'province' => $originRegion,
-                    'country_code' => $originCountry,
+                    'country_code' => $originCountryCode,
                     'postal_code' => $originStreet,
+                    'telephone' => $originPhone,
+                    'country' => $originCountry,
 
                 ],
                 'destination' => [
@@ -345,8 +352,10 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                     'suburb' => $destSuburb,
                     'city' => $destCity,
                     'province' => $destRegion,
-                    'country_code' => $destCountry,
+                    'country_code' => $destCountryCode,
                     'postal_code' => $destination,
+                    'telephone' => $destPhone,
+                    'country' => $destCountry
                 ],
                 'items' => $itemsArray,
             ]
@@ -363,7 +372,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     public function storeInformation(): array
     {
         /** Store Origin details */
-        $originCountry = $this->_scopeConfig->getValue(
+        $originCountryCode = $this->_scopeConfig->getValue(
             'general/store_information/country_id',
             ScopeInterface::SCOPE_STORE
         );
@@ -400,14 +409,20 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             'general/store_information/suburb',
             ScopeInterface::SCOPE_STORE
         );
+
         $weightUnit = $this->_scopeConfig->getValue(
             'general/locale/weight_unit',
             ScopeInterface::SCOPE_STORE
         );
 
+        $originTelephone = $this->_scopeConfig->getValue(
+            'general/store_information/phone',
+            ScopeInterface::SCOPE_STORE
+        );
+
         $baseIdentifier = $this->getBaseUrl();
 
-        return array($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb, $weightUnit);
+        return array($originStreet, $originRegion, $originCountryCode, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb, $weightUnit, $originTelephone);
     }
 
 
@@ -502,7 +517,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     public function getTracking($trackings)
     {
-        $this->setTrackingReqeust();
+        $this->setTrackingRequest();
 
         if (!is_array($trackings)) {
             $trackings = [$trackings];
@@ -520,7 +535,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      *
      * @return void
      */
-    protected function setTrackingReqeust()
+    protected function setTrackingRequest()
     {
         $r = new \Magento\Framework\DataObject();
 
@@ -568,12 +583,12 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
            */
 
             //Dev
-            $tracking->setUrl(uData::TRACKING .$trackingReference);
+            $tracking->setUrl(uData::TRACKING . $trackingReference);
             $tracking->setTracking($trackingReference);
             $tracking->addData($this->processTrackingDetails($trackingReference));
 
             $result->append($tracking);
-            $counter ++;
+            $counter++;
         }
 
         //Tracking Details Not Available
@@ -814,7 +829,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     protected function _formatRates(mixed $rates, Result $result): void
     {
-        if (empty($rates)) {
+        if (!isset($rates['rates'])) {
             $error = $this->_rateErrorFactory->create();
             $error->setCarrierTitle($this->getConfigData('title'));
             $error->setErrorMessage($this->getConfigData('specificerrmsg'));
@@ -824,7 +839,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             foreach ($rates['rates'] as $title) {
 
                 $method = $this->_rateMethodFactory->create();
-                if (isset($title)){
+                if (isset($title)) {
                     $method->setCarrier(self::CODE);
 
 
@@ -865,7 +880,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                 'activity' => $checkpoint['status'],
                 'deliverydate' => $this->formatDate($checkpoint['time']),
                 'deliverytime' => $this->formatTime($checkpoint['time']),
-              //  'deliverylocation' => 'Unavailable',//TODO: remove this line
+                //  'deliverylocation' => 'Unavailable',//TODO: remove this line
             ];
         }
         return $result;
@@ -959,11 +974,11 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     protected function deliveryDays(int $min_delivery_date, int $max_delivery_date, $method): void
     {
         if ($min_delivery_date !== $max_delivery_date) {
-            $method->setCarrierTitle('delivery in '.$min_delivery_date . ' - ' . $max_delivery_date . ' days');
-        }else{
+            $method->setCarrierTitle('delivery in ' . $min_delivery_date . ' - ' . $max_delivery_date . ' days');
+        } else {
             $method->setCarrierTitle('delivery in ' . $min_delivery_date . ' days');
             if ($min_delivery_date && $max_delivery_date == 1) {
-                $method->setCarrierTitle('delivery in '.$min_delivery_date . ' day');
+                $method->setCarrierTitle('delivery in ' . $min_delivery_date . ' day');
             }
         }
     }
@@ -973,14 +988,31 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     public function getDestComp(): mixed
     {
-        return $this->company->getDestComp();
+        return $this->additionalInfo->getDestComp();
     }
+
     /**
      * @return mixed|string
      */
     public function getDestSuburb(): mixed
     {
-        return $this->company->getSuburb();
+        return $this->additionalInfo->getSuburb();
+    }
+
+    /**
+     * @return mixed|string
+     */
+    public function getDestTelephone(): mixed
+    {
+        return $this->additionalInfo->getDestTelephone();
+    }
+
+    /**
+     * @return mixed|string
+     */
+    public function getCountryName(mixed $country_id): mixed
+    {
+        return $this->additionalInfo->getCountryName($country_id);
     }
 
     /**
@@ -1009,6 +1041,17 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     {
         foreach ($items as $item) {
 
+            $productID = $item->getProductId();
+            $product = $item->getProduct();             // Product Object
+            $description = "";
+
+            if ($product) {
+                $productFull = $product->load($productID);
+                // Remove meta tags from the description
+                $description = preg_replace('#<[^>]+>#', ' ', $productFull->getDescription());
+                $description = preg_replace('!\s+!', ' ', $description);
+            }
+
             $mass = $this->getItemWeight($weightUnit, $item);
 
             $itemsArray[] = [
@@ -1016,6 +1059,8 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                 'quantity' => $item->getQty(),
                 'price' => $item->getPrice(),
                 'weight' => round($mass),
+                'name' => $item->getName(),
+                'description' => $description,
             ];
 
         }
