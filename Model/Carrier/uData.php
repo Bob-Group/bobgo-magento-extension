@@ -10,8 +10,8 @@ class uData
 {
 
     /** Tracking Endpoint */
-    public const TRACKING = 'https://api.bobgo.co.za/tracking?channel=localhost&tracking_reference=';
+    public const TRACKING = 'https://api.dev.bobgo.co.za/tracking?channel=%s&tracking_reference=%s';
 
     /*** RATES API Endpoint*/
-    public const RATES_ENDPOINT = 'https://api.bobgo.co.za/rates-at-checkout/magento';
+    public const RATES_ENDPOINT = 'https://api.dev.bobgo.co.za/rates-at-checkout/magento';
 }
