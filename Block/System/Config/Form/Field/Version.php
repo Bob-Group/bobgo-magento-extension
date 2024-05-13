@@ -12,7 +12,7 @@ use Magento\Framework\Data\Form\Element\AbstractElement;
  */
 class Version extends \Magento\Config\Block\System\Config\Form\Field
 {
-    const EXTENSION_URL = 'https://www.bob.co.za';
+    const EXTENSION_URL = 'https://www.bobgo.co.za';
 
     /**
      * @var \BobGroup\BobGo\Helper\Data $helper

@@ -1,6 +1,6 @@
 {
   "name": "bobgo/bobgo",
-  "description": "Streamline your shipments fulfillment's with Bob Go",
+  "description": "Streamline your order fulfillments with Bob Go",
   "type": "magento2-module",
   "version": "1.0.0",
   "authors": [
