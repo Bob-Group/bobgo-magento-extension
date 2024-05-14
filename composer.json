@@ -1,6 +1,10 @@
 {
-  "name": "bobgo/bobgo",
+  "name": "bob-public-utils/bobgo-magento-extension",
   "description": "Streamline your order fulfillments with Bob Go",
+  "require": {
+    "php": "~8.1.28",
+    "magento/framework": "105.0*"
+  },
   "type": "magento2-module",
   "version": "1.0.0",
   "authors": [
@@ -19,7 +23,7 @@
       "registration.php"
     ],
     "psr-4": {
-      "bobgo\\BobGo\\": ""
+      "Plugin\\": ""
     }
   }
 }

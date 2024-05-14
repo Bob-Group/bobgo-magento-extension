@@ -20,7 +20,7 @@ Run the following command in Magento 2 root folder:</br>
 #### 1. Execute the following command to install the module:
 
 ``` 
-composer require BobGroup/BobGo
+composer require bob-public-utils/bobgo-magento-extension
 ```
 #### 2. Enter following commands to enable the module:
 
