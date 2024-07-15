@@ -18,8 +18,8 @@ tagged_deploy:
     - export AWS_ACCESS_KEY_ID
     - export AWS_SECRET_ACCESS_KEY
   script:
-    - echo AWS_ACCESS_KEY_ID
-    - echo AWS_SECRET_ACCESS_KEY
+    - echo $AWS_ACCESS_KEY_ID
+    - echo $AWS_SECRET_ACCESS_KEY
     # - wget https://gitlab.bob.co.za/bob-public-utils/bobgo-magento-extension/-/archive/"$CI_COMMIT_TAG"/bobgo-magento-extension-"$CI_COMMIT_TAG".tar.gz
     # - ls -al
     # - aws s3 cp bobgo-magento-extension-"$CI_COMMIT_TAG".tar.gz s3://bobgo-s3-magento-plugin/ --region=af-south-1
