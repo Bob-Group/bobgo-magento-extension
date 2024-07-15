@@ -1,4 +1,4 @@
-image: shiplogic/ci-backend:latest
+image: shiplogic/ci-wp-plugin:node18
 
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
