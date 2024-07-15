@@ -11,10 +11,10 @@ tagged_deploy:
   only:
     - tags
   before_script:
-    # - AWS_ACCESS_KEY_ID_KEY=$(echo "$AWS_ACCESS_KEY_ID")
-    # - AWS_SECRET_ACCESS_KEY_KEY=$(echo "$AWS_SECRET_ACCESS_KEY")
-    # - AWS_ACCESS_KEY_ID=$(eval echo -e "\$$AWS_ACCESS_KEY_ID_KEY")
-    # - AWS_SECRET_ACCESS_KEY=$(eval echo -e "\$$AWS_SECRET_ACCESS_KEY_KEY")
+    - AWS_ACCESS_KEY_ID_KEY=$(echo "$AWS_ACCESS_KEY_ID")
+    - AWS_SECRET_ACCESS_KEY_KEY=$(echo "$AWS_SECRET_ACCESS_KEY")
+    - AWS_ACCESS_KEY_ID=$(eval echo -e "\$$AWS_ACCESS_KEY_ID_KEY")
+    - AWS_SECRET_ACCESS_KEY=$(eval echo -e "\$$AWS_SECRET_ACCESS_KEY_KEY")
     - export AWS_ACCESS_KEY_ID
     - export AWS_SECRET_ACCESS_KEY
   script:
