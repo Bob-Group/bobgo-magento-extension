@@ -4,13 +4,8 @@
         <section id="carriers" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="1">
             <group id="bobgo" translate="label" type="text" sortOrder="2" showInDefault="1" showInWebsite="1" showInStore="1">
                 <label>Bob Go</label>
-                <field id="version" translate="label" type="label" sortOrder="0" showInDefault="1" showInWebsite="0" showInStore="0">
-                    <label>Version</label>
-                    <frontend_model>BobGroup\BobGo\Block\System\Config\Form\Field\Version</frontend_model>
-                </field>
                 <field id="active" translate="label" type="select" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>Show rates for checkout</label>
-                    <comment>When this setting is enabled, your customers will be presented with shipping rates at checkout, as configured on the Bob Go platform under Rates at checkout.</comment>
+                    <label>Enable Extension</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
                 <field id="specificerrmsg" translate="label" type="textarea" sortOrder="80" showInDefault="1" showInWebsite="1" showInStore="1">
