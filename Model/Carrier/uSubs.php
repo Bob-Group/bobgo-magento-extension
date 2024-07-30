@@ -12,12 +12,7 @@ class uSubs
     public function getDestComp(): mixed
     {
         $data = json_decode(file_get_contents('php://input'), true);
-
-        if (isset($data['address']['company'])) {
-            $destComp = $data['address']['company'];
-        } else {
-            $destComp = '';
-        }
-        return $destComp;
+        return isset($data['address']['company']) ? $data['address']['company'] : '';
     }
 }
+

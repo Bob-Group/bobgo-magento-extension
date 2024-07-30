@@ -9,17 +9,14 @@
 
         <carriers>
             <bobgo>
-                <active>0</active>
-<!--                <sallowspecific>1</sallowspecific>
-                <specificcountry>ZA</specificcountry>-->
+                <active>1</active>
                 <price>0.00</price>
                 <model>BobGroup\BobGo\Model\Carrier\BobGo</model>
-                <name>Fixed</name>
+                <name>BobGo</name>
                 <max_package_weight>300</max_package_weight>
                 <title>Bob Go</title>
                 <specificerrmsg>We could not find any shipping rates for your delivery address. Please make sure your address is correct. If you are experiencing problems, please contact us.</specificerrmsg>
             </bobgo>
         </carriers>
-
     </default>
 </config>

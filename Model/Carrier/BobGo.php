@@ -30,6 +30,11 @@ use Magento\Shipping\Model\Tracking\Result\StatusFactory;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
+use Mage;
+use Mage_Shipping_Model_Carrier_Abstract;
+use Mage_Shipping_Model_Carrier_Interface;
+use Varien_Object;
+
 
 /**
  * Bob Go shipping implementation
@@ -41,7 +46,8 @@ use Psr\Log\LoggerInterface;
  * @SuppressWarnings(PHPMD.CouplingBetweenObjects)
  * @SuppressWarnings(PHPMD.TooManyFields)
  */
-class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Carrier\CarrierInterface
+
+class BobGo extends Mage_Shipping_Model_Carrier_Abstract implements Mage_Shipping_Model_Carrier_Interface
 {
     /**
      * Code of the carrier
@@ -288,82 +294,158 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @param RateRequest $request
      * @return Result|bool|null
      */
-    public function collectRates(RateRequest $request)
+//    public function collectRates(RateRequest $request)
+//    {
+//        if (!$this->getConfigFlag('active')) {
+//            Mage::log('BobGo is not active', null, 'shipping.log');
+//            return false;
+//        }
+//
+//        $result = Mage::getModel('shipping/rate_result');
+//        $rate = Mage::getModel('shipping/rate_result_method');
+//        $rate->setCarrier('bobgo');
+//        $rate->setCarrierTitle($this->getConfigData('title'));
+//
+//        $result->append($rate);
+//
+//        Mage::log('BobGo rates collected', null, 'shipping.log');
+//
+//
+//        /**
+//         * Gets the destination company name from AdditionalInfo Name field in the checkout page
+//         * This method is used is the last resort to get the company name since the company name is not available in _rateFactory
+//         */
+//        $destComp = $this->getDestComp();
+//        $destSuburb = $this->getDestSuburb();
+//        $destPhone = $this->getDestTelephone();
+//
+//        /** @var \Magento\Shipping\Model\Rate\Result $result */
+//
+//        $result = $this->_rateFactory->create();
+//
+//        $destination = $request->getDestPostcode();
+//        $destCountryCode = $request->getDestCountryId();
+//        $destRegion = $request->getDestRegionCode();
+//        $destCity = $request->getDestCity();
+//        $destStreet = $request->getDestStreet();
+//
+//        $destCountry = $this->getCountryName($destCountryCode);
+//
+//        /**  Destination Information  */
+//        [$destStreet1, $destStreet2, $destStreet3] = $this->destStreet($destStreet);
+//
+//
+//        /**  Origin Information  */
+//        [$originStreet, $originRegion, $originCountryCode, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb, $weightUnit, $originPhone] = $this->storeInformation();
+//
+//        /**  Get all items in cart  */
+//        $items = $request->getAllItems();
+//        $itemsArray = [];
+//        $itemsArray = $this->getStoreItems($items, $weightUnit, $itemsArray);
+//
+//        $originCountry = $this->getCountryName($originCountryCode);
+//
+//
+//        $payload = [
+//            'identifier' => $baseIdentifier,
+//            'rate' => [
+//                'origin' => [
+//                    'company' => $storeName,
+//                    'address1' => $originStreet1,
+//                    'address2' => $originStreet2,
+//                    'city' => $originCity,
+//                    'suburb' => $originSuburb,
+//                    'province' => $originRegion,
+//                    'country_code' => $originCountryCode,
+//                    'postal_code' => $originStreet,
+//                    'telephone' => $originPhone,
+//                    'country' => $originCountry,
+//
+//                ],
+//                'destination' => [
+//                    'company' => $destComp,
+//                    'address1' => $destStreet1,
+//                    'address2' => $destStreet2,
+//                    'suburb' => $destSuburb,
+//                    'city' => $destCity,
+//                    'province' => $destRegion,
+//                    'country_code' => $destCountryCode,
+//                    'postal_code' => $destination,
+//                    'telephone' => $destPhone,
+//                    'country' => $destCountry
+//                ],
+//                'items' => $itemsArray,
+//            ]
+//        ];
+//
+//        $this->_getRates($payload, $result);
+//
+//        return $result;
+//    }
+
+    public function collectRates(Mage_Shipping_Model_Rate_Request $request)
     {
-        /*** Make sure that Shipping method is enabled*/
-        if (!$this->isActive()) {
+        if (!$this->getConfigFlag('active')) {
+            Mage::log('BobGo is not active', null, 'shipping.log');
             return false;
         }
-        /**
-         * Gets the destination company name from AdditionalInfo Name field in the checkout page
-         * This method is used is the last resort to get the company name since the company name is not available in _rateFactory
-         */
-        $destComp = $this->getDestComp();
-        $destSuburb = $this->getDestSuburb();
-        $destPhone = $this->getDestTelephone();
 
-        /** @var \Magento\Shipping\Model\Rate\Result $result */
+        $result = Mage::getModel('shipping/rate_result');
 
-        $result = $this->_rateFactory->create();
-
-        $destination = $request->getDestPostcode();
-        $destCountryCode = $request->getDestCountryId();
-        $destRegion = $request->getDestRegionCode();
-        $destCity = $request->getDestCity();
-        $destStreet = $request->getDestStreet();
-
-        $destCountry = $this->getCountryName($destCountryCode);
-
-        /**  Destination Information  */
-        [$destStreet1, $destStreet2, $destStreet3] = $this->destStreet($destStreet);
-
-
-        /**  Origin Information  */
-        [$originStreet, $originRegion, $originCountryCode, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb, $weightUnit, $originPhone] = $this->storeInformation();
-
-        /**  Get all items in cart  */
-        $items = $request->getAllItems();
-        $itemsArray = [];
-        $itemsArray = $this->getStoreItems($items, $weightUnit, $itemsArray);
-
-        $originCountry = $this->getCountryName($originCountryCode);
-
-
-        $payload = [
-            'identifier' => $baseIdentifier,
-            'rate' => [
-                'origin' => [
-                    'company' => $storeName,
-                    'address1' => $originStreet1,
-                    'address2' => $originStreet2,
-                    'city' => $originCity,
-                    'suburb' => $originSuburb,
-                    'province' => $originRegion,
-                    'country_code' => $originCountryCode,
-                    'postal_code' => $originStreet,
-                    'telephone' => $originPhone,
-                    'country' => $originCountry,
-
-                ],
-                'destination' => [
-                    'company' => $destComp,
-                    'address1' => $destStreet1,
-                    'address2' => $destStreet2,
-                    'suburb' => $destSuburb,
-                    'city' => $destCity,
-                    'province' => $destRegion,
-                    'country_code' => $destCountryCode,
-                    'postal_code' => $destination,
-                    'telephone' => $destPhone,
-                    'country' => $destCountry
-                ],
-                'items' => $itemsArray,
-            ]
+        // Prepare request data for API call
+        $params = [
+            'dest_country_id' => $request->getDestCountryId(),
+            'dest_region_id' => $request->getDestRegionId(),
+            'dest_postcode' => $request->getDestPostcode(),
+            'package_weight' => $request->getPackageWeight(),
+            'package_value' => $request->getPackageValue(),
+            'package_qty' => $request->getPackageQty(),
         ];
 
-        $this->_getRates($payload, $result);
+        try {
+            $apiResponse = $this->_fetchRatesFromApi($params);
+            if ($apiResponse && isset($apiResponse['rates'])) {
+                foreach ($apiResponse['rates'] as $rateData) {
+                    $rate = Mage::getModel('shipping/rate_result_method');
+                    $rate->setCarrier($this->_code);
+                    $rate->setCarrierTitle($this->getConfigData('title'));
+                    $rate->setMethod($rateData['method']);
+                    $rate->setMethodTitle($rateData['method_title']);
+                    $rate->setPrice($rateData['price']);
+                    $rate->setCost($rateData['cost']);
+                    $result->append($rate);
+                }
+            } else {
+                Mage::log('No rates returned from API', null, 'shipping.log');
+            }
+        } catch (Exception $e) {
+            Mage::logException($e);
+            Mage::log('Error fetching rates from API: ' . $e->getMessage(), null, 'shipping.log');
+        }
 
         return $result;
+    }
+
+    protected function _fetchRatesFromApi($params)
+    {
+        $url = \BobGroup\BobGo\Model\Carrier\uData::RATES_ENDPOINT;
+        $client = new Varien_Http_Client($url);
+        $client->setMethod(Varien_Http_Client::POST);
+        $client->setRawData(json_encode($params), 'application/json');
+
+        try {
+            $response = $client->request();
+            if ($response->isSuccessful()) {
+                return json_decode($response->getBody(), true);
+            } else {
+                Mage::log('API request failed with status: ' . $response->getStatus(), null, 'shipping.log');
+            }
+        } catch (Exception $e) {
+            Mage::logException($e);
+            Mage::log('Exception during API request: ' . $e->getMessage(), null, 'shipping.log');
+        }
+
+        return false;
     }
 
     /**
@@ -636,13 +718,20 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     public function getAllowedMethods()
     {
-        $allowed = explode(',', $this->getConfigData('allowed_methods'));
-        $arr = [];
-        foreach ($allowed as $k) {
-            $arr[$k] = $this->getCode('method', $k);
-        }
+        return ['bobgo' => $this->getConfigData('name')];
+//        $allowed = explode(',', $this->getConfigData('allowed_methods'));
+//        $arr = [];
+//        foreach ($allowed as $k) {
+//            $arr[$k] = $this->getCode('method', $k);
+//        }
+//
+//        return $arr;
+    }
 
-        return $arr;
+    // Method to check if tracking is available
+    public function isTrackingAvailable()
+    {
+        return true;
     }
 
 
