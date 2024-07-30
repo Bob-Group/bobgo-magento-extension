@@ -1,21 +1,41 @@
+<!--<?xml version="1.0"?>-->
+<!--<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">-->
+<!--    <default>-->
+<!--        <BobGroup_BobGo>-->
+<!--            <general>-->
+<!--                <debug>0</debug>-->
+<!--            </general>-->
+<!--        </BobGroup_BobGo>-->
+
+<!--        <carriers>-->
+<!--            <bobgo>-->
+<!--                <active>1</active>-->
+<!--                <price>0.00</price>-->
+<!--                <model>BobGroup\BobGo\Model\Carrier\BobGo</model>-->
+<!--                <name>BobGo</name>-->
+<!--                <max_package_weight>300</max_package_weight>-->
+<!--                <title>Bob Go</title>-->
+<!--                <specificerrmsg>We could not find any shipping rates for your delivery address. Please make sure your address is correct. If you are experiencing problems, please contact us.</specificerrmsg>-->
+<!--            </bobgo>-->
+<!--        </carriers>-->
+<!--    </default>-->
+<!--</config>-->
+
 <?xml version="1.0"?>
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
     <default>
-        <BobGroup_BobGo>
-            <general>
-                <debug>0</debug>
-            </general>
-        </BobGroup_BobGo>
-
         <carriers>
             <bobgo>
                 <active>1</active>
-                <price>0.00</price>
                 <model>BobGroup\BobGo\Model\Carrier\BobGo</model>
-                <name>BobGo</name>
-                <max_package_weight>300</max_package_weight>
                 <title>Bob Go</title>
+                <name>BobGo</name>
                 <specificerrmsg>We could not find any shipping rates for your delivery address. Please make sure your address is correct. If you are experiencing problems, please contact us.</specificerrmsg>
+                <sallowspecific>0</sallowspecific>
+                <showmethod>1</showmethod>
+                <unit_of_measure>KGS</unit_of_measure>
+                <max_package_weight>300</max_package_weight>
+                <additional_info>0</additional_info>
             </bobgo>
         </carriers>
     </default>
