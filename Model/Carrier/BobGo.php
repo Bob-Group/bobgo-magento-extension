@@ -1179,6 +1179,7 @@
 //}
 
 
+<?php
 namespace BobGroup\BobGo\Model\Carrier;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
@@ -1199,13 +1200,12 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
     protected $logger;
 
     public function __construct(
-        ScopeConfigInterface                                       $scopeConfig,
+        ScopeConfigInterface $scopeConfig,
         \Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory $rateErrorFactory,
-        LoggerInterface                                            $logger,
-        ZendClientFactory                                          $httpClientFactory,
-        array                                                      $data = []
-    )
-    {
+        LoggerInterface $logger,
+        ZendClientFactory $httpClientFactory,
+        array $data = []
+    ) {
         $this->scopeConfig = $scopeConfig;
         $this->httpClientFactory = $httpClientFactory;
         $this->logger = $logger;
@@ -1214,9 +1214,14 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
 
     public function collectRates(RateRequest $request)
     {
+        $this->logger->info('BobGo collectRates method called');
+
         if (!$this->getConfigFlag('active')) {
+            $this->logger->info('BobGo is not active');
             return false;
         }
+
+        $this->logger->info('BobGo is active, proceeding with rate collection');
 
         $result = $this->_rateFactory->create();
 
@@ -1230,8 +1235,12 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
             'package_qty' => $request->getPackageQty(),
         ];
 
+        $this->logger->info('Request parameters: ' . json_encode($params));
+
         try {
             $apiResponse = $this->_fetchRatesFromApi($params);
+            $this->logger->info('API response: ' . json_encode($apiResponse));
+
             if ($apiResponse && isset($apiResponse['rates']) && !empty($apiResponse['rates'])) {
                 foreach ($apiResponse['rates'] as $rateData) {
                     $rate = $this->_rateMethodFactory->create();
@@ -1244,6 +1253,7 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
                     $result->append($rate);
                 }
             } else {
+                $this->logger->info('No rates returned from API');
                 $error = $this->_rateErrorFactory->create();
                 $error->setCarrier($this->_code);
                 $error->setCarrierTitle($this->getConfigData('title'));
@@ -1251,7 +1261,7 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
                 return $error;
             }
         } catch (\Exception $e) {
-            $this->logger->error($e->getMessage());
+            $this->logger->error('Error fetching rates from API: ' . $e->getMessage());
             $error = $this->_rateErrorFactory->create();
             $error->setCarrier($this->_code);
             $error->setCarrierTitle($this->getConfigData('title'));
@@ -1291,3 +1301,4 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
         return [$this->_code => $this->getConfigData('name')];
     }
 }
+
