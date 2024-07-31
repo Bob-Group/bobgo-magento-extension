@@ -1187,7 +1187,7 @@ use Magento\Quote\Model\Quote\Address\RateRequest;
 use Magento\Shipping\Model\Carrier\AbstractCarrierOnline;
 use Magento\Shipping\Model\Carrier\CarrierInterface;
 use Magento\Shipping\Model\Rate\Result;
-use BobGroup\BobGo\Logger\CustomLogger;
+use BobGroup\BobGo\Logger\Logger;
 
 class BobGo extends AbstractCarrierOnline implements CarrierInterface
 {
@@ -1196,32 +1196,31 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
 
     protected $scopeConfig;
     protected $httpClientFactory;
-    protected $customLogger;
+    protected $logger;
 
     public function __construct(
-        ScopeConfigInterface                                       $scopeConfig,
+        ScopeConfigInterface $scopeConfig,
         \Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory $rateErrorFactory,
-        CustomLogger                                               $customLogger,
-        ZendClientFactory                                          $httpClientFactory,
-        array                                                      $data = []
-    )
-    {
+        Logger $logger,
+        ZendClientFactory $httpClientFactory,
+        array $data = []
+    ) {
         $this->scopeConfig = $scopeConfig;
         $this->httpClientFactory = $httpClientFactory;
-        $this->customLogger = $customLogger;
-        parent::__construct($scopeConfig, $rateErrorFactory, $customLogger, $data);
+        $this->logger = $logger;
+        parent::__construct($scopeConfig, $rateErrorFactory, $logger, $data);
     }
 
     public function collectRates(RateRequest $request)
     {
-        $this->customLogger->info('BobGo collectRates method called');
+        $this->logger->info('BobGo collectRates method called');
 
         if (!$this->getConfigFlag('active')) {
-            $this->customLogger->info('BobGo is not active');
+            $this->logger->info('BobGo is not active');
             return false;
         }
 
-        $this->customLogger->info('BobGo is active, proceeding with rate collection');
+        $this->logger->info('BobGo is active, proceeding with rate collection');
 
         $result = $this->_rateFactory->create();
 
@@ -1235,11 +1234,11 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
             'package_qty' => $request->getPackageQty(),
         ];
 
-        $this->customLogger->info('Request parameters: ' . json_encode($params));
+        $this->logger->info('Request parameters: ' . json_encode($params));
 
         try {
             $apiResponse = $this->_fetchRatesFromApi($params);
-            $this->customLogger->info('API response: ' . json_encode($apiResponse));
+            $this->logger->info('API response: ' . json_encode($apiResponse));
 
             if ($apiResponse && isset($apiResponse['rates']) && !empty($apiResponse['rates'])) {
                 foreach ($apiResponse['rates'] as $rateData) {
@@ -1253,7 +1252,7 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
                     $result->append($rate);
                 }
             } else {
-                $this->customLogger->info('No rates returned from API');
+                $this->logger->info('No rates returned from API');
                 $error = $this->_rateErrorFactory->create();
                 $error->setCarrier($this->_code);
                 $error->setCarrierTitle($this->getConfigData('title'));
@@ -1261,7 +1260,7 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
                 return $error;
             }
         } catch (\Exception $e) {
-            $this->customLogger->error('Error fetching rates from API: ' . $e->getMessage());
+            $this->logger->error('Error fetching rates from API: ' . $e->getMessage());
             $error = $this->_rateErrorFactory->create();
             $error->setCarrier($this->_code);
             $error->setCarrierTitle($this->getConfigData('title'));
@@ -1287,20 +1286,20 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
             $responseBody = $response->getBody();
 
             // Log the response body
-            $this->customLogger->info('Response body: ' . var_export($responseBody, true));
+            $this->logger->info('Response body: ' . var_export($responseBody, true));
 
             if ($responseBody === null) {
-                $this->customLogger->error('API response body is null');
+                $this->logger->error('API response body is null');
                 return false;
             }
 
             if ($response->isSuccessful()) {
                 return json_decode($responseBody, true);
             } else {
-                $this->customLogger->error('API request failed with status: ' . $response->getStatus());
+                $this->logger->error('API request failed with status: ' . $response->getStatus());
             }
         } catch (\Exception $e) {
-            $this->customLogger->error('Exception during API request: ' . $e->getMessage());
+            $this->logger->error('Exception during API request: ' . $e->getMessage());
         }
 
         return false;

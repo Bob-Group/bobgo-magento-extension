@@ -1,8 +1,8 @@
 <?php
 namespace BobGroup\BobGo\Logger;
 
-use Monolog\Logger;
 use Magento\Framework\Logger\Handler\Base;
+use Monolog\Logger;
 
 class Handler extends Base
 {

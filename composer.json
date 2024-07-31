@@ -3,6 +3,7 @@
   "description": "Streamline your order fulfillments with Bob Go",
   "require": {
     "php": "~8.1.28",
+    "monolog/monolog": "1.16.0",
     "magento/framework": "*"
   },
   "type": "magento2-module",
