@@ -1284,8 +1284,18 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
 
         try {
             $response = $client->request();
+            $responseBody = $response->getBody();
+
+            // Log the response body
+            $this->customLogger->info('Response body: ' . var_export($responseBody, true));
+
+            if ($responseBody === null) {
+                $this->customLogger->error('API response body is null');
+                return false;
+            }
+
             if ($response->isSuccessful()) {
-                return json_decode($response->getBody(), true);
+                return json_decode($responseBody, true);
             } else {
                 $this->customLogger->error('API request failed with status: ' . $response->getStatus());
             }
@@ -1301,6 +1311,7 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
         return [$this->_code => $this->getConfigData('name')];
     }
 }
+
 
 
 
