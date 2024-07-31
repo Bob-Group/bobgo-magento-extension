@@ -6,6 +6,6 @@ use Monolog\Logger;
 
 class Handler extends Base
 {
-    protected $fileName = '/var/log/bobgo.log';
+    protected $fileName = '/var/log/bobgo_plugin.log';
     protected $loggerType = Logger::DEBUG;
 }
