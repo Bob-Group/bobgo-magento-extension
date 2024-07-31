@@ -1,9 +1,22 @@
+<?xml version="1.0"?>
+<!--<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">-->
+<!--    <type name="Magento\Checkout\Block\Checkout\LayoutProcessor">-->
+<!--        <plugin name="add_custom_field_checkout_shipping_form" type="BobGroup\BobGo\Plugin\Checkout\Block\LayoutProcessorPlugin" sortOrder="10"/>-->
+<!--        <arguments>-->
+<!--            <argument name="layoutProcessors" xsi:type="array">-->
+<!--                <item name="orderattribute" xsi:type="object">BobGroup\BobGo\Plugin\Checkout\Block\LayoutProcessorPlugin</item>-->
+<!--            </argument>-->
+<!--        </arguments>-->
+<!--    </type>-->
+<!--</config>-->
+
+
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
-    <type name="Magento\Checkout\Block\Checkout\LayoutProcessor">
-        <plugin name="add_custom_field_checkout_shipping_form" type="BobGroup\BobGo\Plugin\Checkout\Block\LayoutProcessorPlugin" sortOrder="10"/>
+    <type name="BobGroup\BobGo\Logger\CustomLogger">
         <arguments>
-            <argument name="layoutProcessors" xsi:type="array">
-                <item name="orderattribute" xsi:type="object">BobGroup\BobGo\Plugin\Checkout\Block\LayoutProcessorPlugin</item>
+            <argument name="name" xsi:type="string">bobgo</argument>
+            <argument name="handlers" xsi:type="array">
+                <item name="stream" xsi:type="object">BobGroup\BobGo\Logger\Handler</item>
             </argument>
         </arguments>
     </type>

@@ -1179,7 +1179,6 @@
 //}
 
 
-<?php
 namespace BobGroup\BobGo\Model\Carrier;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
@@ -1188,7 +1187,7 @@ use Magento\Quote\Model\Quote\Address\RateRequest;
 use Magento\Shipping\Model\Carrier\AbstractCarrierOnline;
 use Magento\Shipping\Model\Carrier\CarrierInterface;
 use Magento\Shipping\Model\Rate\Result;
-use Psr\Log\LoggerInterface;
+use BobGroup\BobGo\Logger\CustomLogger;
 
 class BobGo extends AbstractCarrierOnline implements CarrierInterface
 {
@@ -1197,31 +1196,32 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
 
     protected $scopeConfig;
     protected $httpClientFactory;
-    protected $logger;
+    protected $customLogger;
 
     public function __construct(
-        ScopeConfigInterface $scopeConfig,
+        ScopeConfigInterface                                       $scopeConfig,
         \Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory $rateErrorFactory,
-        LoggerInterface $logger,
-        ZendClientFactory $httpClientFactory,
-        array $data = []
-    ) {
+        CustomLogger                                               $customLogger,
+        ZendClientFactory                                          $httpClientFactory,
+        array                                                      $data = []
+    )
+    {
         $this->scopeConfig = $scopeConfig;
         $this->httpClientFactory = $httpClientFactory;
-        $this->logger = $logger;
-        parent::__construct($scopeConfig, $rateErrorFactory, $logger, $data);
+        $this->customLogger = $customLogger;
+        parent::__construct($scopeConfig, $rateErrorFactory, $customLogger, $data);
     }
 
     public function collectRates(RateRequest $request)
     {
-        $this->logger->info('BobGo collectRates method called');
+        $this->customLogger->info('BobGo collectRates method called');
 
         if (!$this->getConfigFlag('active')) {
-            $this->logger->info('BobGo is not active');
+            $this->customLogger->info('BobGo is not active');
             return false;
         }
 
-        $this->logger->info('BobGo is active, proceeding with rate collection');
+        $this->customLogger->info('BobGo is active, proceeding with rate collection');
 
         $result = $this->_rateFactory->create();
 
@@ -1235,11 +1235,11 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
             'package_qty' => $request->getPackageQty(),
         ];
 
-        $this->logger->info('Request parameters: ' . json_encode($params));
+        $this->customLogger->info('Request parameters: ' . json_encode($params));
 
         try {
             $apiResponse = $this->_fetchRatesFromApi($params);
-            $this->logger->info('API response: ' . json_encode($apiResponse));
+            $this->customLogger->info('API response: ' . json_encode($apiResponse));
 
             if ($apiResponse && isset($apiResponse['rates']) && !empty($apiResponse['rates'])) {
                 foreach ($apiResponse['rates'] as $rateData) {
@@ -1253,7 +1253,7 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
                     $result->append($rate);
                 }
             } else {
-                $this->logger->info('No rates returned from API');
+                $this->customLogger->info('No rates returned from API');
                 $error = $this->_rateErrorFactory->create();
                 $error->setCarrier($this->_code);
                 $error->setCarrierTitle($this->getConfigData('title'));
@@ -1261,7 +1261,7 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
                 return $error;
             }
         } catch (\Exception $e) {
-            $this->logger->error('Error fetching rates from API: ' . $e->getMessage());
+            $this->customLogger->error('Error fetching rates from API: ' . $e->getMessage());
             $error = $this->_rateErrorFactory->create();
             $error->setCarrier($this->_code);
             $error->setCarrierTitle($this->getConfigData('title'));
@@ -1287,10 +1287,10 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
             if ($response->isSuccessful()) {
                 return json_decode($response->getBody(), true);
             } else {
-                $this->logger->error('API request failed with status: ' . $response->getStatus());
+                $this->customLogger->error('API request failed with status: ' . $response->getStatus());
             }
         } catch (\Exception $e) {
-            $this->logger->error('Exception during API request: ' . $e->getMessage());
+            $this->customLogger->error('Exception during API request: ' . $e->getMessage());
         }
 
         return false;
@@ -1301,4 +1301,7 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
         return [$this->_code => $this->getConfigData('name')];
     }
 }
+
+
+
 
