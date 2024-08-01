@@ -8,4 +8,10 @@
             </argument>
         </arguments>
     </type>
+    <type name="BobGroup\BobGo\Observer\ConfigChangeObserver">
+        <arguments>
+            <argument name="curl" xsi:type="object">Magento\Framework\HTTP\Client\Curl</argument>
+        </arguments>
+    </type>
+
 </config>
