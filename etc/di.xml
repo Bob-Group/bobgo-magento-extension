@@ -1,36 +1,36 @@
-<?xml version="1.0"?>
+<!--<?xml version="1.0"?>-->
+<!--&lt;!&ndash;<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">&ndash;&gt;-->
+<!--&lt;!&ndash;    <type name="BobGroup\BobGo\Logger\Logger">&ndash;&gt;-->
+<!--&lt;!&ndash;        <arguments>&ndash;&gt;-->
+<!--&lt;!&ndash;            <argument name="name" xsi:type="string">bobgo</argument>&ndash;&gt;-->
+<!--&lt;!&ndash;            <argument name="handlers" xsi:type="array">&ndash;&gt;-->
+<!--&lt;!&ndash;                <item name="stream" xsi:type="object">BobGroup\BobGo\Logger\Handler</item>&ndash;&gt;-->
+<!--&lt;!&ndash;            </argument>&ndash;&gt;-->
+<!--&lt;!&ndash;        </arguments>&ndash;&gt;-->
+<!--&lt;!&ndash;    </type>&ndash;&gt;-->
+<!--&lt;!&ndash;    <type name="BobGroup\BobGo\Observer\ConfigChangeObserver">&ndash;&gt;-->
+<!--&lt;!&ndash;        <arguments>&ndash;&gt;-->
+<!--&lt;!&ndash;            <argument name="curl" xsi:type="object">Magento\Framework\HTTP\Client\Curl</argument>&ndash;&gt;-->
+<!--&lt;!&ndash;        </arguments>&ndash;&gt;-->
+<!--&lt;!&ndash;    </type>&ndash;&gt;-->
+
+<!--&lt;!&ndash;</config>&ndash;&gt;-->
+
 <!--<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">-->
+<!--    <type name="BobGroup\BobGo\Logger\Handler">-->
+<!--        <arguments>-->
+<!--            <argument name="fileName" xsi:type="string">/var/log/bobgo_plugin.log</argument>-->
+<!--            <argument name="loggerType" xsi:type="number">100</argument>-->
+<!--        </arguments>-->
+<!--    </type>-->
+
 <!--    <type name="BobGroup\BobGo\Logger\Logger">-->
 <!--        <arguments>-->
-<!--            <argument name="name" xsi:type="string">bobgo</argument>-->
 <!--            <argument name="handlers" xsi:type="array">-->
-<!--                <item name="stream" xsi:type="object">BobGroup\BobGo\Logger\Handler</item>-->
+<!--                <item name="bobgo" xsi:type="object">BobGroup\BobGo\Logger\Handler</item>-->
 <!--            </argument>-->
 <!--        </arguments>-->
 <!--    </type>-->
-<!--    <type name="BobGroup\BobGo\Observer\ConfigChangeObserver">-->
-<!--        <arguments>-->
-<!--            <argument name="curl" xsi:type="object">Magento\Framework\HTTP\Client\Curl</argument>-->
-<!--        </arguments>-->
-<!--    </type>-->
-
 <!--</config>-->
-
-<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
-    <type name="BobGroup\BobGo\Logger\Handler">
-        <arguments>
-            <argument name="fileName" xsi:type="string">/var/log/bobgo_plugin.log</argument>
-            <argument name="loggerType" xsi:type="number">100</argument>
-        </arguments>
-    </type>
-
-    <type name="BobGroup\BobGo\Logger\Logger">
-        <arguments>
-            <argument name="handlers" xsi:type="array">
-                <item name="bobgo" xsi:type="object">BobGroup\BobGo\Logger\Handler</item>
-            </argument>
-        </arguments>
-    </type>
-</config>
 
 

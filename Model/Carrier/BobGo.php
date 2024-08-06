@@ -1179,140 +1179,207 @@
 //}
 
 
+//namespace BobGroup\BobGo\Model\Carrier;
+//
+//use Magento\Framework\App\Config\ScopeConfigInterface;
+//use Magento\Framework\HTTP\ZendClientFactory;
+//use Magento\Quote\Model\Quote\Address\RateRequest;
+//use Magento\Shipping\Model\Carrier\AbstractCarrierOnline;
+//use Magento\Shipping\Model\Carrier\CarrierInterface;
+//use Magento\Shipping\Model\Rate\Result;
+//use BobGroup\BobGo\Logger\Logger;
+//
+//class BobGo extends AbstractCarrierOnline implements CarrierInterface
+//{
+//    protected $_code = 'bobgo';
+//    protected $_isFixed = true;
+//
+//    protected $scopeConfig;
+//    protected $httpClientFactory;
+//    protected $logger;
+//
+//    public function __construct(
+//        ScopeConfigInterface $scopeConfig,
+//        \Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory $rateErrorFactory,
+//        Logger $logger,
+//        ZendClientFactory $httpClientFactory,
+//        array $data = []
+//    ) {
+//        $this->scopeConfig = $scopeConfig;
+//        $this->httpClientFactory = $httpClientFactory;
+//        $this->logger = $logger;
+//        parent::__construct($scopeConfig, $rateErrorFactory, $logger, $data);
+//    }
+//
+//    public function collectRates(RateRequest $request)
+//    {
+//        $this->logger->info('BobGo collectRates method called');
+//
+//        if (!$this->getConfigFlag('active')) {
+//            $this->logger->info('BobGo is not active');
+//            return false;
+//        }
+//
+//        $this->logger->info('BobGo is active, proceeding with rate collection');
+//
+//        $result = $this->_rateFactory->create();
+//
+//        // Prepare request data for API call
+//        $params = [
+//            'dest_country_id' => $request->getDestCountryId(),
+//            'dest_region_id' => $request->getDestRegionId(),
+//            'dest_postcode' => $request->getDestPostcode(),
+//            'package_weight' => $request->getPackageWeight(),
+//            'package_value' => $request->getPackageValue(),
+//            'package_qty' => $request->getPackageQty(),
+//        ];
+//
+//        $this->logger->info('Request parameters: ' . json_encode($params));
+//
+//        try {
+//            $apiResponse = $this->_fetchRatesFromApi($params);
+//            $this->logger->info('API response: ' . json_encode($apiResponse));
+//
+//            if ($apiResponse && isset($apiResponse['rates']) && !empty($apiResponse['rates'])) {
+//                foreach ($apiResponse['rates'] as $rateData) {
+//                    $rate = $this->_rateMethodFactory->create();
+//                    $rate->setCarrier($this->_code);
+//                    $rate->setCarrierTitle($this->getConfigData('title'));
+//                    $rate->setMethod($rateData['method']);
+//                    $rate->setMethodTitle($rateData['method_title']);
+//                    $rate->setPrice($rateData['price']);
+//                    $rate->setCost($rateData['cost']);
+//                    $result->append($rate);
+//                }
+//            } else {
+//                $this->logger->info('No rates returned from API');
+//                $error = $this->_rateErrorFactory->create();
+//                $error->setCarrier($this->_code);
+//                $error->setCarrierTitle($this->getConfigData('title'));
+//                $error->setErrorMessage($this->getConfigData('specificerrmsg'));
+//                return $error;
+//            }
+//        } catch (\Exception $e) {
+//            $this->logger->error('Error fetching rates from API: ' . $e->getMessage());
+//            $error = $this->_rateErrorFactory->create();
+//            $error->setCarrier($this->_code);
+//            $error->setCarrierTitle($this->getConfigData('title'));
+//            $error->setErrorMessage($this->getConfigData('specificerrmsg'));
+//            return $error;
+//        }
+//
+//        return $result;
+//    }
+//
+//    protected function _fetchRatesFromApi($params)
+//    {
+//        $url = 'https://api.dev.bobgo.co.za/rates-at-checkout/magento';
+//        $client = $this->httpClientFactory->create();
+//        $client->setUri($url);
+//        $client->setConfig(['timeout' => 30]);
+//        $client->setHeaders(['Content-Type' => 'application/json']);
+//        $client->setMethod(\Zend_Http_Client::POST);
+//        $client->setRawData(json_encode($params), 'application/json');
+//
+//        try {
+//            $response = $client->request();
+//            $responseBody = $response->getBody();
+//
+//            // Log the response body
+//            $this->logger->info('Response body: ' . var_export($responseBody, true));
+//
+//            if ($responseBody === null) {
+//                $this->logger->error('API response body is null');
+//                return false;
+//            }
+//
+//            if ($response->isSuccessful()) {
+//                return json_decode($responseBody, true);
+//            } else {
+//                $this->logger->error('API request failed with status: ' . $response->getStatus());
+//            }
+//        } catch (\Exception $e) {
+//            $this->logger->error('Exception during API request: ' . $e->getMessage());
+//        }
+//
+//        return false;
+//    }
+//
+//    public function getAllowedMethods()
+//    {
+//        return [$this->_code => $this->getConfigData('name')];
+//    }
+//
+//}
+
+
+declare(strict_types=1);
+
 namespace BobGroup\BobGo\Model\Carrier;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
-use Magento\Framework\HTTP\ZendClientFactory;
 use Magento\Quote\Model\Quote\Address\RateRequest;
-use Magento\Shipping\Model\Carrier\AbstractCarrierOnline;
+use Magento\Quote\Model\Quote\Address\RateResult\Method;
+use Magento\Quote\Model\Quote\Address\RateResult\MethodFactory;
+use Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory;
+use Magento\Shipping\Model\Carrier\AbstractCarrier;
 use Magento\Shipping\Model\Carrier\CarrierInterface;
 use Magento\Shipping\Model\Rate\Result;
-use BobGroup\BobGo\Logger\Logger;
+use Magento\Shipping\Model\Rate\ResultFactory;
+use Psr\Log\LoggerInterface;
 
-class BobGo extends AbstractCarrierOnline implements CarrierInterface
+class BobGo extends AbstractCarrier implements CarrierInterface
 {
-    protected $_code = 'bobgo';
-    protected $_isFixed = true;
-
-    protected $scopeConfig;
-    protected $httpClientFactory;
-    protected $logger;
+    protected string $_code = 'bobgo';
+    protected bool $_isFixed = true;
+    private ResultFactory $rateResultFactory;
+    private MethodFactory $rateMethodFactory;
 
     public function __construct(
         ScopeConfigInterface $scopeConfig,
-        \Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory $rateErrorFactory,
-        Logger $logger,
-        ZendClientFactory $httpClientFactory,
-        array $data = []
-    ) {
-        $this->scopeConfig = $scopeConfig;
-        $this->httpClientFactory = $httpClientFactory;
-        $this->logger = $logger;
+        ErrorFactory         $rateErrorFactory,
+        LoggerInterface      $logger,
+        ResultFactory        $rateResultFactory,
+        MethodFactory        $rateMethodFactory,
+        array                $data = []
+    )
+    {
         parent::__construct($scopeConfig, $rateErrorFactory, $logger, $data);
+        $this->rateResultFactory = $rateResultFactory;
+        $this->rateMethodFactory = $rateMethodFactory;
     }
 
+    /**
+     * Custom Shipping Rates Collector
+     *
+     * @param RateRequest $request
+     * @return \Magento\Shipping\Model\Rate\Result|bool
+     */
     public function collectRates(RateRequest $request)
     {
-        $this->logger->info('BobGo collectRates method called');
-
         if (!$this->getConfigFlag('active')) {
-            $this->logger->info('BobGo is not active');
             return false;
         }
-
-        $this->logger->info('BobGo is active, proceeding with rate collection');
-
-        $result = $this->_rateFactory->create();
-
-        // Prepare request data for API call
-        $params = [
-            'dest_country_id' => $request->getDestCountryId(),
-            'dest_region_id' => $request->getDestRegionId(),
-            'dest_postcode' => $request->getDestPostcode(),
-            'package_weight' => $request->getPackageWeight(),
-            'package_value' => $request->getPackageValue(),
-            'package_qty' => $request->getPackageQty(),
-        ];
-
-        $this->logger->info('Request parameters: ' . json_encode($params));
-
-        try {
-            $apiResponse = $this->_fetchRatesFromApi($params);
-            $this->logger->info('API response: ' . json_encode($apiResponse));
-
-            if ($apiResponse && isset($apiResponse['rates']) && !empty($apiResponse['rates'])) {
-                foreach ($apiResponse['rates'] as $rateData) {
-                    $rate = $this->_rateMethodFactory->create();
-                    $rate->setCarrier($this->_code);
-                    $rate->setCarrierTitle($this->getConfigData('title'));
-                    $rate->setMethod($rateData['method']);
-                    $rate->setMethodTitle($rateData['method_title']);
-                    $rate->setPrice($rateData['price']);
-                    $rate->setCost($rateData['cost']);
-                    $result->append($rate);
-                }
-            } else {
-                $this->logger->info('No rates returned from API');
-                $error = $this->_rateErrorFactory->create();
-                $error->setCarrier($this->_code);
-                $error->setCarrierTitle($this->getConfigData('title'));
-                $error->setErrorMessage($this->getConfigData('specificerrmsg'));
-                return $error;
-            }
-        } catch (\Exception $e) {
-            $this->logger->error('Error fetching rates from API: ' . $e->getMessage());
-            $error = $this->_rateErrorFactory->create();
-            $error->setCarrier($this->_code);
-            $error->setCarrierTitle($this->getConfigData('title'));
-            $error->setErrorMessage($this->getConfigData('specificerrmsg'));
-            return $error;
-        }
-
+        /** @var Method $method */
+        $method = $this->rateMethodFactory->create();
+        $method->setCarrier($this->_code);
+        $method->setCarrierTitle($this->getConfigData('title'));
+        $method->setMethod($this->_code);
+        $method->setMethodTitle($this->getConfigData('name'));
+        $shippingCost = (float)$this->getConfigData('shipping_cost');
+        $method->setPrice($shippingCost);
+        $method->setCost($shippingCost);
+        /** @var Result $result */
+        $result = $this->rateResultFactory->create();
+        $result->append($method);
         return $result;
     }
 
-    protected function _fetchRatesFromApi($params)
-    {
-        $url = 'https://api.dev.bobgo.co.za/rates-at-checkout/magento';
-        $client = $this->httpClientFactory->create();
-        $client->setUri($url);
-        $client->setConfig(['timeout' => 30]);
-        $client->setHeaders(['Content-Type' => 'application/json']);
-        $client->setMethod(\Zend_Http_Client::POST);
-        $client->setRawData(json_encode($params), 'application/json');
-
-        try {
-            $response = $client->request();
-            $responseBody = $response->getBody();
-
-            // Log the response body
-            $this->logger->info('Response body: ' . var_export($responseBody, true));
-
-            if ($responseBody === null) {
-                $this->logger->error('API response body is null');
-                return false;
-            }
-
-            if ($response->isSuccessful()) {
-                return json_decode($responseBody, true);
-            } else {
-                $this->logger->error('API request failed with status: ' . $response->getStatus());
-            }
-        } catch (\Exception $e) {
-            $this->logger->error('Exception during API request: ' . $e->getMessage());
-        }
-
-        return false;
-    }
-
-    public function getAllowedMethods()
+    public function getAllowedMethods(): array
     {
         return [$this->_code => $this->getConfigData('name')];
     }
-
 }
-
-
 
 
 

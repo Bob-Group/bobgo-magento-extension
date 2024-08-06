@@ -21,21 +21,19 @@
 <!--    </default>-->
 <!--</config>-->
 
-<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
-    <default>
-        <carriers>
-            <bobgo>
-                <active>1</active>
-                <model>BobGroup\BobGo\Model\Carrier\BobGo</model>
-                <title>Bob Go</title>
-                <name>BobGo</name>
-                <specificerrmsg>We could not find any shipping rates for your delivery address. Please make sure your address is correct. If you are experiencing problems, please contact us.</specificerrmsg>
-                <sallowspecific>0</sallowspecific>
-                <showmethod>1</showmethod>
-                <unit_of_measure>KGS</unit_of_measure>
-                <max_package_weight>300</max_package_weight>
-                <additional_info>0</additional_info>
-            </bobgo>
-        </carriers>
-    </default>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
+<default>
+    <carriers>
+        <bobgo>
+            <active>1</active>
+            <title>Bob Go</title>
+            <name>BobGo</name>
+            <shipping_cost>10</shipping_cost>
+            <sallowspecific>0</sallowspecific>
+            <sort_order>15</sort_order>
+            <model>BobGroup\BobGo\Model\Carrier\BobGo</model>
+        </bobgo>
+    </carriers>
+</default>
 </config>
