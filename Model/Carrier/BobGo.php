@@ -1309,6 +1309,7 @@ class BobGo extends AbstractCarrierOnline implements CarrierInterface
     {
         return [$this->_code => $this->getConfigData('name')];
     }
+    
 }
 
 
