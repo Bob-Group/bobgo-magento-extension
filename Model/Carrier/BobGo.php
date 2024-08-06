@@ -1360,20 +1360,29 @@ class BobGo extends AbstractCarrier implements CarrierInterface
         if (!$this->getConfigFlag('active')) {
             return false;
         }
-        /** @var Method $method */
+
+        /** @var \Magento\Shipping\Model\Rate\Result $result */
+        $result = $this->rateResultFactory->create();
+
+        /** @var \Magento\Quote\Model\Quote\Address\RateResult\Method $method */
         $method = $this->rateMethodFactory->create();
+
         $method->setCarrier($this->_code);
         $method->setCarrierTitle($this->getConfigData('title'));
+
         $method->setMethod($this->_code);
         $method->setMethodTitle($this->getConfigData('name'));
-        $shippingCost = (float)$this->getConfigData('shipping_cost');
+
+        $shippingCost = (float) $this->getConfigData('shipping_cost');
+
         $method->setPrice($shippingCost);
         $method->setCost($shippingCost);
-        /** @var Result $result */
-        $result = $this->rateResultFactory->create();
+
         $result->append($method);
+
         return $result;
     }
+
 
     public function getAllowedMethods(): array
     {
