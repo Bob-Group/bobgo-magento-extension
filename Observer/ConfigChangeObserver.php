@@ -6,18 +6,22 @@ use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\HTTP\Client\Curl;
+use Psr\Log\LoggerInterface;
 
 class ConfigChangeObserver implements ObserverInterface
 {
     protected $scopeConfig;
     protected $curl;
+    protected $logger;
 
     public function __construct(
         ScopeConfigInterface $scopeConfig,
-        Curl $curl
+        Curl $curl,
+        LoggerInterface $logger
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->curl = $curl;
+        $this->logger = $logger;
     }
 
     public function execute(Observer $observer)
@@ -93,22 +97,27 @@ class ConfigChangeObserver implements ObserverInterface
                     ]
                 ]);
 
-                // Set headers
-                $this->curl->addHeader("Accept", "*/*");
-                $this->curl->addHeader("Accept-Encoding", "deflate, gzip, br");
-                $this->curl->addHeader("Content-Type", "application/json; charset=utf-8");
-                $this->curl->addHeader("Host", "api.dev.bobgo.co.za");
-                $this->curl->addHeader("User-Agent", "Magento/2.x");
+                try {
+                    // Set headers
+                    $this->curl->addHeader("Accept", "*/*");
+                    $this->curl->addHeader("Accept-Encoding", "deflate, gzip, br");
+                    $this->curl->addHeader("Content-Type", "application/json; charset=utf-8");
+                    $this->curl->addHeader("Host", "api.dev.bobgo.co.za");
+                    $this->curl->addHeader("User-Agent", "Magento/2.x");
 
-                // Send the request
-                $this->curl->post($url, $payload);
+                    // Send the request
+                    $this->curl->post($url, $payload);
 
-                // Check response status
-                if ($this->curl->getStatus() == 200) {
-                    $response = $this->curl->getBody();
-                    // Log response or take further actions
-                } else {
-                    // Handle error response
+                    // Check response status
+                    if ($this->curl->getStatus() == 200) {
+                        $response = $this->curl->getBody();
+                        $this->logger->info('Bob Go API response:', ['response' => $response]);
+                    } else {
+                        $status = $this->curl->getStatus();
+                        $this->logger->error('Bob Go API request failed.', ['status' => $status, 'url' => $url]);
+                    }
+                } catch (\Exception $e) {
+                    $this->logger->error('Bob Go API request error:', ['exception' => $e->getMessage()]);
                 }
             }
         }

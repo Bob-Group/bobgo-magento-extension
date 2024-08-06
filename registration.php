@@ -4,5 +4,3 @@
     'BobGroup_BobGo',
     __DIR__
 );
-
-
