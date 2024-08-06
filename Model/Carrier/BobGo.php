@@ -19,6 +19,7 @@ class BobGo extends AbstractCarrier implements CarrierInterface
 
     protected $rateResultFactory;
     protected $rateMethodFactory;
+    protected $logger;
 
     public function __construct(
         ScopeConfigInterface $scopeConfig,
@@ -30,14 +31,20 @@ class BobGo extends AbstractCarrier implements CarrierInterface
     ) {
         $this->rateResultFactory = $rateResultFactory;
         $this->rateMethodFactory = $rateMethodFactory;
+        $this->logger = $logger;
         parent::__construct($scopeConfig, $rateErrorFactory, $logger, $data);
     }
 
     public function collectRates(RateRequest $request)
     {
+        $this->logger->debug('BobGo collectRates method called');
+
         if (!$this->getConfigFlag('active')) {
+            $this->logger->debug('BobGo is not active');
             return false;
         }
+
+        $this->logger->debug('BobGo is active');
 
         $result = $this->rateResultFactory->create();
         $method = $this->rateMethodFactory->create();
@@ -49,6 +56,7 @@ class BobGo extends AbstractCarrier implements CarrierInterface
         $method->setMethodTitle($this->getConfigData('name'));
 
         $shippingCost = (float)$this->getConfigData('shipping_cost');
+        $this->logger->debug('Shipping Cost: ' . $shippingCost);
 
         $method->setPrice($shippingCost);
         $method->setCost($shippingCost);
