@@ -1,10 +1,11 @@
 <?php
+
 namespace BobGroup\BobGo\Logger;
 
-use Magento\Framework\Logger\Handler\Base;
 use Monolog\Logger;
+use Magento\Framework\Logger\Handler\Base as MagentoBaseHandler;
 
-class Handler extends Base
+class Handler extends MagentoBaseHandler
 {
     protected $fileName = '/var/log/bobgo_plugin.log';
     protected $loggerType = Logger::DEBUG;
