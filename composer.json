@@ -1,23 +1,25 @@
 {
-  "name": "bobgroup/bobgo",
-  "description": "A simple flat rate shipping method for Magento 2",
-  "require": {
-    "php": "~7.1.3||~7.2.0||~7.3.0||~7.4.0",
-    "magento/framework": "*"
-  },
+  "name": "bobgo/bobgo",
+  "description": "Streamline your shipments fulfillment's with Bob Go",
   "type": "magento2-module",
   "version": "1.0.0",
+  "authors": [
+    {
+      "name": "Bob Go",
+      "email": "support@bobgo.co.za",
+      "homepage": "https://www.bobgo.co.za"
+    }
+  ],
   "license": [
-    "OSL-3.0",
-    "AFL-3.0"
+    "AFL-3.0",
+    "OSL-3.0"
   ],
   "autoload": {
     "files": [
       "registration.php"
     ],
     "psr-4": {
-      "BobGroup\\BobGo\\": ""
+      "bobgo\\BobGo\\": ""
     }
   }
 }
-

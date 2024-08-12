@@ -1,4 +1,10 @@
-<?xml version="1.0"?>
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
-    <preference for="Magento\Shipping\Model\Carrier\CarrierInterface" type="BobGroup\BobGo\Model\Carrier\BobGo"/>
+    <type name="Magento\Checkout\Block\Checkout\LayoutProcessor">
+        <plugin name="add_custom_field_checkout_shipping_form" type="BobGroup\BobGo\Plugin\Checkout\Block\LayoutProcessorPlugin" sortOrder="10"/>
+        <arguments>
+            <argument name="layoutProcessors" xsi:type="array">
+                <item name="orderattribute" xsi:type="object">BobGroup\BobGo\Plugin\Checkout\Block\LayoutProcessorPlugin</item>
+            </argument>
+        </arguments>
+    </type>
 </config>
