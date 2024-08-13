@@ -112,7 +112,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     protected JsonFactory $jsonFactory;
     private $cartRepository;
-    public Company $company;
+    public AdditionalInfo $additionalInfo;
 
 
     /**
@@ -187,7 +187,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         );
         $this->jsonFactory = $jsonFactory;
         $this->curl = $curlFactory->create();
-        $this->company = new Company();
+        $this->additionalInfo = new AdditionalInfo($countryFactory);
     }
 
     /*
@@ -1004,14 +1004,14 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     public function getDestComp(): mixed
     {
-        return $this->company->getDestComp();
+        return $this->additionalInfo->getDestComp();
     }
     /**
      * @return mixed|string
      */
     public function getDestSuburb(): mixed
     {
-        return $this->company->getSuburb();
+        return $this->additionalInfo->getSuburb();
     }
 
     /**
