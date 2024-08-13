@@ -101,6 +101,11 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     protected \Magento\Framework\HTTP\Client\Curl $curl;
 
+    /**
+     * @var ScopeConfigInterface
+     */
+    protected $scopeConfig;  // Declare the scopeConfig property
+
 
     /**
      * @param \Magento\Framework\Controller\Result\JsonFactory $jsonFactory
@@ -161,6 +166,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
         $this->_storeManager = $storeManager;
         $this->_productCollectionFactory = $productCollectionFactory;
+        $this->scopeConfig = $scopeConfig;
         parent::__construct(
             $scopeConfig,
             $rateErrorFactory,
@@ -293,6 +299,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         if (!$this->isActive()) {
             return false;
         }
+
         /**
          * Gets the destination company name from Company Name field in the checkout page
          * This method is used is the last resort to get the company name since the company name is not available in _rateFactory
@@ -834,8 +841,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
                         $this->deliveryDays($min_delivery_date, $max_delivery_date, $method);
 
-                    } else {
-                        $method->setCarrierTitle($this->getConfigData('title'));
                     }
 
                 }
@@ -1048,4 +1053,86 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         }
         return true;
     }
+
+    public function triggerRatesTest()
+    {
+        // Check if the 'Show rates for checkout' setting is enabled
+        $isEnabled = $this->scopeConfig->getValue('carriers/bobgo/active', \Magento\Store\Model\ScopeInterface::SCOPE_STORE);
+
+        if ($isEnabled) {
+            // Sample test payload, replace with actual structure
+            $payload = [
+                'identifier' => $this->getBaseUrl(),
+                'rate' => [
+                    'origin' => [
+                        'company' => 'Test Store',
+                        'address1' => '123 Test St',
+                        'address2' => '',
+                        'city' => 'Test City',
+                        'suburb' => 'Test Suburb',
+                        'province' => 'Test Province',
+                        'country_code' => 'ZA',
+                        'postal_code' => '2000',
+                    ],
+                    'destination' => [
+                        'company' => 'Test Company',
+                        'address1' => '456 Test Ave',
+                        'address2' => '',
+                        'suburb' => 'Test Suburb',
+                        'city' => 'Test City',
+                        'province' => 'Test Province',
+                        'country_code' => 'ZA',
+                        'postal_code' => '3000',
+                    ],
+                    'items' => [
+                        [
+                            'sku' => 'test-sku-1',
+                            'quantity' => 1,
+                            'price' => 100.00,
+                            'weight' => 500, // in grams
+                        ]
+                    ],
+                ]
+            ];
+
+            try {
+                // Perform the API request
+                $this->curl->addHeader('Content-Type', 'application/json');
+                $this->curl->post($this->getApiUrl(), json_encode($payload));
+                $statusCode = $this->curl->getStatus();
+                $responseBody = $this->curl->getBody();
+
+                // Log the response for debugging purposes
+                $this->_logger->info('BobGo Rates API Test Response: ' . $responseBody);
+
+                // Decode the response
+                $response = json_decode($responseBody, true);
+
+                // Check if the response contains a 'message' (indicating an error)
+                if (isset($response['message'])) {
+                    throw new \Exception('Error from BobGo: ' . $response['message']);
+                }
+
+                // Check if the response contains rates with a valid id field
+                if (isset($response['rates']) && is_array($response['rates']) && !empty($response['rates'])) {
+                    foreach ($response['rates'] as $rate) {
+                        if (isset($rate['id']) && $rate['id'] !== null) {
+                            $this->_logger->info('Rates received successfully with a valid id.');
+                            return $response; // Successful response with a valid id
+                        }
+                    }
+                    throw new \Exception('Rates received but id field is empty or invalid.');
+                } else {
+                    throw new \Exception('Received response but no valid rates were found.');
+                }
+            } catch (\Exception $e) {
+                $this->_logger->error('Error in triggerRatesTest: ' . $e->getMessage());
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+
 }
