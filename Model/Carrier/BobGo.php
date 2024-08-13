@@ -827,41 +827,59 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
             $result->append($error);
         } else {
-            $this->_logger->info('Rates is not empty:');
-            foreach ($rates['rates'] as $title) {
+            $this->_logger->info('Rates are not empty.');
+
+            foreach ($rates['rates'] as $rate) {
 
                 $method = $this->_rateMethodFactory->create();
-                if (isset($title)){
+
+                if (isset($rate)) {
+                    // Set the carrier code
                     $method->setCarrier(self::CODE);
 
+                    // Log the original service code
+                    $this->_logger->info('Original service code: ' . $rate['service_code']);
 
-                    if ($this->getConfigData('additional_info') == 1) {
-                        $min_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['min_delivery_date']);
-                        $max_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['max_delivery_date']);
-
-                        $this->deliveryDays($min_delivery_date, $max_delivery_date, $method);
-
+                    // Strip out the redundant 'bobgo_' prefix if present
+                    $serviceCode = $rate['service_code'];
+                    if (strpos($serviceCode, 'bobgo_') === 0) {
+                        $serviceCode = substr($serviceCode, strlen('bobgo_'));
                     }
 
+                    // Log the modified service code
+                    $this->_logger->info('Modified service code: ' . $serviceCode);
+
+                    // Set the method with the modified service code
+                    $method->setMethod($serviceCode);
+
+                    // Set additional info if required
+                    if ($this->getConfigData('additional_info') == 1) {
+                        $min_delivery_date = $this->getWorkingDays(date('Y-m-d'), $rate['min_delivery_date']);
+                        $max_delivery_date = $this->getWorkingDays(date('Y-m-d'), $rate['max_delivery_date']);
+
+                        $this->deliveryDays($min_delivery_date, $max_delivery_date, $method);
+                    }
+
+                    // Set the method title, price, and cost
+                    $method->setMethodTitle($rate['service_name']);
+                    $price = $rate['total_price'];
+                    $cost = $rate['total_price'];
+
+                    $method->setPrice($price);
+                    $method->setCost($cost);
+
+                    // Log the values
+                    $this->_logger->info('Price: ' . $price);
+                    $this->_logger->info('Cost: ' . $cost);
+
+                    $result->append($method);
                 }
-
-                $method->setMethod($title['service_code']);
-                $method->setMethodTitle($title['service_name']);
-                $price = $title['total_price'];
-                $cost = $title['total_price'];
-
-                // Log the values
-                $this->_logger->info('Price: ' . $price);
-                $this->_logger->info('Cost: ' . $cost);
-
-                // Set the values
-                $method->setPrice($price);
-                $method->setCost($cost);
-
-                $result->append($method);
             }
         }
     }
+
+
+
 
 
     /**
