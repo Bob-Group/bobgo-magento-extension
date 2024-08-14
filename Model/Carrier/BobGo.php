@@ -827,7 +827,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
             $result->append($error);
         } else {
-            $this->_logger->info('Rates are not empty.');
 
             foreach ($rates['rates'] as $rate) {
 
@@ -837,17 +836,11 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                     // Set the carrier code
                     $method->setCarrier(self::CODE);
 
-                    // Log the original service code
-                    $this->_logger->info('Original service code: ' . $rate['service_code']);
-
                     // Strip out the redundant 'bobgo_' prefix if present
                     $serviceCode = $rate['service_code'];
                     if (strpos($serviceCode, 'bobgo_') === 0) {
                         $serviceCode = substr($serviceCode, strlen('bobgo_'));
                     }
-
-                    // Log the modified service code
-                    $this->_logger->info('Modified service code: ' . $serviceCode);
 
                     // Set the method with the modified service code
                     $method->setMethod($serviceCode);
@@ -868,19 +861,11 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                     $method->setPrice($price);
                     $method->setCost($cost);
 
-                    // Log the values
-                    $this->_logger->info('Price: ' . $price);
-                    $this->_logger->info('Cost: ' . $cost);
-
                     $result->append($method);
                 }
             }
         }
     }
-
-
-
-
 
     /**
      * Prepare received checkpoints and activity from Bob Go Shipment Tracking API
@@ -1120,9 +1105,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                 $statusCode = $this->curl->getStatus();
                 $responseBody = $this->curl->getBody();
 
-                // Log the response for debugging purposes
-                $this->_logger->info('BobGo Rates API Test Response: ' . $responseBody);
-
                 // Decode the response
                 $response = json_decode($responseBody, true);
 
@@ -1135,7 +1117,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                 if (isset($response['rates']) && is_array($response['rates']) && !empty($response['rates'])) {
                     foreach ($response['rates'] as $rate) {
                         if (isset($rate['id']) && $rate['id'] !== null) {
-                            $this->_logger->info('Rates received successfully with a valid id.');
                             return $response; // Successful response with a valid id
                         }
                     }
@@ -1144,13 +1125,9 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                     throw new \Exception('Received response but no valid rates were found.');
                 }
             } catch (\Exception $e) {
-                $this->_logger->error('Error in triggerRatesTest: ' . $e->getMessage());
                 return false;
             }
         }
-
         return false;
     }
-
-
 }

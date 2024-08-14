@@ -26,28 +26,19 @@ class ConfigChangeObserver implements ObserverInterface
 
     public function execute(Observer $observer)
     {
-        $this->logger->info('ConfigChangeObserver triggered.');
-
         $changedPaths = $observer->getEvent()->getData('changed_paths');
 
         if (is_array($changedPaths) && in_array('carriers/bobgo/active', $changedPaths)) {
-            $this->logger->info('BobGo configuration change detected.');
 
             if ($this->bobGo->isActive()) {
                 $result = $this->bobGo->triggerRatesTest();
 
                 if ($result !== false) {
-                    $this->logger->info('Rates test triggered successfully with a valid response.');
-                    $this->messageManager->addSuccessMessage(__('BobGo rates test triggered successfully.'));
+                    $this->messageManager->addSuccessMessage(__('BobGo rates at checkout test is successful.'));
                 } else {
-                    $this->logger->error('Error in BobGo rates test.');
-                    $this->messageManager->addErrorMessage(__('BobGo rates test failed. Please check visit https://www.bobgo.co.za/ and enable this channel for rates at checkout.'));
+                    $this->messageManager->addErrorMessage(__('BobGo rates at checkout test failed. Please visit https://www.bobgo.co.za/ and enable this channel for rates at checkout.'));
                 }
-            } else {
-                $this->logger->info('BobGo is not active.');
             }
-        } else {
-            $this->logger->info('No relevant configuration changes detected.');
         }
     }
 
