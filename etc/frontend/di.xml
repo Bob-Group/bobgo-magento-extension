@@ -7,11 +7,4 @@
             </argument>
         </arguments>
     </type>
-    <type name="BobGroup\BobGo\Observer\ConfigChangeObserver">
-        <arguments>
-            <argument name="scopeConfig" xsi:type="object">Magento\Framework\App\Config\ScopeConfigInterface</argument>
-            <argument name="logger" xsi:type="object">Psr\Log\LoggerInterface</argument>
-        </arguments>
-    </type>
-
 </config>

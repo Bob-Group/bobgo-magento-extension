@@ -1,3 +1,29 @@
+# Installing Magento locally 
+
+**Note:** For more information, visit https://github.com/markshust/docker-magento
+
+1. Make sure you have `composer` installed globally and a GitHub personal access token configured using `composer global config github-oauth.github.com <YOUR_PERSONAL_ACCESS_TOKEN>`
+2. Create a new folder, ie: `Documents/Magento`
+3. `cd` into the folder 
+4. Run command `curl -s https://raw.githubusercontent.com/markshust/docker-magento/master/lib/onelinesetup | bash -s -- bobgomagento.test 2.4.4-p1 community`
+5. When asked for the username and password, provide the Abobe public and private key: 
+
+- Public key: `***REMOVED***`
+- Private key: `***REMOVED***`
+
+Once configured, do the following to create an admin user (and make life easier for yourself):
+
+- Create Admin User: `bin/magento admin:user:create`
+- Disable 2FA: `bin/magento module:disable Magento_TwoFactorAuth`
+- Disable Admin Captcha: `bin/magento config:set admin/captcha/enable 0`
+
+
+### Adobe account details
+
+- Email: `***REMOVED***`
+- Password: `***REMOVED***`
+
+
 # Magento 2 Bob Go Shipping Extension
 
 ## Introduction
@@ -15,12 +41,13 @@ A complete guide to install Magento Bob Go Shipping extension in Magento 2.
 
 Run the following command in Magento 2 root folder:</br>
 
+
 >_Note: You must have composer installed on your server & at this point this option_
 
 #### 1. Execute the following command to install the module:
 
 ``` 
-composer require bob-public-utils/bobgo-magento-extension
+composer require BobGroup/BobGo
 ```
 #### 2. Enter following commands to enable the module:
 
@@ -32,6 +59,7 @@ bin/magento setup:upgrade
 bin/magento setup:di:compile
 bin/magento setup:static-content:deploy
 ```
+
 
 ### Option 2: Install via zip file
 

@@ -6,13 +6,13 @@ use Magento\Framework\Data\Form\Element\AbstractElement;
 /**
  * Displays Version number in System Configuration
  * @category   BobGroup
- * @package    BobGo
- * @author     support@bobgo.co.za
- * @website    https://www.bobgo.co.za
+ * @package    bobgo_CustomShipping
+ * @author     info@bob.co.za
+ * @website    https://www.bob.co.za
  */
 class Version extends \Magento\Config\Block\System\Config\Form\Field
 {
-    const EXTENSION_URL = 'https://www.bobgo.co.za';
+    const EXTENSION_URL = 'https://www.bob.co.za';
 
     /**
      * @var \BobGroup\BobGo\Helper\Data $helper
