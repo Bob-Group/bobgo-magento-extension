@@ -25,7 +25,7 @@ class ChangeTitle
     public function afterGetTitle(Subject $subject, $result, Status $trackingStatus)
     {
         if ($trackingStatus->getCarrier() === Carrier::CODE) {
-            $result = __('Expected Delivery:');
+            $result = __('Expected delivery:');
         }
         return $result;
     }

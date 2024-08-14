@@ -30,7 +30,6 @@ class AdditionalInfo
 
         if (isset($data['address']['custom_attributes'][0]['value'])) {
             $destSub = $data['address']['custom_attributes'][0]['value'];
-            //print_r($destSub);
         } else {
             $destSub = '';
         }

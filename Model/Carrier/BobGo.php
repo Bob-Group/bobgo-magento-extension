@@ -889,7 +889,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                 'activity' => $checkpoint['status'],
                 'deliverydate' => $this->formatDate($checkpoint['time']),
                 'deliverytime' => $this->formatTime($checkpoint['time']),
-                //  'deliverylocation' => 'Unavailable',//TODO: remove this line
             ];
         }
         return $result;
@@ -906,7 +905,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         $begin = strtotime($startDate);
         $end = strtotime($endDate);
         if ($begin > $end) {
-//            echo "Start Date Cannot Be In The Future! <br />";
             return 0;
         } else {
             $no_days = 0;
@@ -1082,14 +1080,14 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                 'identifier' => $this->getBaseUrl(),
                 'rate' => [
                     'origin' => [
-                        'company' => 'Test Store',
-                        'address1' => '123 Test St',
-                        'address2' => '',
-                        'city' => 'Test City',
-                        'suburb' => 'Test Suburb',
-                        'province' => 'Test Province',
+                        'company' => 'Jamie Ds Emporium',
+                        'address1' => '36 Marelu Street',
+                        'address2' => 'Six Fountains Estate',
+                        'city' => 'Pretoria',
+                        'suburb' => 'Pretoria',
+                        'province' => 'GT',
                         'country_code' => 'ZA',
-                        'postal_code' => '2000',
+                        'postal_code' => '0081',
                     ],
                     'destination' => [
                         'company' => 'Test Company',

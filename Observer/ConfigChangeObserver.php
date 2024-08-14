@@ -34,9 +34,9 @@ class ConfigChangeObserver implements ObserverInterface
                 $result = $this->bobGo->triggerRatesTest();
 
                 if ($result !== false) {
-                    $this->messageManager->addSuccessMessage(__('Bob Go rates at checkout test is successful.'));
+                    $this->messageManager->addSuccessMessage(__('Bob Go rates at checkout connected.'));
                 } else {
-                    $this->messageManager->addErrorMessage(__('Bob Go rates at checkout test failed. Please visit https://www.bobgo.co.za/ and enable this channel for rates at checkout.'));
+                    $this->messageManager->addErrorMessage(__('Failed to connect to rates at checkout. Please check your internet connection and make sure Rates at checkout is enabled for your channel on Bob Go. Please visit <a href="https://my.bobgo.co.za/rates-at-checkout?tab=settings" target="_new">Bob Go</a> and make sure your WooCommerce channel is enabled to receive rates.'));
                 }
             }
         }

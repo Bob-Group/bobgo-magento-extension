@@ -19,43 +19,14 @@
                     <frontend_model>BobGroup\BobGo\Block\System\Config\Form\Field\Version</frontend_model>
                 </field>
                 <field id="active" translate="label" type="select" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>Show rates for checkout</label>
+                    <label>Enable Bob Go rates at checkout</label>
                     <comment>When this setting is enabled, your customers will be presented with shipping rates at checkout, as configured on the Bob Go platform under Rates at checkout.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
                 <field id="additional_info" translate="label" type="select" sortOrder="7" showInDefault="1" showInWebsite="1">
                     <label>Show additional rate information</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <comment>Displays the delivery timeframe and additional service level description as configured on Bob Go.</comment>
-                </field>
-
-                <!--                Hiding these fields (specificerrmsg, sallowspecific, specificcountry, showmethod, unit_of_measure, max_package_weight) from the admin protal-->
-                <field id="specificerrmsg" translate="label" type="textarea" sortOrder="80" showInDefault="0" showInWebsite="0" showInStore="0">
-                    <label>Displayed Error Message</label>
-                    <comment>We could not find any shipping rates for your delivery address. Please make sure your address is correct. If you are experiencing problems, please contact BobGo (support@bobgo.co.za).</comment>
-                </field>
-                <field id="sallowspecific" translate="label" type="select" sortOrder="90" showInDefault="0" showInWebsite="0" showInStore="0">
-                    <label>Ship to Applicable Countries</label>
-                    <frontend_class>shipping-applicable-country</frontend_class>
-                    <source_model>Magento\Shipping\Model\Config\Source\Allspecificcountries</source_model>
-                </field>
-                <field id="specificcountry" translate="label" type="multiselect" sortOrder="91" showInDefault="0" showInWebsite="0" showInStore="0">
-                    <label>Ship to Specific Countries</label>
-                    <source_model>Magento\Directory\Model\Config\Source\Country</source_model>
-                    <can_be_empty>1</can_be_empty>
-                </field>
-                <field id="showmethod" translate="label" type="select" sortOrder="92" showInDefault="0" showInWebsite="0" showInStore="0">
-                    <label>Show Method if Not Applicable</label>
-                    <frontend_class>shipping-skip-hide</frontend_class>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                </field>
-                <field id="unit_of_measure" translate="label" type="select" sortOrder="73" showInDefault="0" showInWebsite="0">
-                    <label>Weight Unit</label>
-                    <source_model>BobGroup\BobGo\Model\Source\Unitofmeasure</source_model>
-                </field>
-                <field id="max_package_weight" translate="label" type="text" sortOrder="90" showInDefault="0" showInWebsite="0">
-                    <label>Maximum Package Weight (Please consult your shipping carrier for maximum supported shipping weight)</label>
-                    <validate>validate-number validate-zero-or-greater</validate>
+                    <comment>Displays the delivery timeframe and additional service level description, as configured on Bob Go.</comment>
                 </field>
             </group>
         </section>
