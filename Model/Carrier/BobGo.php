@@ -820,7 +820,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     protected function _formatRates(mixed $rates, Result $result): void
     {
-        if (empty($rates)) {
+        if (empty($rates['rates'])) {  // Check if the 'rates' key is empty or null
             $error = $this->_rateErrorFactory->create();
             $error->setCarrierTitle($this->getConfigData('title'));
             $error->setErrorMessage($this->getConfigData('specificerrmsg'));
@@ -847,14 +847,22 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
                     // Set additional info if required
                     if ($this->getConfigData('additional_info') == 1) {
-                        $min_delivery_date = $this->getWorkingDays(date('Y-m-d'), $rate['min_delivery_date']);
-                        $max_delivery_date = $this->getWorkingDays(date('Y-m-d'), $rate['max_delivery_date']);
+                        $min_delivery_date = isset($rate['min_delivery_date']) && $rate['min_delivery_date'] !== null
+                            ? $this->getWorkingDays(date('Y-m-d'), $rate['min_delivery_date'])
+                            : null;
+
+                        $max_delivery_date = isset($rate['max_delivery_date']) && $rate['max_delivery_date'] !== null
+                            ? $this->getWorkingDays(date('Y-m-d'), $rate['max_delivery_date'])
+                            : null;
 
                         $this->deliveryDays($min_delivery_date, $max_delivery_date, $method);
                     }
 
                     // Set the method title, price, and cost
-                    $method->setMethodTitle($rate['service_name']);
+//                    $description = $rate['description'];
+                    $service_name = $rate['service_name'];
+//                    $method->setMethodTitle("$service_name | $description" );
+                    $method->setMethodTitle("$service_name");
                     $price = $rate['total_price'];
                     $cost = $rate['total_price'];
 
@@ -972,17 +980,23 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @param $method
      * @return void
      */
-    protected function deliveryDays(int $min_delivery_date, int $max_delivery_date, $method): void
+    protected function deliveryDays(?int $min_delivery_date, ?int $max_delivery_date, $method): void
     {
+        if ($min_delivery_date === null || $max_delivery_date === null) {
+            return;
+        }
+
         if ($min_delivery_date !== $max_delivery_date) {
             $method->setCarrierTitle('Delivery in '.$min_delivery_date . ' - ' . $max_delivery_date . ' days');
-        }else{
-            $method->setCarrierTitle('Delivery in ' . $min_delivery_date . ' days');
+        } else {
             if ($min_delivery_date && $max_delivery_date == 1) {
                 $method->setCarrierTitle('Delivery in '.$min_delivery_date . ' day');
+            } else {
+                $method->setCarrierTitle('Delivery in ' . $min_delivery_date . ' days');
             }
         }
     }
+
 
     /**
      * @return mixed|string
@@ -1130,4 +1144,5 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         }
         return false;
     }
+
 }

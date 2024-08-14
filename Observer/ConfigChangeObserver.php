@@ -34,9 +34,9 @@ class ConfigChangeObserver implements ObserverInterface
                 $result = $this->bobGo->triggerRatesTest();
 
                 if ($result !== false) {
-                    $this->messageManager->addSuccessMessage(__('BobGo rates at checkout test is successful.'));
+                    $this->messageManager->addSuccessMessage(__('Bob Go rates at checkout test is successful.'));
                 } else {
-                    $this->messageManager->addErrorMessage(__('BobGo rates at checkout test failed. Please visit https://www.bobgo.co.za/ and enable this channel for rates at checkout.'));
+                    $this->messageManager->addErrorMessage(__('Bob Go rates at checkout test failed. Please visit https://www.bobgo.co.za/ and enable this channel for rates at checkout.'));
                 }
             }
         }
