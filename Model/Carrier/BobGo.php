@@ -34,7 +34,7 @@ use Psr\Log\LoggerInterface;
 /**
  * Bob Go shipping implementation
  * @category   Bob Go
- * @package    bobgo_CustomShipping
+ * @package    BobGo
  * @author     Bob Go
  * @website    https://www.bobgo.co.za
  * @SuppressWarnings(PHPMD.ExcessiveClassComplexity)
@@ -101,13 +101,18 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     protected \Magento\Framework\HTTP\Client\Curl $curl;
 
+    /**
+     * @var ScopeConfigInterface
+     */
+    protected $scopeConfig;  // Declare the scopeConfig property
+
 
     /**
      * @param \Magento\Framework\Controller\Result\JsonFactory $jsonFactory
      */
     protected JsonFactory $jsonFactory;
     private $cartRepository;
-    public Company $company;
+    public AdditionalInfo $additionalInfo;
 
 
     /**
@@ -161,6 +166,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
         $this->_storeManager = $storeManager;
         $this->_productCollectionFactory = $productCollectionFactory;
+        $this->scopeConfig = $scopeConfig;
         parent::__construct(
             $scopeConfig,
             $rateErrorFactory,
@@ -181,9 +187,8 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         );
         $this->jsonFactory = $jsonFactory;
         $this->curl = $curlFactory->create();
-        $this->company = new Company();
+        $this->additionalInfo = new AdditionalInfo($countryFactory);
     }
-
 
     /*
      * Gets the base url of the store by stripping the http:// or https:// and wwww. from the url
@@ -294,6 +299,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         if (!$this->isActive()) {
             return false;
         }
+
         /**
          * Gets the destination company name from Company Name field in the checkout page
          * This method is used is the last resort to get the company name since the company name is not available in _rateFactory
@@ -814,42 +820,60 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     protected function _formatRates(mixed $rates, Result $result): void
     {
-        if (empty($rates)) {
+        if (empty($rates['rates'])) {  // Check if the 'rates' key is empty or null
             $error = $this->_rateErrorFactory->create();
             $error->setCarrierTitle($this->getConfigData('title'));
             $error->setErrorMessage($this->getConfigData('specificerrmsg'));
 
             $result->append($error);
         } else {
-            foreach ($rates['rates'] as $title) {
+
+            foreach ($rates['rates'] as $rate) {
 
                 $method = $this->_rateMethodFactory->create();
-                if (isset($title)){
+
+                if (isset($rate)) {
+                    // Set the carrier code
                     $method->setCarrier(self::CODE);
 
-
-                    if ($this->getConfigData('additional_info') == 1) {
-                        $min_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['min_delivery_date']);
-                        $max_delivery_date = $this->getWorkingDays(date('Y-m-d'), $title['max_delivery_date']);
-
-                        $this->deliveryDays($min_delivery_date, $max_delivery_date, $method);
-
-                    } else {
-                        $method->setCarrierTitle($this->getConfigData('title'));
+                    // Strip out the redundant 'bobgo_' prefix if present
+                    $serviceCode = $rate['service_code'];
+                    if (strpos($serviceCode, 'bobgo_') === 0) {
+                        $serviceCode = substr($serviceCode, strlen('bobgo_'));
                     }
 
+                    // Set the method with the modified service code
+                    $method->setMethod($serviceCode);
+
+                    // Set additional info if required
+                    if ($this->getConfigData('additional_info') == 1) {
+                        $min_delivery_date = isset($rate['min_delivery_date']) && $rate['min_delivery_date'] !== null
+                            ? $this->getWorkingDays(date('Y-m-d'), $rate['min_delivery_date'])
+                            : null;
+
+                        $max_delivery_date = isset($rate['max_delivery_date']) && $rate['max_delivery_date'] !== null
+                            ? $this->getWorkingDays(date('Y-m-d'), $rate['max_delivery_date'])
+                            : null;
+
+                        $this->deliveryDays($min_delivery_date, $max_delivery_date, $method);
+                    }
+
+                    // Set the method title, price, and cost
+//                    $description = $rate['description'];
+                    $service_name = $rate['service_name'];
+//                    $method->setMethodTitle("$service_name | $description" );
+                    $method->setMethodTitle("$service_name");
+                    $price = $rate['total_price'];
+                    $cost = $rate['total_price'];
+
+                    $method->setPrice($price);
+                    $method->setCost($cost);
+
+                    $result->append($method);
                 }
-
-                $method->setMethod($title['service_code']);
-                $method->setMethodTitle($title['service_name']);
-                $method->setPrice($title['total_price'] / self::UNITS);
-                $method->setCost($title['total_price'] / self::UNITS);
-
-                $result->append($method);
             }
         }
     }
-
 
     /**
      * Prepare received checkpoints and activity from Bob Go Shipment Tracking API
@@ -865,7 +889,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                 'activity' => $checkpoint['status'],
                 'deliverydate' => $this->formatDate($checkpoint['time']),
                 'deliverytime' => $this->formatTime($checkpoint['time']),
-              //  'deliverylocation' => 'Unavailable',//TODO: remove this line
+                //  'deliverylocation' => 'Unavailable',//TODO: remove this line
             ];
         }
         return $result;
@@ -956,31 +980,37 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @param $method
      * @return void
      */
-    protected function deliveryDays(int $min_delivery_date, int $max_delivery_date, $method): void
+    protected function deliveryDays(?int $min_delivery_date, ?int $max_delivery_date, $method): void
     {
+        if ($min_delivery_date === null || $max_delivery_date === null) {
+            return;
+        }
+
         if ($min_delivery_date !== $max_delivery_date) {
-            $method->setCarrierTitle('delivery in '.$min_delivery_date . ' - ' . $max_delivery_date . ' days');
-        }else{
-            $method->setCarrierTitle('delivery in ' . $min_delivery_date . ' days');
+            $method->setCarrierTitle('Delivery in '.$min_delivery_date . ' - ' . $max_delivery_date . ' days');
+        } else {
             if ($min_delivery_date && $max_delivery_date == 1) {
-                $method->setCarrierTitle('delivery in '.$min_delivery_date . ' day');
+                $method->setCarrierTitle('Delivery in '.$min_delivery_date . ' day');
+            } else {
+                $method->setCarrierTitle('Delivery in ' . $min_delivery_date . ' days');
             }
         }
     }
+
 
     /**
      * @return mixed|string
      */
     public function getDestComp(): mixed
     {
-        return $this->company->getDestComp();
+        return $this->additionalInfo->getDestComp();
     }
     /**
      * @return mixed|string
      */
     public function getDestSuburb(): mixed
     {
-        return $this->company->getSuburb();
+        return $this->additionalInfo->getSuburb();
     }
 
     /**
@@ -1040,4 +1070,79 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         }
         return true;
     }
+
+    public function triggerRatesTest()
+    {
+        // Check if the 'Show rates for checkout' setting is enabled
+        $isEnabled = $this->scopeConfig->getValue('carriers/bobgo/active', \Magento\Store\Model\ScopeInterface::SCOPE_STORE);
+
+        if ($isEnabled) {
+            // Sample test payload, replace with actual structure
+            $payload = [
+                'identifier' => $this->getBaseUrl(),
+                'rate' => [
+                    'origin' => [
+                        'company' => 'Test Store',
+                        'address1' => '123 Test St',
+                        'address2' => '',
+                        'city' => 'Test City',
+                        'suburb' => 'Test Suburb',
+                        'province' => 'Test Province',
+                        'country_code' => 'ZA',
+                        'postal_code' => '2000',
+                    ],
+                    'destination' => [
+                        'company' => 'Test Company',
+                        'address1' => '456 Test Ave',
+                        'address2' => '',
+                        'suburb' => 'Test Suburb',
+                        'city' => 'Test City',
+                        'province' => 'Test Province',
+                        'country_code' => 'ZA',
+                        'postal_code' => '3000',
+                    ],
+                    'items' => [
+                        [
+                            'sku' => 'test-sku-1',
+                            'quantity' => 1,
+                            'price' => 100.00,
+                            'weight' => 500, // in grams
+                        ]
+                    ],
+                ]
+            ];
+
+            try {
+                // Perform the API request
+                $this->curl->addHeader('Content-Type', 'application/json');
+                $this->curl->post($this->getApiUrl(), json_encode($payload));
+                $statusCode = $this->curl->getStatus();
+                $responseBody = $this->curl->getBody();
+
+                // Decode the response
+                $response = json_decode($responseBody, true);
+
+                // Check if the response contains a 'message' (indicating an error)
+                if (isset($response['message'])) {
+                    throw new \Exception('Error from BobGo: ' . $response['message']);
+                }
+
+                // Check if the response contains rates with a valid id field
+                if (isset($response['rates']) && is_array($response['rates']) && !empty($response['rates'])) {
+                    foreach ($response['rates'] as $rate) {
+                        if (isset($rate['id']) && $rate['id'] !== null) {
+                            return $response; // Successful response with a valid id
+                        }
+                    }
+                    throw new \Exception('Rates received but id field is empty or invalid.');
+                } else {
+                    throw new \Exception('Received response but no valid rates were found.');
+                }
+            } catch (\Exception $e) {
+                return false;
+            }
+        }
+        return false;
+    }
+
 }
