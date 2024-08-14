@@ -9,7 +9,7 @@
 
         <carriers>
             <bobgo>
-                <active>0</active>
+                <active>1</active>
                 <price>0.00</price>
                 <model>BobGroup\BobGo\Model\Carrier\BobGo</model>
                 <name>Fixed</name>

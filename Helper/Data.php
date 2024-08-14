@@ -8,7 +8,7 @@ use Magento\Store\Model\ScopeInterface;
 
 /**
  * @category   Bob Go
- * @package    bobgo_CustomShipping
+ * @package    BobGo
  * @author     Bob Go
  * @website    https://www.bobgo.co.za
  */

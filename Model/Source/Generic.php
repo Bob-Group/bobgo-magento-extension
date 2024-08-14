@@ -2,19 +2,56 @@
 
 namespace BobGroup\BobGo\Model\Source;
 
+
+use Magento\Framework\Data\OptionSourceInterface;
+use BobGroup\BobGo\Model\Carrier\BobGo;
+
 /**
- * Bob Go Free Method source implementation
+ * bobgo generic source implementation
  */
-class Freemethod extends Method
+class Generic implements OptionSourceInterface
 {
     /**
-     * {@inheritdoc}
+     * @var BobGo
+     */
+    protected BobGo $_shippingBobGo;
+
+    /**
+     * Carrier code
+     * @var string
+     */
+    protected string $_code = '';
+
+    /**
+     * @param BobGo $shippingBobGo
+     */
+    public function __construct(BobGo $shippingBobGo)
+    {
+        $this->_shippingBobGo = $shippingBobGo;
+    }
+
+    /**
+     * Returns array to be used in multiselect on back-end
+     * @return array
      */
     public function toOptionArray()
     {
-        //Returns an array of arrays, each of which has a 'value' and a 'label'. The 'value' is the code for the shipping method, and the 'label' is the name of the shipping method.
-        $arr = parent::toOptionArray();
-        array_unshift($arr, ['value' => '', 'label' => __('None')]);
+        $configData = $this->_shippingBobGo->getCode($this->_code);
+        $arr = [];
+        if ($configData) {
+            $arr = array_map(
+                function ($code, $title) {
+                    return [
+                        'value' => $code,
+                        'label' => $title
+                    ];
+                },
+                array_keys($configData),
+                $configData
+            );
+        }
+
         return $arr;
     }
+
 }
