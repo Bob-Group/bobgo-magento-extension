@@ -13,5 +13,4 @@
             <argument name="logger" xsi:type="object">Psr\Log\LoggerInterface</argument>
         </arguments>
     </type>
-
 </config>
