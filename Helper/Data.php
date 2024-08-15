@@ -7,9 +7,6 @@ use Magento\Framework\Module\ModuleListInterface;
 use Magento\Store\Model\ScopeInterface;
 
 /**
- * @category   Bob Go
- * @package    BobGo
- * @author     Bob Go
  * @website    https://www.bobgo.co.za
  */
 class Data extends AbstractHelper

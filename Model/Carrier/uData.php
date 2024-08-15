@@ -2,10 +2,6 @@
 
 namespace BobGroup\BobGo\Model\Carrier;
 
-/**
- * Class uData
- * @package BobGroup\BobGo\Model\Carrier
- */
 class uData
 {
 

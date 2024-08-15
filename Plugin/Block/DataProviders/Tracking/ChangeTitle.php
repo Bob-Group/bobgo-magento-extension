@@ -6,7 +6,6 @@ use BobGroup\BobGo\Model\Carrier;
 use Magento\Shipping\Model\Tracking\Result\Status;
 use Magento\Shipping\Block\DataProviders\Tracking\DeliveryDateTitle as Subject;
 
-
 /**
  * Plugin to change delivery date title with bobgo customized value
  */

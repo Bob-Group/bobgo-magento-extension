@@ -9,9 +9,22 @@ use Magento\Framework\App\Config\ScopeConfigInterface;
 
 class AddWeightUnitToOrderPlugin
 {
+    /**
+     * @var LoggerInterface
+     */
     protected $logger;
+
+    /**
+     * @var ScopeConfigInterface
+     */
     protected $scopeConfig;
 
+    /**
+     * Constructor
+     *
+     * @param LoggerInterface $logger
+     * @param ScopeConfigInterface $scopeConfig
+     */
     public function __construct(
         LoggerInterface $logger,
         ScopeConfigInterface $scopeConfig
@@ -20,6 +33,13 @@ class AddWeightUnitToOrderPlugin
         $this->scopeConfig = $scopeConfig;
     }
 
+    /**
+     * Before save plugin to modify order items' weight based on the configured weight unit.
+     *
+     * @param OrderRepositoryInterface $subject
+     * @param OrderInterface $order
+     * @return array
+     */
     public function beforeSave(
         OrderRepositoryInterface $subject,
         OrderInterface $order
@@ -42,7 +62,6 @@ class AddWeightUnitToOrderPlugin
                 $orderItem->setData('weight', $convertedWeight);
             }
         }
-
 
         return [$order];
     }

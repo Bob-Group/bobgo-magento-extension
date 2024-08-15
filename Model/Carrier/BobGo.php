@@ -33,9 +33,6 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Bob Go shipping implementation
- * @category   Bob Go
- * @package    BobGo
- * @author     Bob Go
  * @website    https://www.bobgo.co.za
  * @SuppressWarnings(PHPMD.ExcessiveClassComplexity)
  * @SuppressWarnings(PHPMD.CouplingBetweenObjects)
@@ -161,7 +158,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         JsonFactory $jsonFactory,
         CurlFactory $curlFactory,
         array $data = []
-
     ) {
 
         $this->_storeManager = $storeManager;
@@ -413,7 +409,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
         $baseIdentifier = $this->getBaseUrl();
 
-        return array($originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb, $weightUnit);
+        return [$originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb, $weightUnit];
     }
 
 
@@ -646,7 +642,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     protected function _doShipmentRequest(\Magento\Framework\DataObject $request)
     {
         return null;
-
     }
 
     /**
@@ -794,7 +789,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         $rates = $this->uRates($payload);
 
         $this->_formatRates($rates, $result);
-
     }
 
     /**
@@ -969,7 +963,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             $destStreet2 = '';
             $destStreet3 = '';
         }
-        return array($destStreet1, $destStreet2, $destStreet3);
+        return [$destStreet1, $destStreet2, $destStreet3];
     }
 
     /**
@@ -1142,5 +1136,4 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         }
         return false;
     }
-
 }

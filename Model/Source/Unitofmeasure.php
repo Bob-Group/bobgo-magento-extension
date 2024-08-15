@@ -9,5 +9,4 @@ class Unitofmeasure extends Generic
      * @var string
      */
     protected string $_code = 'unit_of_measure';
-
 }

@@ -2,12 +2,11 @@
 
 namespace BobGroup\BobGo\Model\Source;
 
-
 use Magento\Framework\Data\OptionSourceInterface;
 use BobGroup\BobGo\Model\Carrier\BobGo;
 
 /**
- * bobgo generic source implementation
+ * BobGo generic source implementation.
  */
 class Generic implements OptionSourceInterface
 {
@@ -18,6 +17,7 @@ class Generic implements OptionSourceInterface
 
     /**
      * Carrier code
+     *
      * @var string
      */
     protected string $_code = '';
@@ -31,7 +31,8 @@ class Generic implements OptionSourceInterface
     }
 
     /**
-     * Returns array to be used in multiselect on back-end
+     * Returns array to be used in multiselect on back-end.
+     *
      * @return array
      */
     public function toOptionArray()
@@ -53,5 +54,4 @@ class Generic implements OptionSourceInterface
 
         return $arr;
     }
-
 }

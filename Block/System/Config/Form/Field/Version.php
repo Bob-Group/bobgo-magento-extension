@@ -5,9 +5,6 @@ use Magento\Framework\Data\Form\Element\AbstractElement;
 
 /**
  * Displays Version number in System Configuration
- * @category   BobGroup
- * @package    BobGo
- * @author     support@bobgo.co.za
  * @website    https://www.bobgo.co.za
  */
 class Version extends \Magento\Config\Block\System\Config\Form\Field
