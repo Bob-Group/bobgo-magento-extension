@@ -38,10 +38,12 @@ class AddWeightUnitToOrderPlugin
                 $convertedWeight = $weight * 0.45359237;
 
                 // Set the converted weight back to the item
-                $orderItem->setData('weight', $weight);
+                $orderItem->setWeight($convertedWeight);
+                $orderItem->setData('weight', $convertedWeight);
             }
         }
-        
+
+
         return [$order];
     }
 }
