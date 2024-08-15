@@ -29,12 +29,19 @@ class AddWeightUnitToOrderPlugin
             \Magento\Store\Model\ScopeInterface::SCOPE_STORE
         );
 
-        if ($weightUnit) {
+        if ($weightUnit === 'lbs') {
             foreach ($order->getItems() as $orderItem) {
-                $orderItem->setData('product_type', $weightUnit);
+                // Get the current weight of the item
+                $weight = $orderItem->getWeight();
+
+                // Convert weight from lbs to kg
+                $convertedWeight = $weight * 0.45359237;
+
+                // Set the converted weight back to the item
+                $orderItem->setData('weight', $weight);
             }
         }
-
+        
         return [$order];
     }
 }
