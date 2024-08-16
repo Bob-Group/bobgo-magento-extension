@@ -2,7 +2,8 @@
 
 namespace BobGroup\BobGo\Model\Carrier;
 
-use Magento\Framework\App\RequestInterface;
+use Magento\Framework\App\Request\Http;
+use Magento\Directory\Model\CountryFactory;
 
 /**
  * Handles the retrieval of additional information from the request body.
@@ -10,22 +11,22 @@ use Magento\Framework\App\RequestInterface;
 class AdditionalInfo
 {
     /**
-     * @var \BobGroup\BobGo\Model\Carrier\AdditionalInfo
+     * @var CountryFactory
      */
     public $countryFactory;
 
     /**
-     * @var RequestInterface
+     * @var Http
      */
     protected $request;
 
     /**
      * Constructor
      *
-     * @param \BobGroup\BobGo\Model\Carrier\AdditionalInfo $countryFactory
-     * @param RequestInterface $request
+     * @param CountryFactory $countryFactory
+     * @param Http $request
      */
-    public function __construct($countryFactory, RequestInterface $request)
+    public function __construct(CountryFactory $countryFactory, Http $request)
     {
         $this->countryFactory = $countryFactory;
         $this->request = $request;
@@ -40,7 +41,11 @@ class AdditionalInfo
     {
         $data = $this->getRequestBody();
 
-        return $data['address']['company'] ?? '';
+        if (isset($data['address']) && is_array($data['address']) && isset($data['address']['company'])) {
+            return (string) $data['address']['company'];
+        }
+
+        return '';
     }
 
     /**
@@ -52,7 +57,15 @@ class AdditionalInfo
     {
         $data = $this->getRequestBody();
 
-        return $data['address']['custom_attributes'][0]['value'] ?? '';
+        if (
+            isset($data['address']) && is_array($data['address']) &&
+            isset($data['address']['custom_attributes'][0]) && is_array($data['address']['custom_attributes'][0]) &&
+            isset($data['address']['custom_attributes'][0]['value'])
+        ) {
+            return (string) $data['address']['custom_attributes'][0]['value'];
+        }
+
+        return '';
     }
 
     /**
@@ -64,7 +77,11 @@ class AdditionalInfo
     {
         $data = $this->getRequestBody();
 
-        return $data['address']['telephone'] ?? '';
+        if (isset($data['address']) && is_array($data['address']) && isset($data['address']['telephone'])) {
+            return (string) $data['address']['telephone'];
+        }
+
+        return '';
     }
 
     /**
@@ -75,21 +92,21 @@ class AdditionalInfo
      */
     public function getCountryName(string $countryId): string
     {
-        $countryName = '';
         $country = $this->countryFactory->create()->loadByCode($countryId);
-        if ($country) {
-            $countryName = $country->getName();
-        }
-        return $countryName;
+        return $country->getName() ?: '';
     }
 
     /**
      * Retrieve the request body as an array
      *
-     * @return array
+     * @return array<string, mixed>
      */
     private function getRequestBody(): array
     {
-        return json_decode($this->request->getContent(), true) ?: [];
+        $content = $this->request->getContent();
+        $data = json_decode($content, true);
+
+        return is_array($data) ? $data : [];
     }
 }
+

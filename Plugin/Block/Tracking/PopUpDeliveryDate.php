@@ -4,13 +4,17 @@ namespace BobGroup\BobGo\Plugin\Block\Tracking;
 
 use Magento\Shipping\Block\Tracking\Popup;
 use Magento\Shipping\Model\Tracking\Result\Status;
-use Magento\Shipping\Model\Carrier;
 
 /*
  * Plugin to update delivery date value in case if Bob Go is a carrier used
  */
 class PopupDeliveryDate
 {
+    /**
+     * Bob Go carrier code
+     */
+    private const BOB_GO_CARRIER_CODE = 'bobgo_carrier_code'; // Replace with your actual carrier code
+
     /**
      * Show only date for expected delivery in case if Bob Go is a carrier
      *
@@ -23,7 +27,7 @@ class PopupDeliveryDate
      */
     public function afterFormatDeliveryDateTime(Popup $subject, $result, $date, $time)
     {
-        if ($this->getCarrier($subject) === Carrier::CODE) {
+        if ($this->getCarrier($subject) === self::BOB_GO_CARRIER_CODE) {
             $result = $subject->formatDeliveryDate($date);
         }
         return $result;
@@ -40,7 +44,7 @@ class PopupDeliveryDate
         foreach ($subject->getTrackingInfo() as $trackingData) {
             foreach ($trackingData as $trackingInfo) {
                 if ($trackingInfo instanceof Status) {
-                    return $trackingInfo->getCarrier();
+                    return $trackingInfo->getCarrier() ?? '';
                 }
             }
         }

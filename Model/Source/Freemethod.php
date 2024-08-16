@@ -8,9 +8,11 @@ namespace BobGroup\BobGo\Model\Source;
 class Freemethod extends Method
 {
     /**
-     * @inheritdoc
+     * Returns an array of options for the free method.
+     *
+     * @return array<int, array<string, string>>
      */
-    public function toOptionArray()
+    public function toOptionArray(): array
     {
         // Returns an array of arrays, each of which has a 'value' and a 'label'.
         // The 'value' is the code for the shipping method, and the 'label' is the name of the shipping method.

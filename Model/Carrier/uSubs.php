@@ -2,7 +2,7 @@
 
 namespace BobGroup\BobGo\Model\Carrier;
 
-use Magento\Framework\App\RequestInterface;
+use Magento\Framework\App\Request\Http;
 
 /**
  * Handles the retrieval of company information from the Estimate Shipping Methods request body.
@@ -10,16 +10,16 @@ use Magento\Framework\App\RequestInterface;
 class USubs
 {
     /**
-     * @var RequestInterface
+     * @var Http
      */
     protected $request;
 
     /**
      * Constructor
      *
-     * @param RequestInterface $request
+     * @param Http $request
      */
-    public function __construct(RequestInterface $request)
+    public function __construct(Http $request)
     {
         $this->request = $request;
     }
@@ -33,7 +33,12 @@ class USubs
     {
         $data = json_decode($this->getRequestBody(), true);
 
-        return $data['address']['company'] ?? '';
+        // Ensure that $data is an array and has the expected structure
+        if (is_array($data) && isset($data['address']) && is_array($data['address']) && isset($data['address']['company'])) {
+            return $data['address']['company'];
+        }
+
+        return '';
     }
 
     /**

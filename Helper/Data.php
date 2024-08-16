@@ -1,4 +1,5 @@
 <?php
+
 namespace BobGroup\BobGo\Helper;
 
 use Magento\Framework\App\Helper\AbstractHelper;
@@ -16,19 +17,8 @@ use Magento\Store\Model\ScopeInterface;
  */
 class Data extends AbstractHelper
 {
-    /**
-     * Configuration path for enabling the module
-     *
-     * @var string
-     */
     public const XML_PATH_ENABLED = 'BobGroup_BobGo/general/enabled';
-
-    /**
-     * Configuration path for enabling debug mode
-     *
-     * @var string
-     */
-    public const XML_PATH_DEBUG   = 'BobGroup_BobGo/general/debug';
+    public const XML_PATH_DEBUG = 'BobGroup_BobGo/general/debug';
 
     /**
      * @var \Psr\Log\LoggerInterface
@@ -38,14 +28,8 @@ class Data extends AbstractHelper
     /**
      * @var ModuleListInterface
      */
-    protected $_moduleList;
+    protected ModuleListInterface $_moduleList;
 
-    /**
-     * Constructor
-     *
-     * @param Context $context
-     * @param ModuleListInterface $moduleList
-     */
     public function __construct(
         Context $context,
         ModuleListInterface $moduleList
@@ -60,12 +44,14 @@ class Data extends AbstractHelper
      *
      * @return string|null
      */
-    public function isEnabled()
+    public function isEnabled(): ?string
     {
-        return $this->scopeConfig->getValue(
+        $value = $this->scopeConfig->getValue(
             self::XML_PATH_ENABLED,
             ScopeInterface::SCOPE_STORE
         );
+
+        return is_string($value) ? $value : null;
     }
 
     /**
@@ -73,12 +59,14 @@ class Data extends AbstractHelper
      *
      * @return string|null
      */
-    public function getDebugStatus()
+    public function getDebugStatus(): ?string
     {
-        return $this->scopeConfig->getValue(
+        $value = $this->scopeConfig->getValue(
             self::XML_PATH_DEBUG,
             ScopeInterface::SCOPE_STORE
         );
+
+        return is_string($value) ? $value : null;
     }
 
     /**
@@ -86,11 +74,12 @@ class Data extends AbstractHelper
      *
      * @return string
      */
-    public function getExtensionVersion()
+    public function getExtensionVersion(): string
     {
         $moduleCode = 'BobGroup_BobGo';
         $moduleInfo = $this->_moduleList->getOne($moduleCode);
-        return $moduleInfo['setup_version'];
+
+        return $moduleInfo['setup_version'] ?? 'N/A';
     }
 
     /**

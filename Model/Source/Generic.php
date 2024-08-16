@@ -33,18 +33,18 @@ class Generic implements OptionSourceInterface
     /**
      * Returns array to be used in multiselect on back-end.
      *
-     * @return array
+     * @return array<int, array<string, string>>
      */
-    public function toOptionArray()
+    public function toOptionArray(): array
     {
         $configData = $this->_shippingBobGo->getCode($this->_code);
         $arr = [];
         if ($configData) {
             $arr = array_map(
-                function ($code, $title) {
+                function ($code, $title): array {
                     return [
-                        'value' => $code,
-                        'label' => $title
+                        'value' => (string) $code,
+                        'label' => (string) $title
                     ];
                 },
                 array_keys($configData),

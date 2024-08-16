@@ -1,7 +1,9 @@
 <?php
+
 namespace BobGroup\BobGo\Block\System\Config\Form\Field;
 
 use Magento\Framework\Data\Form\Element\AbstractElement;
+use BobGroup\BobGo\Helper\Data;
 
 /**
  * Displays Version number in System Configuration
@@ -19,19 +21,19 @@ class Version extends \Magento\Config\Block\System\Config\Form\Field
     public const EXTENSION_URL = 'https://www.bobgo.co.za';
 
     /**
-     * @var \BobGroup\BobGo\Helper\Data $helper
+     * @var Data
      */
-    protected $_helper;
+    protected Data $_helper;
 
     /**
      * Constructor
      *
      * @param \Magento\Backend\Block\Template\Context $context
-     * @param \BobGroup\BobGo\Helper\Data $helper
+     * @param Data $helper
      */
     public function __construct(
         \Magento\Backend\Block\Template\Context $context,
-        \BobGroup\BobGo\Helper\Data $helper
+        Data $helper
     ) {
         $this->_helper = $helper;
         parent::__construct($context);
@@ -43,18 +45,22 @@ class Version extends \Magento\Config\Block\System\Config\Form\Field
      * @param AbstractElement $element
      * @return string
      */
-    protected function _getElementHtml(AbstractElement $element)
+    protected function _getElementHtml(AbstractElement $element): string
     {
-        $extensionVersion   = $this->_helper->getExtensionVersion();
-        $extensionTitle     = 'BobGo';
-        $versionLabel       = sprintf(
+        $extensionVersion = $this->_helper->getExtensionVersion();
+        $extensionTitle = 'BobGo';
+        $versionLabel = sprintf(
             '<a href="%s" title="%s" target="_blank">%s</a>',
             self::EXTENSION_URL,
             $extensionTitle,
             $extensionVersion
         );
-        $element->setValue($versionLabel);
 
-        return $element->getValue();
+        // Set the value using setData
+        $element->setData('value', $versionLabel);
+
+        // Ensure the return value is a string or provide a fallback
+        $value = $element->getData('value');
+        return is_string($value) ? $value : '';
     }
 }

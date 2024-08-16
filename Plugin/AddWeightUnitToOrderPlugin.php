@@ -6,6 +6,7 @@ use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Psr\Log\LoggerInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Sales\Api\Data\OrderItemInterface;
 
 class AddWeightUnitToOrderPlugin
 {
@@ -38,12 +39,12 @@ class AddWeightUnitToOrderPlugin
      *
      * @param OrderRepositoryInterface $subject
      * @param OrderInterface $order
-     * @return array
+     * @return array{0: OrderInterface}
      */
     public function beforeSave(
         OrderRepositoryInterface $subject,
         OrderInterface $order
-    ) {
+    ): array {
         $weightUnit = $this->scopeConfig->getValue(
             'general/locale/weight_unit',
             \Magento\Store\Model\ScopeInterface::SCOPE_STORE
@@ -57,9 +58,12 @@ class AddWeightUnitToOrderPlugin
                 // Convert weight from lbs to kg
                 $convertedWeight = $weight * 0.45359237;
 
-                // Set the converted weight back to the item
+                // Set the converted weight back to the item using the correct setter method
                 $orderItem->setWeight($convertedWeight);
-                $orderItem->setData('weight', $convertedWeight);
+
+                // Assuming you want to store this in a custom field, you should add a custom attribute
+                // If you are using a custom attribute, ensure that it’s correctly added to the OrderItemInterface
+                // $orderItem->setData('custom_weight_attribute', $convertedWeight);
             }
         }
 

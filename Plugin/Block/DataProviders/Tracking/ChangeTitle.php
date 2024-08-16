@@ -23,7 +23,7 @@ class ChangeTitle
      */
     public function afterGetTitle(Subject $subject, $result, Status $trackingStatus)
     {
-        if ($trackingStatus->getCarrier() === Carrier::CODE) {
+        if ($trackingStatus->getCarrier() === \BobGroup\BobGo\Model\Carrier\BobGo::CODE) {
             $result = __('Expected delivery:');
         }
         return $result;
