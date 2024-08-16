@@ -5,11 +5,18 @@ use Magento\Framework\Data\Form\Element\AbstractElement;
 
 /**
  * Displays Version number in System Configuration
- * @website    https://www.bobgo.co.za
+ *
+ * This block is responsible for displaying the version number of the BobGo extension
+ * in the system configuration settings.
+ *
+ * @website https://www.bobgo.co.za
  */
 class Version extends \Magento\Config\Block\System\Config\Form\Field
 {
-    const EXTENSION_URL = 'https://www.bobgo.co.za';
+    /**
+     * @var string
+     */
+    public const EXTENSION_URL = 'https://www.bobgo.co.za';
 
     /**
      * @var \BobGroup\BobGo\Helper\Data $helper
@@ -17,6 +24,8 @@ class Version extends \Magento\Config\Block\System\Config\Form\Field
     protected $_helper;
 
     /**
+     * Constructor
+     *
      * @param \Magento\Backend\Block\Template\Context $context
      * @param \BobGroup\BobGo\Helper\Data $helper
      */
@@ -28,8 +37,9 @@ class Version extends \Magento\Config\Block\System\Config\Form\Field
         parent::__construct($context);
     }
 
-
     /**
+     * Get HTML for the element
+     *
      * @param AbstractElement $element
      * @return string
      */

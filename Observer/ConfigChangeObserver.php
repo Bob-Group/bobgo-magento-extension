@@ -62,10 +62,10 @@ class ConfigChangeObserver implements ObserverInterface
                     );
                 } else {
                     $this->messageManager->addErrorMessage(
-                        __('Failed to connect to rates at checkout. Please check your internet connection and make '
-                            . 'sure Rates at checkout is enabled for your channel on Bob Go. Please visit '
-                            . '<a href="https://my.bobgo.co.za/rates-at-checkout?tab=settings" target="_new">Bob '
-                            . 'Go</a> and make sure your WooCommerce channel is enabled to receive rates.')
+                        __('Failed to connect to rates at checkout. Please check your internet connection
+                        and make sure Rates at checkout is enabled for your channel on Bob Go. Please visit Bob Go
+                        settings page to make sure your Magento channel is enabled to receive rates.
+                        https://my.bobgo.co.za/rates-at-checkout?tab=settings')
                     );
                 }
             }

@@ -7,13 +7,28 @@ use Magento\Framework\Module\ModuleListInterface;
 use Magento\Store\Model\ScopeInterface;
 
 /**
- * @website    https://www.bobgo.co.za
+ * Helper class for BobGo module
+ *
+ * This class provides various helper functions used in the BobGo module, including
+ * configuration checks, version retrieval, and logging.
+ *
+ * @website https://www.bobgo.co.za
  */
 class Data extends AbstractHelper
 {
+    /**
+     * Configuration path for enabling the module
+     *
+     * @var string
+     */
+    public const XML_PATH_ENABLED = 'BobGroup_BobGo/general/enabled';
 
-    const XML_PATH_ENABLED = 'BobGroup_BobGo/general/enabled';
-    const XML_PATH_DEBUG   = 'BobGroup_BobGo/general/debug';
+    /**
+     * Configuration path for enabling debug mode
+     *
+     * @var string
+     */
+    public const XML_PATH_DEBUG   = 'BobGroup_BobGo/general/debug';
 
     /**
      * @var \Psr\Log\LoggerInterface
@@ -26,6 +41,8 @@ class Data extends AbstractHelper
     protected $_moduleList;
 
     /**
+     * Constructor
+     *
      * @param Context $context
      * @param ModuleListInterface $moduleList
      */
@@ -33,14 +50,13 @@ class Data extends AbstractHelper
         Context $context,
         ModuleListInterface $moduleList
     ) {
-        $this->_logger                  = $context->getLogger();
-        $this->_moduleList              = $moduleList;
-
+        $this->_logger = $context->getLogger();
+        $this->_moduleList = $moduleList;
         parent::__construct($context);
     }
 
     /**
-     * Check if enabled
+     * Check if the BobGo module is enabled
      *
      * @return string|null
      */
@@ -52,6 +68,11 @@ class Data extends AbstractHelper
         );
     }
 
+    /**
+     * Get the debug status of the BobGo module
+     *
+     * @return string|null
+     */
     public function getDebugStatus()
     {
         return $this->scopeConfig->getValue(
@@ -60,6 +81,11 @@ class Data extends AbstractHelper
         );
     }
 
+    /**
+     * Get the version of the BobGo extension
+     *
+     * @return string
+     */
     public function getExtensionVersion()
     {
         $moduleCode = 'BobGroup_BobGo';
@@ -68,18 +94,20 @@ class Data extends AbstractHelper
     }
 
     /**
+     * Log a debug message if debug mode is enabled
      *
-     * @param $message
-     * @param bool|false $useSeparator
+     * @param string $message
+     * @param bool $useSeparator
+     * @return void
      */
     public function log($message, $useSeparator = false)
     {
         if ($this->getDebugStatus()) {
             if ($useSeparator) {
-                $this->_logger->addDebug(str_repeat('=', 100));
+                $this->_logger->debug(str_repeat('=', 100));
             }
 
-            $this->_logger->addDebug($message);
+            $this->_logger->debug($message);
         }
     }
 }

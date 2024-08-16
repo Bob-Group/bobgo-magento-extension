@@ -2,22 +2,47 @@
 
 namespace BobGroup\BobGo\Model\Carrier;
 
-/** Get Company information if available from the Estimate Shipping Methods Request Body */
-class uSubs
+use Magento\Framework\App\RequestInterface;
+
+/**
+ * Handles the retrieval of company information from the Estimate Shipping Methods request body.
+ */
+class USubs
 {
+    /**
+     * @var RequestInterface
+     */
+    protected $request;
 
     /**
-     * @return mixed|string
+     * Constructor
+     *
+     * @param RequestInterface $request
      */
-    public function getDestComp(): mixed
+    public function __construct(RequestInterface $request)
     {
-        $data = json_decode(file_get_contents('php://input'), true);
+        $this->request = $request;
+    }
 
-        if (isset($data['address']['company'])) {
-            $destComp = $data['address']['company'];
-        } else {
-            $destComp = '';
-        }
-        return $destComp;
+    /**
+     * Retrieve the destination company from the request body
+     *
+     * @return string
+     */
+    public function getDestComp(): string
+    {
+        $data = json_decode($this->getRequestBody(), true);
+
+        return $data['address']['company'] ?? '';
+    }
+
+    /**
+     * Retrieve the raw request body
+     *
+     * @return string
+     */
+    private function getRequestBody(): string
+    {
+        return $this->request->getContent();
     }
 }

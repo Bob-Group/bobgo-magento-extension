@@ -30,6 +30,7 @@ use Magento\Shipping\Model\Tracking\Result\StatusFactory;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
+use Magento\Framework\App\RequestInterface;
 
 /**
  * Bob Go shipping implementation
@@ -46,7 +47,11 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     public const CODE = 'bobgo';
 
-    const UNITS = 100;
+    /**
+     * Units constant
+     * @var int
+     */
+    public const UNITS = 100;
 
     /**
      * Code of the carrier
@@ -54,7 +59,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @var string
      */
     protected $_code = self::CODE;
-
 
     /**
      * Rate request data
@@ -78,20 +82,19 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     protected $_customizableContainerTypes = ['YOUR_PACKAGING'];
 
     /**
-     * @var \Magento\Store\Model\StoreManagerInterface
+     * @var StoreManagerInterface
      */
-    protected $_storeManager;
+    protected StoreManagerInterface $_storeManager;
 
     /**
-     * @var \Magento\Catalog\Model\ResourceModel\Product\CollectionFactory
+     * @var CollectionFactory
      */
-    protected $_productCollectionFactory;
-
+    protected CollectionFactory $_productCollectionFactory;
 
     /**
      * @var DataObject
      */
-    private $_rawTrackingRequest;
+    private DataObject $_rawTrackingRequest;
 
     /**
      * @var \Magento\Framework\HTTP\Client\Curl
@@ -101,18 +104,31 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     /**
      * @var ScopeConfigInterface
      */
-    protected $scopeConfig;  // Declare the scopeConfig property
-
+    protected ScopeConfigInterface $scopeConfig;
 
     /**
-     * @param \Magento\Framework\Controller\Result\JsonFactory $jsonFactory
+     * @var JsonFactory
      */
     protected JsonFactory $jsonFactory;
-    private $cartRepository;
-    public AdditionalInfo $additionalInfo;
-
 
     /**
+     * @var mixed
+     */
+    private $cartRepository;
+
+    /**
+     * @var AdditionalInfo
+     */
+    public AdditionalInfo $additionalInfo;
+
+    /**
+     * @var RequestInterface
+     */
+    protected RequestInterface $request;
+
+    /**
+     * Constructor
+     *
      * @param ScopeConfigInterface $scopeConfig
      * @param ErrorFactory $rateErrorFactory
      * @param LoggerInterface $logger
@@ -133,33 +149,35 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @param CollectionFactory $productCollectionFactory
      * @param JsonFactory $jsonFactory
      * @param CurlFactory $curlFactory
+     * @param RequestInterface $request
      * @param array $data
      * @SuppressWarnings(PHPMD.ExcessiveParameterList)
      */
     public function __construct(
-        \Magento\Framework\App\Config\ScopeConfigInterface $scopeConfig,
-        \Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory $rateErrorFactory,
-        \Psr\Log\LoggerInterface $logger,
+        ScopeConfigInterface $scopeConfig,
+        ErrorFactory $rateErrorFactory,
+        LoggerInterface $logger,
         Security $xmlSecurity,
-        \Magento\Shipping\Model\Simplexml\ElementFactory $xmlElFactory,
-        \Magento\Shipping\Model\Rate\ResultFactory $rateFactory,
-        \Magento\Quote\Model\Quote\Address\RateResult\MethodFactory $rateMethodFactory,
+        ElementFactory $xmlElFactory,
+        ResultFactory $rateFactory,
+        MethodFactory $rateMethodFactory,
         \Magento\Shipping\Model\Tracking\ResultFactory $trackFactory,
         \Magento\Shipping\Model\Tracking\Result\ErrorFactory $trackErrorFactory,
-        \Magento\Shipping\Model\Tracking\Result\StatusFactory $trackStatusFactory,
-        \Magento\Directory\Model\RegionFactory $regionFactory,
-        \Magento\Directory\Model\CountryFactory $countryFactory,
-        \Magento\Directory\Model\CurrencyFactory $currencyFactory,
-        \Magento\Directory\Helper\Data $directoryData,
-        \Magento\CatalogInventory\Api\StockRegistryInterface $stockRegistry,
-        \Magento\Store\Model\StoreManagerInterface $storeManager,
-        \Magento\Framework\Module\Dir\Reader $configReader,
-        \Magento\Catalog\Model\ResourceModel\Product\CollectionFactory $productCollectionFactory,
+        StatusFactory $trackStatusFactory,
+        RegionFactory $regionFactory,
+        CountryFactory $countryFactory,
+        CurrencyFactory $currencyFactory,
+        Data $directoryData,
+        StockRegistryInterface $stockRegistry,
+        StoreManagerInterface $storeManager,
+        Reader $configReader,
+        CollectionFactory $productCollectionFactory,
         JsonFactory $jsonFactory,
         CurlFactory $curlFactory,
+        RequestInterface $request,
         array $data = []
     ) {
-
+        $this->request = $request;
         $this->_storeManager = $storeManager;
         $this->_productCollectionFactory = $productCollectionFactory;
         $this->scopeConfig = $scopeConfig;
@@ -183,35 +201,45 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         );
         $this->jsonFactory = $jsonFactory;
         $this->curl = $curlFactory->create();
-        $this->additionalInfo = new AdditionalInfo($countryFactory);
+        $this->additionalInfo = new AdditionalInfo($countryFactory, $this->request);
     }
 
-    /*
-     * Gets the base url of the store by stripping the http:// or https:// and wwww. from the url
-     * leaving just "example.com" since Bob Go API uses this format and not the full url as the Identifier
-     * @var \Magento\Store\Model\StoreManagerInterface $this->_storeManager
+    /**
+     * Gets the base URL of the store by stripping the http:// or https:// and www. from the URL.
+     *
      * @return string
      */
     public function getBaseUrl(): string
     {
         $storeBase = $this->_storeManager->getStore()->getBaseUrl();
-        return parse_url($storeBase, PHP_URL_HOST);
+
+        // Remove protocol (http:// or https://)
+        $host = preg_replace('#^https?://#', '', $storeBase);
+
+        // Remove everything after the host (e.g., paths, query strings)
+        $host = explode('/', $host)[0];
+
+        // If the host starts with 'www.', remove it
+        if (strpos($host, 'www.') === 0) {
+            $host = substr($host, 4);
+        }
+
+        return $host;
     }
 
-
     /**
-     *  Make request to Bob Go API to get shipping rates for the cart
-     * After all the required data is collected, it makes a request to the Bob Go API to get the shipping rates
-     * @param $payload
+     * Makes a request to the Bob Go API to get shipping rates for the cart.
+     *
+     * @param array $payload
      * @return array
      */
-    public function getRates($payload): array
+    public function getRates(array $payload): array
     {
         return $this->uRates($payload);
     }
 
     /**
-     * Processing additional validation to check if carrier applicable.
+     * Processing additional validation to check if the carrier is applicable.
      *
      * @param \Magento\Framework\DataObject $request
      * @return $this|bool|\Magento\Framework\DataObject
@@ -222,7 +250,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             return false;
         }
 
-        $maxAllowedWeight = 500; //$this->getConfigData('max_package_weight');
+        $maxAllowedWeight = 500;
         $errorMsg = '';
         $configErrorMsg = $this->getConfigData('specificerrmsg');
         $defaultErrorMsg = __('The shipping module is not available.');
@@ -240,8 +268,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                 $doValidation = true;
 
                 if ($stockItemData->getIsQtyDecimal() && $stockItemData->getIsDecimalDivided()) {
-                    if ($stockItemData->getEnableQtyIncrements() && $stockItemData->getQtyIncrements()
-                    ) {
+                    if ($stockItemData->getEnableQtyIncrements() && $stockItemData->getQtyIncrements()) {
                         $weight = $weight * $stockItemData->getQtyIncrements();
                     } else {
                         $doValidation = false;
@@ -249,7 +276,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                 } elseif ($stockItemData->getIsQtyDecimal() && !$stockItemData->getIsDecimalDivided()) {
                     $weight = $weight * $item->getQty();
                 }
-
 
                 if ($doValidation && $weight > $maxAllowedWeight) {
                     $errorMsg = $configErrorMsg ? $configErrorMsg : $defaultErrorMsg;
@@ -259,7 +285,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         }
 
         if (!$errorMsg && !$request->getDestPostcode() && $this->isZipCodeRequired($request->getDestCountryId())) {
-
             $errorMsg = __('This shipping method is not available. Please specify the zip code.');
         }
 
@@ -284,27 +309,29 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * Collect and get rates for this shipping method based on information in $request
-     * This is a default function that is called by Magento to get the shipping rates for the cart
+     * Collect and get rates for this shipping method based on information in $request.
+     *
+     * This is a default function that is called by Magento to get the shipping rates for the cart.
+     *
      * @param RateRequest $request
      * @return Result|bool|null
      */
     public function collectRates(RateRequest $request)
     {
-        /*** Make sure that Shipping method is enabled*/
+        // Make sure that Shipping method is enabled
         if (!$this->isActive()) {
             return false;
         }
 
         /**
-         * Gets the destination company name from Company Name field in the checkout page
-         * This method is used is the last resort to get the company name since the company name is not available in _rateFactory
+         * Gets the destination company name from Company Name field in the checkout page.
+         * This method is used as the last resort to get the company name since the company name is
+         * not available in _rateFactory.
          */
         $destComp = $this->getDestComp();
         $destSuburb = $this->getDestSuburb();
 
         /** @var \Magento\Shipping\Model\Rate\Result $result */
-
         $result = $this->_rateFactory->create();
 
         $destination = $request->getDestPostcode();
@@ -313,15 +340,24 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         $destCity = $request->getDestCity();
         $destStreet = $request->getDestStreet();
 
-        /**  Destination Information  */
+        /** Destination Information */
         [$destStreet1, $destStreet2, $destStreet3] = $this->destStreet($destStreet);
 
+        /** Origin Information */
+        [
+            $originStreet,
+            $originRegion,
+            $originCountry,
+            $originCity,
+            $originStreet1,
+            $originStreet2,
+            $storeName,
+            $baseIdentifier,
+            $originSuburb,
+            $weightUnit
+        ] = $this->storeInformation();
 
-
-        /**  Origin Information  */
-        [$originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb,$weightUnit] = $this->storeInformation();
-
-        /**  Get all items in cart  */
+        /** Get all items in cart */
         $items = $request->getAllItems();
         $itemsArray = [];
         $itemsArray = $this->getStoreItems($items, $weightUnit, $itemsArray);
@@ -338,7 +374,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                     'province' => $originRegion,
                     'country_code' => $originCountry,
                     'postal_code' => $originStreet,
-
                 ],
                 'destination' => [
                     'company' => $destComp,
@@ -360,6 +395,8 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
+     * Retrieves store information including origin details.
+     *
      * @return array
      */
     public function storeInformation(): array
@@ -409,9 +446,19 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
         $baseIdentifier = $this->getBaseUrl();
 
-        return [$originStreet, $originRegion, $originCountry, $originCity, $originStreet1, $originStreet2, $storeName, $baseIdentifier, $originSuburb, $weightUnit];
+        return [
+            $originStreet,
+            $originRegion,
+            $originCountry,
+            $originCity,
+            $originStreet1,
+            $originStreet2,
+            $storeName,
+            $baseIdentifier,
+            $originSuburb,
+            $weightUnit
+        ];
     }
-
 
     /**
      * Get result of request
@@ -425,7 +472,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         }
         return $this->_result;
     }
-
 
     /**
      * Get final price for shipping method with handling fee per package
@@ -461,7 +507,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         return $cost + $handlingFee;
     }
 
-
     /**
      * Get configuration data of carrier
      *
@@ -494,7 +539,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             return $codes[$type][$code];
         }
     }
-
 
     /**
      * Get tracking
@@ -632,12 +676,13 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         return $arr;
     }
 
-
     /**
-     * Do shipment request to carrier web service, obtain Print Shipping Labels and process errors in response
-     * Also another magic function that is required to be implemented by carrier model
+     * Do shipment request to carrier web service, obtain Print Shipping Labels, and process errors in response.
+     *
+     * Also another magic function that is required to be implemented by the carrier model.
+     *
      * @param \Magento\Framework\DataObject $request
-     * @return \Magento\Framework\DataObject
+     * @return \Magento\Framework\DataObject|null
      */
     protected function _doShipmentRequest(\Magento\Framework\DataObject $request)
     {
@@ -645,10 +690,9 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * For multi package shipments. Delete requested shipments if the current shipment request is failed
+     * For multi-package shipments. Delete requested shipments if the current shipment request fails.
      *
      * @param array $data
-     *
      * @return bool
      */
     public function rollBack($data)
@@ -657,10 +701,9 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * Return container types of carrier
+     * Return container types of carrier.
      *
      * @param \Magento\Framework\DataObject|null $params
-     *
      * @return array|bool
      * @SuppressWarnings(PHPMD.CyclomaticComplexity)
      */
@@ -681,10 +724,9 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * Return delivery confirmation types of carrier
+     * Return delivery confirmation types of carrier.
      *
      * @param \Magento\Framework\DataObject|null $params
-     *
      * @return array
      * @SuppressWarnings(PHPMD.UnusedFormalParameter)
      */
@@ -694,7 +736,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * Recursive replace sensitive fields in debug data by the mask
+     * Recursive replace sensitive fields in debug data by the mask.
      *
      * @param string $data
      * @return string
@@ -712,12 +754,13 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * Parse track details response from Bob Go
+     * Parse track details response from Bob Go.
      *
+     * @param string $trackInfo
      * @return array
      * @SuppressWarnings(PHPMD.CyclomaticComplexity)
      * @SuppressWarnings(PHPMD.NPathComplexity)
-     **/
+     */
     private function processTrackingDetails($trackInfo): array
     {
         $result = [
@@ -735,7 +778,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * Append error message to rate result instance
+     * Append error message to rate result instance.
      *
      * @param string $trackingValue
      * @param string $errorMessage
@@ -752,6 +795,8 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
+     * Format a date to 'd M Y'.
+     *
      * @param string $date
      * @return string
      */
@@ -761,6 +806,8 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
+     * Format a time to 'H:i'.
+     *
      * @param string $time
      * @return string
      */
@@ -770,6 +817,8 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
+     * Get the API URL for Bob Go.
+     *
      * @return string
      */
     private function getApiUrl(): string
@@ -779,6 +828,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
     /**
      *  Perfom API Request to bobgo API and return response
+     *
      * @param array $payload
      * @param Result $result
      * @return void
@@ -792,12 +842,13 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * Perform API Request for Shipment Tracking to Bob Go API and return response
-     * @param $trackInfo
-     * @param array $result
-     * @return array
+     * Perform API Request for Shipment Tracking to Bob Go API and return response.
+     *
+     * @param string $trackInfo The tracking information or tracking ID.
+     * @param array $result The result array to be populated with tracking details.
+     * @return array The updated result array with tracking details.
      */
-    private function _requestTracking($trackInfo, array $result): array
+    private function _requestTracking(string $trackInfo, array $result): array
     {
         $response = $this->trackbobgoShipment($trackInfo);
 
@@ -808,6 +859,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
     /**
      * Format rates from Bob Go API response and append to rate result instance of carrier
+     *
      * @param mixed $rates
      * @param Result $result
      * @return void
@@ -870,14 +922,14 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * Prepare received checkpoints and activity from Bob Go Shipment Tracking API
-     * @param $response
-     * @param array $result
-     * @return array
+     * Prepare received checkpoints and activity from Bob Go Shipment Tracking API.
+     *
+     * @param array $response The API response containing tracking checkpoints.
+     * @param array $result The result array to be populated with activity details.
+     * @return array The updated result array with activity details.
      */
-    private function prepareActivity($response, array $result): array
+    private function prepareActivity(array $response, array $result): array
     {
-
         foreach ($response['checkpoints'] as $checkpoint) {
             $result['progressdetail'][] = [
                 'activity' => $checkpoint['status'],
@@ -890,6 +942,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
     /**
      *  Get Working Days between time of checkout and delivery date (min and max)
+     *
      * @param string $startDate
      * @param string $endDate
      * @return int
@@ -915,13 +968,13 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         }
     }
 
-
     /**
-     * Curl request to Bob Go Shipment Tracking API
-     * @param $trackInfo
-     * @return mixed
+     * Curl request to Bob Go Shipment Tracking API.
+     *
+     * @param string $trackInfo The tracking information or tracking ID.
+     * @return mixed The decoded API response.
      */
-    private function trackbobgoShipment($trackInfo): mixed
+    private function trackbobgoShipment(string $trackInfo): mixed
     {
         $this->curl->get(uData::TRACKING . $trackInfo);
 
@@ -932,6 +985,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
     /**
      * Build The Payload for Bob Go API Request and return response
+     *
      * @param array $payload
      * @return mixed
      */
@@ -946,10 +1000,11 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         return $rates;
     }
 
-
     /**
-     * @param string $destStreet
-     * @return string[]
+     * Splits a destination street address into up to three lines if it contains newline characters.
+     *
+     * @param string $destStreet The full street address.
+     * @return string[] An array containing up to three lines of the street address.
      */
     protected function destStreet(string $destStreet): array
     {
@@ -967,38 +1022,48 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * @param int $min_delivery_date
-     * @param int $max_delivery_date
-     * @param $method
+     * Sets the carrier title with the estimated delivery days range based on minimum and maximum delivery dates.
+     *
+     * @param int|null $min_delivery_date Minimum estimated delivery date in days.
+     * @param int|null $max_delivery_date Maximum estimated delivery date in days.
+     * @param \Magento\Quote\Model\Quote\Address\RateResult\Method $method The shipping method instance
+     * to set the carrier title.
      * @return void
      */
-    protected function deliveryDays(?int $min_delivery_date, ?int $max_delivery_date, $method): void
-    {
+    protected function deliveryDays(
+        ?int $min_delivery_date,
+        ?int $max_delivery_date,
+        \Magento\Quote\Model\Quote\Address\RateResult\Method $method
+    ): void {
         if ($min_delivery_date === null || $max_delivery_date === null) {
             return;
         }
 
         if ($min_delivery_date !== $max_delivery_date) {
-            $method->setCarrierTitle('Delivery in '.$min_delivery_date . ' - ' . $max_delivery_date . ' days');
+            $method->setCarrierTitle('Delivery in ' . $min_delivery_date . ' - ' . $max_delivery_date . ' days');
         } else {
             if ($min_delivery_date && $max_delivery_date == 1) {
-                $method->setCarrierTitle('Delivery in '.$min_delivery_date . ' day');
+                $method->setCarrierTitle('Delivery in ' . $min_delivery_date . ' day');
             } else {
                 $method->setCarrierTitle('Delivery in ' . $min_delivery_date . ' days');
             }
         }
     }
 
-
     /**
-     * @return mixed|string
+     * Retrieves the destination company name from the additional information.
+     *
+     * @return mixed|string The destination company name.
      */
     public function getDestComp(): mixed
     {
         return $this->additionalInfo->getDestComp();
     }
+
     /**
-     * @return mixed|string
+     * Retrieves the destination suburb from the additional information.
+     *
+     * @return mixed|string The destination suburb.
      */
     public function getDestSuburb(): mixed
     {
@@ -1006,26 +1071,31 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * @param mixed $weightUnit
-     * @param mixed $item
-     * @return float|int
+     * Calculates the item weight in grams based on the provided weight unit.
+     *
+     * @param mixed $weightUnit The unit of weight, either 'KGS' or another unit (assumed to be pounds).
+     * @param mixed $item The item whose weight is to be calculated.
+     * @return float|int The weight of the item in grams.
      */
     public function getItemWeight(mixed $weightUnit, mixed $item): int|float
     {
-        //1 lb = 453.59237 g exact. 1 kg = 1000 g. 1 lb = 0.45359237 kg
+        // 1 lb = 453.59237 g exact. 1 kg = 1000 g. 1 lb = 0.45359237 kg
         if ($weightUnit == 'KGS') {
             $mass = $item->getWeight() ? $item->getWeight() * 1000 : 0;
         } else {
-            $mass = $item->getWeight() ? $item->getWeight() * 0.45359237 * 1000 : 0;//Pound to Kilogram Conversion Formula
+            // Pound to Kilogram Conversion Formula
+            $mass = $item->getWeight() ? $item->getWeight() * 0.45359237 * 1000 : 0;
         }
         return $mass;
     }
 
     /**
-     * @param array $items
-     * @param mixed $weightUnit
-     * @param array $itemsArray
-     * @return array
+     * Processes the items in the cart, calculates their weights, and prepares an array of item details.
+     *
+     * @param array $items The items in the cart.
+     * @param mixed $weightUnit The unit of weight used for the items.
+     * @param array $itemsArray The array to store the processed item details.
+     * @return array The array containing details of each item including SKU, quantity, price, and weight.
      */
     public function getStoreItems(array $items, mixed $weightUnit, array $itemsArray): array
     {
@@ -1039,16 +1109,17 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                 'price' => $item->getPrice(),
                 'weight' => round($mass),
             ];
-
         }
         return $itemsArray;
     }
 
     /**
-     * Get the list of required data fields
-     * @return bool
+     * Checks if the required data fields are present in the request.
+     *
+     * @param \Magento\Framework\DataObject $request The data object containing the request information.
+     * @return bool True if all required fields are present, otherwise false.
      */
-    public function hasRequiredData(DataObject $request): bool
+    public function hasRequiredData(\Magento\Framework\DataObject $request): bool
     {
         $requiredFields = [
             'dest_country_id',
@@ -1063,10 +1134,20 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         return true;
     }
 
+    /**
+     * Tests the rate retrieval from the BobGo API using a sample payload.
+     * This method checks if the "Show rates for checkout" setting is enabled,
+     * then constructs and sends a sample payload to the API to verify the response.
+     *
+     * @return array|bool Returns the response array from the API if successful, or false if an error occurs.
+     */
     public function triggerRatesTest()
     {
         // Check if the 'Show rates for checkout' setting is enabled
-        $isEnabled = $this->scopeConfig->getValue('carriers/bobgo/active', \Magento\Store\Model\ScopeInterface::SCOPE_STORE);
+        $isEnabled = $this->scopeConfig->getValue(
+            'carriers/bobgo/active',
+            \Magento\Store\Model\ScopeInterface::SCOPE_STORE
+        );
 
         if ($isEnabled) {
             // Sample test payload, replace with actual structure
@@ -1116,7 +1197,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
                 // Check if the response contains a 'message' (indicating an error)
                 if (isset($response['message'])) {
-                    throw new \Exception('Error from BobGo: ' . $response['message']);
+                    throw new LocalizedException(__('Error from BobGo: %1', $response['message']));
                 }
 
                 // Check if the response contains rates with a valid id field
@@ -1126,9 +1207,9 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                             return $response; // Successful response with a valid id
                         }
                     }
-                    throw new \Exception('Rates received but id field is empty or invalid.');
+                    throw new LocalizedException(__('Rates received but id field is empty or invalid.'));
                 } else {
-                    throw new \Exception('Received response but no valid rates were found.');
+                    throw new LocalizedException(__('Received response but no valid rates were found.'));
                 }
             } catch (\Exception $e) {
                 return false;

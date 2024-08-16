@@ -2,72 +2,78 @@
 
 namespace BobGroup\BobGo\Model\Carrier;
 
+use Magento\Framework\App\RequestInterface;
+
 /**
- * Get the AdditionalInfo information from the request body and return it
+ * Handles the retrieval of additional information from the request body.
  */
 class AdditionalInfo
 {
-
-    /**
-     * @return mixed|string
-     */
-    public function getDestComp(): mixed
-    {
-        $data = json_decode(file_get_contents('php://input'), true);
-
-        if (isset($data['address']['company'])) {
-            $destComp = $data['address']['company'];
-        } else {
-            $destComp = '';
-        }
-        return $destComp;
-    }
-
-    public function getSuburb(): mixed
-    {
-
-        $data = json_decode(file_get_contents('php://input'), true);
-
-        if (isset($data['address']['custom_attributes'][0]['value'])) {
-            $destSub = $data['address']['custom_attributes'][0]['value'];
-        } else {
-            $destSub = '';
-        }
-        return $destSub;
-    }
-
-    /**
-     * @return mixed|string
-     */
-    public function getDestTelephone(): mixed
-    {
-        $data = json_decode(file_get_contents('php://input'), true);
-
-        if (isset($data['address']['telephone'])) {
-            $destTelephone = $data['address']['telephone'];
-        } else {
-            $destTelephone = '';
-        }
-        return $destTelephone;
-    }
-
-
     /**
      * @var \BobGroup\BobGo\Model\Carrier\AdditionalInfo
      */
     public $countryFactory;
 
-    public function __construct($countryFactory)
+    /**
+     * @var RequestInterface
+     */
+    protected $request;
+
+    /**
+     * Constructor
+     *
+     * @param \BobGroup\BobGo\Model\Carrier\AdditionalInfo $countryFactory
+     * @param RequestInterface $request
+     */
+    public function __construct($countryFactory, RequestInterface $request)
     {
         $this->countryFactory = $countryFactory;
+        $this->request = $request;
     }
 
     /**
-     * country full name
+     * Retrieve the destination company from the request body
      *
      * @return string
      */
-    public function getCountryName($countryId): string
+    public function getDestComp(): string
+    {
+        $data = $this->getRequestBody();
+
+        return $data['address']['company'] ?? '';
+    }
+
+    /**
+     * Retrieve the suburb from the request body
+     *
+     * @return string
+     */
+    public function getSuburb(): string
+    {
+        $data = $this->getRequestBody();
+
+        return $data['address']['custom_attributes'][0]['value'] ?? '';
+    }
+
+    /**
+     * Retrieve the destination telephone number from the request body
+     *
+     * @return string
+     */
+    public function getDestTelephone(): string
+    {
+        $data = $this->getRequestBody();
+
+        return $data['address']['telephone'] ?? '';
+    }
+
+    /**
+     * Get the full country name by country ID
+     *
+     * @param string $countryId
+     * @return string
+     */
+    public function getCountryName(string $countryId): string
     {
         $countryName = '';
         $country = $this->countryFactory->create()->loadByCode($countryId);
@@ -75,5 +81,15 @@ class AdditionalInfo
             $countryName = $country->getName();
         }
         return $countryName;
+    }
+
+    /**
+     * Retrieve the request body as an array
+     *
+     * @return array
+     */
+    private function getRequestBody(): array
+    {
+        return json_decode($this->request->getContent(), true) ?: [];
     }
 }
