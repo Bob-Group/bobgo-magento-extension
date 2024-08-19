@@ -109,4 +109,3 @@ class AdditionalInfo
         return is_array($data) ? $data : [];
     }
 }
-

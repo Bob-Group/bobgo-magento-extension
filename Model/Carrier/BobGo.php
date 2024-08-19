@@ -288,7 +288,8 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             }
         }
 
-        if (!$errorMsg && !$rateRequest->getDestPostcode() && $this->isZipCodeRequired($rateRequest->getDestCountryId())) {
+        if (!$errorMsg && !$rateRequest->getDestPostcode()
+            && $this->isZipCodeRequired($rateRequest->getDestCountryId())) {
             $errorMsg = __('This shipping method is not available. Please specify the zip code.');
         }
 
@@ -572,7 +573,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         return $this->_rawTrackingRequest;
     }
 
-
     /**
      * Send request for tracking
      *
@@ -626,7 +626,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         }
     }
 
-
     /**
      * Get tracking response
      *
@@ -651,10 +650,10 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             }
         }
 
-        // Handle \Magento\Shipping\Model\Rate\Result if needed
-        if ($this->_result instanceof \Magento\Shipping\Model\Rate\Result) {
-            // Implement the logic for Rate\Result if applicable
-        }
+//        // Handle \Magento\Shipping\Model\Rate\Result if needed
+//        if ($this->_result instanceof \Magento\Shipping\Model\Rate\Result) {
+//            // Implement the logic for Rate\Result if applicable
+//        }
 
         if (trim($statuses) === '') {
             $statuses = (string)__('Empty response');
@@ -662,7 +661,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
         return $statuses;
     }
-
 
     /**
      * Get allowed shipping methods
@@ -706,9 +704,9 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     public function rollBack($data): bool
     {
-        // Ensure that $data is an array if needed, but keep the parameter type as mixed to match the parent class.
-        if (is_array($data)) {
-            // Your logic that operates on the array can go here.
+        // Return false if $data is not an array
+        if (!is_array($data)) {
+            return false;
         }
 
         return true;
@@ -881,7 +879,8 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         if (is_array($rates)) {
             $this->_formatRates($rates, $result);
         } else {
-            $this->_logger->error('Bob Go API returned an invalid response: expected an array but received ' . gettype($rates));
+            $this->_logger->error('Bob Go API returned an invalid response:
+            expected an array but received ' . gettype($rates));
         }
     }
 
@@ -889,7 +888,8 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * Perform API Request for Shipment Tracking to Bob Go API and return response.
      *
      * @param string $trackInfo The tracking information or tracking ID.
-     * @param array<string, array<int, array<string, string>>> $result The result array to be populated with tracking details.
+     * @param array<string, array<int, array<string, string>>> $result The result array to be
+     * populated with tracking details.
      * @return array<string, array<int, array<string, string>>> The updated result array with tracking details.
      */
     private function _requestTracking(string $trackInfo, array $result): array
@@ -981,15 +981,15 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * Prepare received checkpoints and activity from Bob Go Shipment Tracking API.
      *
      * @param array<string, mixed> $response The API response containing tracking checkpoints.
-     * @param array<string, array<int, array<string, string>>> $result The result array to be populated with activity details.
+     * @param array<string, array<int, array<string, string>>> $result The result array to be
+     * populated with activity details.
      * @return array<string, array<int, array<string, string>>> The updated result array with activity details.
      */
     private function prepareActivity(array $response, array $result): array
     {
         if (isset($response['checkpoints']) && is_array($response['checkpoints'])) {
             foreach ($response['checkpoints'] as $checkpoint) {
-                if (
-                    is_array($checkpoint) &&
+                if (is_array($checkpoint) &&
                     isset($checkpoint['status'], $checkpoint['time']) &&
                     is_string($checkpoint['status']) &&
                     is_string($checkpoint['time'])
@@ -1057,9 +1057,10 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * Build the payload for Bob Go API request and return the response.
      *
      * @param array<string, mixed> $payload The payload for the API request.
-     * @return array<int|string, mixed>|null The decoded response, or null if the response could not be decoded or is not an array.
+     * @return array<int|string, mixed>|null The decoded response, or null if the response could not be decoded
+     * or is not an array.
      */
-    protected function uRates(array $payload): array|null
+    protected function uRates(array $payload): ?array
     {
         $this->curl->addHeader('Content-Type', 'application/json');
 
@@ -1174,15 +1175,18 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     /**
      * Processes the items in the cart, calculates their weights, and prepares an array of item details.
      *
-     * @param array<int, \Magento\Quote\Model\Quote\Item>  $items The items in the cart.
-     * @param string                                       $weightUnit The unit of weight used for the items.
-     * @param array<int, array<string, mixed>>             $itemsArray The array to store the processed item details.
-     * @return array<int, array<string, mixed>> The array containing details of each item including SKU, quantity, price, and weight.
+     * @param \Magento\Quote\Model\Quote\Item[] $items The items in the cart.
+     * @param string $weightUnit The unit of weight used for the items.
+     * @param array<int, array<string, mixed>> $itemsArray The array to store the processed item details.
+     * @return array<int, array<string, mixed>> The array containing details of each item,
+     * including SKU, quantity, price, and weight.
      */
-    public function getStoreItems(array $items, string $weightUnit, array $itemsArray): array
-    {
+    public function getStoreItems(
+        array $items,
+        string $weightUnit,
+        array $itemsArray
+    ): array {
         foreach ($items as $item) {
-
             $mass = $this->getItemWeight($weightUnit, $item);
 
             $itemsArray[] = [
@@ -1192,6 +1196,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                 'weight' => round($mass),
             ];
         }
+
         return $itemsArray;
     }
 

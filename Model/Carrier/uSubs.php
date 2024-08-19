@@ -34,7 +34,8 @@ class USubs
         $data = json_decode($this->getRequestBody(), true);
 
         // Ensure that $data is an array and has the expected structure
-        if (is_array($data) && isset($data['address']) && is_array($data['address']) && isset($data['address']['company'])) {
+        if (is_array($data) && isset($data['address']) && is_array($data['address'])
+            && isset($data['address']['company'])) {
             return $data['address']['company'];
         }
 
