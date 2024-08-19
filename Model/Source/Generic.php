@@ -39,7 +39,8 @@ class Generic implements OptionSourceInterface
     {
         $configData = $this->_shippingBobGo->getCode($this->_code);
         $arr = [];
-        if ($configData) {
+
+        if (is_array($configData)) {
             $arr = array_map(
                 function ($code, $title): array {
                     return [

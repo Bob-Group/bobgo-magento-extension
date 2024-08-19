@@ -23,7 +23,7 @@
       "registration.php"
     ],
     "psr-4": {
-      "bobgo\\BobGo\\": ""
+        "BobGroup\\BobGo\\": "Model/Carrier/"
     }
   }
 }

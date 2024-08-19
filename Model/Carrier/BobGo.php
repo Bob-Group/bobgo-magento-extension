@@ -31,6 +31,7 @@ use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
 use Magento\Framework\App\RequestInterface;
+use Magento\Framework\App\Request\Http as MagentoHttp;
 
 /**
  * Bob Go shipping implementation
@@ -112,22 +113,17 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     protected JsonFactory $jsonFactory;
 
     /**
-     * @var mixed
-     */
-    private $cartRepository;
-
-    /**
      * @var AdditionalInfo
      */
     public AdditionalInfo $additionalInfo;
 
     /**
-     * @var RequestInterface
+     * @var MagentoHttp
      */
-    protected RequestInterface $request;
+    protected MagentoHttp $request;
 
     /**
-     * Constructor
+     * BobGo constructor.
      *
      * @param ScopeConfigInterface $scopeConfig
      * @param ErrorFactory $rateErrorFactory
@@ -145,13 +141,11 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @param Data $directoryData
      * @param StockRegistryInterface $stockRegistry
      * @param StoreManagerInterface $storeManager
-     * @param Reader $configReader
      * @param CollectionFactory $productCollectionFactory
      * @param JsonFactory $jsonFactory
      * @param CurlFactory $curlFactory
-     * @param RequestInterface $request
-     * @param array $data
-     * @SuppressWarnings(PHPMD.ExcessiveParameterList)
+     * @param MagentoHttp $request
+     * @param array<string, mixed> $data
      */
     public function __construct(
         ScopeConfigInterface $scopeConfig,
@@ -170,17 +164,17 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         Data $directoryData,
         StockRegistryInterface $stockRegistry,
         StoreManagerInterface $storeManager,
-        Reader $configReader,
         CollectionFactory $productCollectionFactory,
         JsonFactory $jsonFactory,
         CurlFactory $curlFactory,
-        RequestInterface $request,
+        MagentoHttp $request,
         array $data = []
     ) {
         $this->request = $request;
         $this->_storeManager = $storeManager;
         $this->_productCollectionFactory = $productCollectionFactory;
         $this->scopeConfig = $scopeConfig;
+
         parent::__construct(
             $scopeConfig,
             $rateErrorFactory,
@@ -199,6 +193,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             $stockRegistry,
             $data
         );
+
         $this->jsonFactory = $jsonFactory;
         $this->curl = $curlFactory->create();
         $this->additionalInfo = new AdditionalInfo($countryFactory, $this->request);
@@ -211,10 +206,15 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     public function getBaseUrl(): string
     {
-        $storeBase = $this->_storeManager->getStore()->getBaseUrl();
+        /** @var Store $store */
+        $store = $this->_storeManager->getStore();
+        $storeBase = $store->getBaseUrl();
 
         // Remove protocol (http:// or https://)
         $host = preg_replace('#^https?://#', '', $storeBase);
+
+        // Ensure $host is a string before using it in explode
+        $host = $host ?? '';
 
         // Remove everything after the host (e.g., paths, query strings)
         $host = explode('/', $host)[0];
@@ -230,23 +230,29 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     /**
      * Makes a request to the Bob Go API to get shipping rates for the cart.
      *
-     * @param array $payload
-     * @return array
+     * @param array<string, mixed> $payload
+     * @return array<int|string, mixed>
      */
     public function getRates(array $payload): array
     {
-        return $this->uRates($payload);
+        $rates = $this->uRates($payload);
+
+        // Ensure the return value is always an array, even if uRates returns null
+        return $rates ?? [];
     }
 
     /**
      * Processing additional validation to check if the carrier is applicable.
      *
-     * @param \Magento\Framework\DataObject $request
+     * @param DataObject $request
      * @return $this|bool|\Magento\Framework\DataObject
      */
-    public function processAdditionalValidation(\Magento\Framework\DataObject $request)
+    public function processAdditionalValidation(DataObject $request)
     {
-        if (!count($this->getAllItems($request))) {
+        /** @var RateRequest $rateRequest */
+        $rateRequest = $request;
+
+        if (!count($this->getAllItems($rateRequest))) {
             return false;
         }
 
@@ -256,15 +262,13 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         $defaultErrorMsg = __('The shipping module is not available.');
         $showMethod = $this->getConfigData('showmethod');
 
-        /** @var $item \Magento\Quote\Model\Quote\Item */
-        foreach ($this->getAllItems($request) as $item) {
+        /** @var Item $item */
+        foreach ($this->getAllItems($rateRequest) as $item) {
             $product = $item->getProduct();
             if ($product && $product->getId()) {
                 $weight = $product->getWeight();
-                $stockItemData = $this->stockRegistry->getStockItem(
-                    $product->getId(),
-                    $item->getStore()->getWebsiteId()
-                );
+                $websiteId = (int) $item->getStore()->getWebsiteId(); // Ensure $websiteId is an integer
+                $stockItemData = $this->stockRegistry->getStockItem($product->getId(), $websiteId);
                 $doValidation = true;
 
                 if ($stockItemData->getIsQtyDecimal() && $stockItemData->getIsDecimalDivided()) {
@@ -284,11 +288,11 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             }
         }
 
-        if (!$errorMsg && !$request->getDestPostcode() && $this->isZipCodeRequired($request->getDestCountryId())) {
+        if (!$errorMsg && !$rateRequest->getDestPostcode() && $this->isZipCodeRequired($rateRequest->getDestCountryId())) {
             $errorMsg = __('This shipping method is not available. Please specify the zip code.');
         }
 
-        if ($request->getDestCountryId() == 'ZA') {
+        if ($rateRequest->getDestCountryId() == 'ZA') {
             $errorMsg = '';
         } else {
             $errorMsg = $configErrorMsg ? $configErrorMsg : $defaultErrorMsg;
@@ -357,6 +361,9 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             $weightUnit
         ] = $this->storeInformation();
 
+        // Ensure weightUnit is always a string
+        $weightUnit = $weightUnit ?? '';
+
         /** Get all items in cart */
         $items = $request->getAllItems();
         $itemsArray = [];
@@ -397,53 +404,20 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     /**
      * Retrieves store information including origin details.
      *
-     * @return array
+     * @return array<int, string|null>
      */
     public function storeInformation(): array
     {
         /** Store Origin details */
-        $originCountry = $this->_scopeConfig->getValue(
-            'general/store_information/country_id',
-            ScopeInterface::SCOPE_STORE
-        );
-        $originRegion = $this->_scopeConfig->getValue(
-            'general/store_information/region_id',
-            ScopeInterface::SCOPE_STORE
-        );
-        $originCity = $this->_scopeConfig->getValue(
-            'general/store_information/city',
-            ScopeInterface::SCOPE_STORE
-        );
-
-        $originStreet = $this->_scopeConfig->getValue(
-            'general/store_information/postcode',
-            ScopeInterface::SCOPE_STORE
-        );
-
-        $originStreet1 = $this->_scopeConfig->getValue(
-            'general/store_information/street_line1',
-            ScopeInterface::SCOPE_STORE
-        );
-
-        $originStreet2 = $this->_scopeConfig->getValue(
-            'general/store_information/street_line2',
-            ScopeInterface::SCOPE_STORE
-        );
-
-        $storeName = $this->_scopeConfig->getValue(
-            'general/store_information/name',
-            ScopeInterface::SCOPE_STORE
-        );
-
-        $originSuburb = $this->_scopeConfig->getValue(
-            'general/store_information/suburb',
-            ScopeInterface::SCOPE_STORE
-        );
-        $weightUnit = $this->_scopeConfig->getValue(
-            'general/locale/weight_unit',
-            ScopeInterface::SCOPE_STORE
-        );
-
+        $originCountry = $this->getStringValue('general/store_information/country_id');
+        $originRegion = $this->getStringValue('general/store_information/region_id');
+        $originCity = $this->getStringValue('general/store_information/city');
+        $originStreet = $this->getStringValue('general/store_information/postcode');
+        $originStreet1 = $this->getStringValue('general/store_information/street_line1');
+        $originStreet2 = $this->getStringValue('general/store_information/street_line2');
+        $storeName = $this->getStringValue('general/store_information/name');
+        $originSuburb = $this->getStringValue('general/store_information/suburb');
+        $weightUnit = $this->getStringValue('general/locale/weight_unit');
         $baseIdentifier = $this->getBaseUrl();
 
         return [
@@ -456,8 +430,20 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             $storeName,
             $baseIdentifier,
             $originSuburb,
-            $weightUnit
+            $weightUnit,
         ];
+    }
+
+    /**
+     * Safely retrieve a configuration value as a string or null.
+     *
+     * @param string $path
+     * @return string|null
+     */
+    protected function getStringValue(string $path): ?string
+    {
+        $value = $this->_scopeConfig->getValue($path, ScopeInterface::SCOPE_STORE);
+        return is_scalar($value) ? (string) $value : null;
     }
 
     /**
@@ -512,7 +498,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      *
      * @param string $type
      * @param string $code
-     * @return array|false
+     * @return array<string, \Magento\Framework\Phrase>|string|false
      * @SuppressWarnings(PHPMD.ExcessiveMethodLength)
      */
     public function getCode($type, $code = '')
@@ -536,7 +522,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         if (!isset($codes[$type][$code])) {
             return false;
         } else {
-            return $codes[$type][$code];
+            return (string) $codes[$type][$code]; // Convert \Magento\Framework\Phrase to string
         }
     }
 
@@ -544,21 +530,21 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * Get tracking
      *
      * @param string|string[] $trackings
-     * @return Result|null
+     * @return \Magento\Shipping\Model\Tracking\Result|null
      */
     public function getTracking($trackings)
     {
-        $this->setTrackingReqeust();
+        $this->setTrackingRequest(); // Ensure this method is correctly defined
 
         if (!is_array($trackings)) {
             $trackings = [$trackings];
         }
 
         foreach ($trackings as $tracking) {
-            $this->_getXMLTracking($tracking);
+            $this->_getXMLTracking([$tracking]); // Ensure _getXMLTracking processes tracking correctly
         }
 
-        return $this->_result;
+        return $this->_result; // Ensure _result is a \Magento\Shipping\Model\Tracking\Result
     }
 
     /**
@@ -566,15 +552,26 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      *
      * @return void
      */
-    protected function setTrackingReqeust()
+    protected function setTrackingRequest()
     {
         $r = new \Magento\Framework\DataObject();
 
         $account = $this->getConfigData('account');
-        $r->setAccount($account);
+        $r->setData('account', $account); // Using setData with the key 'account'
 
         $this->_rawTrackingRequest = $r;
     }
+
+    /**
+     * Get tracking request
+     *
+     * @return \Magento\Framework\DataObject|null
+     */
+    protected function getTrackingRequest(): ?\Magento\Framework\DataObject
+    {
+        return $this->_rawTrackingRequest;
+    }
+
 
     /**
      * Send request for tracking
@@ -590,7 +587,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     /**
      * Parse tracking response
      *
-     * @param string $trackingValue
+     * @param string|array<int, string> $trackingValue
      * @return void
      */
     protected function _parseTrackingResponse($trackingValue)
@@ -598,47 +595,48 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         $result = $this->getResult();
         $carrierTitle = $this->getConfigData('title');
         $counter = 0;
+
         if (!is_array($trackingValue)) {
             $trackingValue = [$trackingValue];
         }
+
         foreach ($trackingValue as $trackingReference) {
             $tracking = $this->_trackStatusFactory->create();
 
             $tracking->setCarrier(self::CODE);
             $tracking->setCarrierTitle($carrierTitle);
 
-            //Production
-            /*   $tracking->setUrl(sprintf(uData::TRACKING, $this->getBaseUrl(), $trackingReference));
-            $tracking->setTracking($trackingReference);
-            $tracking->addData($this->processTrackingDetails($trackingReference));
-           */
-
-            //Dev
-            $tracking->setUrl(uData::TRACKING .$trackingReference);
+            // Adjust as needed based on the environment
+            $tracking->setUrl(UData::TRACKING . $trackingReference);
             $tracking->setTracking($trackingReference);
             $tracking->addData($this->processTrackingDetails($trackingReference));
 
-            $result->append($tracking);
-            $counter ++;
+            if ($result) {
+                $result->append($tracking);
+                $counter++;
+            }
         }
 
-        //Tracking Details Not Available
-        if (!$counter) {
+        // Tracking Details Not Available
+        if ($counter === 0) {
             $this->appendTrackingError(
-                $trackingValue,
-                __('For some reason we can\'t retrieve tracking info right now.')
+                $trackingValue[0] ?? '',
+                (string)__('For some reason we can\'t retrieve tracking info right now.')
             );
         }
     }
+
 
     /**
      * Get tracking response
      *
      * @return string
      */
-    public function getResponse()
+    public function getResponse(): string
     {
         $statuses = '';
+
+        // If $_result is of type \Magento\Shipping\Model\Tracking\Result, handle it
         if ($this->_result instanceof \Magento\Shipping\Model\Tracking\Result) {
             if ($trackings = $this->_result->getAllTrackings()) {
                 foreach ($trackings as $tracking) {
@@ -652,22 +650,33 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                 }
             }
         }
-        // phpstan:ignore
-        if (empty($statuses)) {
-            $statuses = __('Empty response');
+
+        // Handle \Magento\Shipping\Model\Rate\Result if needed
+        if ($this->_result instanceof \Magento\Shipping\Model\Rate\Result) {
+            // Implement the logic for Rate\Result if applicable
+        }
+
+        if (trim($statuses) === '') {
+            $statuses = (string)__('Empty response');
         }
 
         return $statuses;
     }
 
+
     /**
      * Get allowed shipping methods
      *
-     * @return array
+     * @return array<string, mixed>
      */
-    public function getAllowedMethods()
+    public function getAllowedMethods(): array
     {
-        $allowed = explode(',', $this->getConfigData('allowed_methods'));
+        $allowedMethods = $this->getConfigData('allowed_methods');
+        if ($allowedMethods === false) {
+            return []; // Return an empty array if no allowed methods are configured
+        }
+
+        $allowed = explode(',', $allowedMethods);
         $arr = [];
         foreach ($allowed as $k) {
             $arr[$k] = $this->getCode('method', $k);
@@ -692,11 +701,16 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     /**
      * For multi-package shipments. Delete requested shipments if the current shipment request fails.
      *
-     * @param array $data
+     * @param mixed $data
      * @return bool
      */
-    public function rollBack($data)
+    public function rollBack($data): bool
     {
+        // Ensure that $data is an array if needed, but keep the parameter type as mixed to match the parent class.
+        if (is_array($data)) {
+            // Your logic that operates on the array can go here.
+        }
+
         return true;
     }
 
@@ -704,7 +718,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * Return container types of carrier.
      *
      * @param \Magento\Framework\DataObject|null $params
-     * @return array|bool
+     * @return array<string, mixed>|false
      * @SuppressWarnings(PHPMD.CyclomaticComplexity)
      */
     public function getContainerTypes(\Magento\Framework\DataObject $params = null)
@@ -720,29 +734,36 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             }
         }
 
-        return $result;
+        return !empty($result) ? $result : false;
     }
 
     /**
      * Return delivery confirmation types of carrier.
      *
      * @param \Magento\Framework\DataObject|null $params
-     * @return array
+     * @return array<int|string, mixed>
      * @SuppressWarnings(PHPMD.UnusedFormalParameter)
      */
-    public function getDeliveryConfirmationTypes(\Magento\Framework\DataObject $params = null)
+    public function getDeliveryConfirmationTypes(\Magento\Framework\DataObject $params = null): array
     {
-        return $this->getCode('delivery_confirmation_types');
+        $types = $this->getCode('delivery_confirmation_types');
+
+        // Ensure it returns an array, even if getCode returns false
+        return is_array($types) ? $types : [];
     }
 
     /**
      * Recursive replace sensitive fields in debug data by the mask.
      *
-     * @param string $data
-     * @return string
+     * @param mixed $data
+     * @return mixed
      */
     protected function filterDebugData($data)
     {
+        if (!is_array($data)) {
+            return $data; // Return early if $data is not an array.
+        }
+
         foreach (array_keys($data) as $key) {
             if (is_array($data[$key])) {
                 $data[$key] = $this->filterDebugData($data[$key]);
@@ -750,6 +771,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                 $data[$key] = self::DEBUG_KEYS_MASK;
             }
         }
+
         return $data;
     }
 
@@ -757,19 +779,19 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * Parse track details response from Bob Go.
      *
      * @param string $trackInfo
-     * @return array
+     * @return array<string, array<int, array<string, string>>>
      * @SuppressWarnings(PHPMD.CyclomaticComplexity)
      * @SuppressWarnings(PHPMD.NPathComplexity)
      */
-    private function processTrackingDetails($trackInfo): array
+    private function processTrackingDetails(string $trackInfo): array
     {
         $result = [
-            'shippeddate' => null,
-            'deliverydate' => null,
-            'deliverytime' => null,
-            'deliverylocation' => null,
-            'weight' => null,
-            'progressdetail' => [],
+            'shippeddate' => [],  // Initializing as an array of arrays
+            'deliverydate' => [], // Initializing as an array of arrays
+            'deliverytime' => [], // Initializing as an array of arrays
+            'deliverylocation' => [], // Initializing as an array of arrays
+            'weight' => [], // Initializing as an array of arrays
+            'progressdetail' => [],  // This will be populated with an array of arrays
         ];
 
         $result = $this->_requestTracking($trackInfo, $result);
@@ -782,16 +804,24 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      *
      * @param string $trackingValue
      * @param string $errorMessage
+     * @return void
      */
-    private function appendTrackingError($trackingValue, $errorMessage)
+    private function appendTrackingError(string $trackingValue, string $errorMessage): void
     {
         $error = $this->_trackErrorFactory->create();
         $error->setCarrier(self::CODE);
         $error->setCarrierTitle($this->getConfigData('title'));
         $error->setTracking($trackingValue);
         $error->setErrorMessage($errorMessage);
+
         $result = $this->getResult();
-        $result->append($error);
+
+        if ($result !== null) {
+            $result->append($error);
+        } else {
+            // Handle the case where $result is null, such as logging an error
+            $this->_logger->error('Failed to append tracking error: Result object is null.');
+        }
     }
 
     /**
@@ -802,7 +832,12 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     public function formatDate(string $date): string
     {
-        return date('d M Y', strtotime($date));
+        $timestamp = strtotime($date);
+        if ($timestamp === false) {
+            // Handle the error or return a default value, for example:
+            return 'Invalid date';
+        }
+        return date('d M Y', $timestamp);
     }
 
     /**
@@ -813,7 +848,12 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     public function formatTime(string $time): string
     {
-        return date('H:i', strtotime($time));
+        $timestamp = strtotime($time);
+        if ($timestamp === false) {
+            // Handle the error or return a default value, for example:
+            return 'Invalid time';
+        }
+        return date('H:i', $timestamp);
     }
 
     /**
@@ -823,125 +863,151 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     private function getApiUrl(): string
     {
-        return uData::RATES_ENDPOINT;
+        return UData::RATES_ENDPOINT;
     }
 
     /**
-     *  Perfom API Request to bobgo API and return response
+     * Perform API Request to Bob Go API and return response.
      *
-     * @param array $payload
-     * @param Result $result
+     * @param array<string, mixed> $payload The payload for the API request.
+     * @param Result $result The result object to append the rates.
      * @return void
      */
     protected function _getRates(array $payload, Result $result): void
     {
-
         $rates = $this->uRates($payload);
 
-        $this->_formatRates($rates, $result);
+        // Ensure $rates is an array before passing it to _formatRates
+        if (is_array($rates)) {
+            $this->_formatRates($rates, $result);
+        } else {
+            $this->_logger->error('Bob Go API returned an invalid response: expected an array but received ' . gettype($rates));
+        }
     }
 
     /**
      * Perform API Request for Shipment Tracking to Bob Go API and return response.
      *
      * @param string $trackInfo The tracking information or tracking ID.
-     * @param array $result The result array to be populated with tracking details.
-     * @return array The updated result array with tracking details.
+     * @param array<string, array<int, array<string, string>>> $result The result array to be populated with tracking details.
+     * @return array<string, array<int, array<string, string>>> The updated result array with tracking details.
      */
     private function _requestTracking(string $trackInfo, array $result): array
     {
-        $response = $this->trackbobgoShipment($trackInfo);
+        $response = $this->trackBobGoShipment($trackInfo);
 
-        $result = $this->prepareActivity($response[0], $result);
+        // Validate that the response is an array and contains at least one element
+        if (is_array($response) && isset($response[0]) && is_array($response[0])) {
+            $result = $this->prepareActivity($response[0], $result);
+        }
 
         return $result;
     }
 
     /**
-     * Format rates from Bob Go API response and append to rate result instance of carrier
+     * Format rates from Bob Go API response and append to rate result instance of carrier.
      *
-     * @param mixed $rates
-     * @param Result $result
+     * @param array<int|string, mixed> $rates The rates data from the API.
+     * @param Result $result The result object to append the rates.
      * @return void
      */
-    protected function _formatRates(mixed $rates, Result $result): void
+    protected function _formatRates(array $rates, Result $result): void
     {
-        if (empty($rates['rates'])) {  // Check if the 'rates' key is empty or null
+        if (empty($rates['rates']) || !is_array($rates['rates'])) {  // Validate that 'rates' exists and is an array
             $error = $this->_rateErrorFactory->create();
             $error->setCarrierTitle($this->getConfigData('title'));
             $error->setErrorMessage($this->getConfigData('specificerrmsg'));
 
             $result->append($error);
-        } else {
+            return;
+        }
 
-            foreach ($rates['rates'] as $rate) {
-
-                $method = $this->_rateMethodFactory->create();
-
-                if (isset($rate)) {
-                    // Set the carrier code
-                    $method->setCarrier(self::CODE);
-
-                    // Strip out the redundant 'bobgo_' prefix if present
-                    $serviceCode = $rate['service_code'];
-                    if (strpos($serviceCode, 'bobgo_') === 0) {
-                        $serviceCode = substr($serviceCode, strlen('bobgo_'));
-                    }
-
-                    // Set the method with the modified service code
-                    $method->setMethod($serviceCode);
-
-                    // Set additional info if required
-                    if ($this->getConfigData('additional_info') == 1) {
-                        $min_delivery_date = isset($rate['min_delivery_date']) && $rate['min_delivery_date'] !== null
-                            ? $this->getWorkingDays(date('Y-m-d'), $rate['min_delivery_date'])
-                            : null;
-
-                        $max_delivery_date = isset($rate['max_delivery_date']) && $rate['max_delivery_date'] !== null
-                            ? $this->getWorkingDays(date('Y-m-d'), $rate['max_delivery_date'])
-                            : null;
-
-                        $this->deliveryDays($min_delivery_date, $max_delivery_date, $method);
-                    }
-
-                    // Set the method title, price, and cost
-//                    $description = $rate['description'];
-                    $service_name = $rate['service_name'];
-//                    $method->setMethodTitle("$service_name | $description" );
-                    $method->setMethodTitle("$service_name");
-                    $price = $rate['total_price'];
-                    $cost = $rate['total_price'];
-
-                    $method->setPrice($price);
-                    $method->setCost($cost);
-
-                    $result->append($method);
-                }
+        foreach ($rates['rates'] as $rate) {
+            if (!is_array($rate)) {
+                continue;  // Skip if the rate is not an array
             }
+
+            $method = $this->_rateMethodFactory->create();
+
+            // Set the carrier code
+            $method->setCarrier(self::CODE);
+
+            // Strip out the redundant 'bobgo_' prefix if present
+            $serviceCode = $rate['service_code'] ?? '';
+            if (is_string($serviceCode) && strpos($serviceCode, 'bobgo_') === 0) {
+                $serviceCode = substr($serviceCode, strlen('bobgo_'));
+            }
+
+            // Set the method with the modified service code
+            $method->setMethod($serviceCode);
+
+            // Set additional info if required
+            if ($this->getConfigData('additional_info') == 1) {
+                $min_delivery_date = isset($rate['min_delivery_date']) && is_string($rate['min_delivery_date'])
+                    ? $this->getWorkingDays(date('Y-m-d'), $rate['min_delivery_date'])
+                    : null;
+
+                $max_delivery_date = isset($rate['max_delivery_date']) && is_string($rate['max_delivery_date'])
+                    ? $this->getWorkingDays(date('Y-m-d'), $rate['max_delivery_date'])
+                    : null;
+
+                $this->deliveryDays($min_delivery_date, $max_delivery_date, $method);
+            }
+
+            // Set the method title, price, and cost
+            $service_name = $rate['service_name'] ?? '';
+            if (!is_string($service_name)) {
+                $service_name = '';
+            }
+            $method->setMethodTitle($service_name);
+
+            $price = $rate['total_price'] ?? 0;
+            if (!is_numeric($price)) {
+                $price = 0;
+            }
+            $cost = $rate['total_price'] ?? 0;
+            if (!is_numeric($cost)) {
+                $cost = 0;
+            }
+
+            $method->setPrice((float)$price);
+            $method->setCost((float)$cost);
+
+            $result->append($method);
         }
     }
 
     /**
      * Prepare received checkpoints and activity from Bob Go Shipment Tracking API.
      *
-     * @param array $response The API response containing tracking checkpoints.
-     * @param array $result The result array to be populated with activity details.
-     * @return array The updated result array with activity details.
+     * @param array<string, mixed> $response The API response containing tracking checkpoints.
+     * @param array<string, array<int, array<string, string>>> $result The result array to be populated with activity details.
+     * @return array<string, array<int, array<string, string>>> The updated result array with activity details.
      */
     private function prepareActivity(array $response, array $result): array
     {
-        foreach ($response['checkpoints'] as $checkpoint) {
-            $result['progressdetail'][] = [
-                'activity' => $checkpoint['status'],
-                'deliverydate' => $this->formatDate($checkpoint['time']),
-                'deliverytime' => $this->formatTime($checkpoint['time']),
-            ];
+        if (isset($response['checkpoints']) && is_array($response['checkpoints'])) {
+            foreach ($response['checkpoints'] as $checkpoint) {
+                if (
+                    is_array($checkpoint) &&
+                    isset($checkpoint['status'], $checkpoint['time']) &&
+                    is_string($checkpoint['status']) &&
+                    is_string($checkpoint['time'])
+                ) {
+                    $result['progressdetail'][] = [
+                        'activity' => $checkpoint['status'],
+                        'deliverydate' => $this->formatDate($checkpoint['time']),
+                        'deliverytime' => $this->formatTime($checkpoint['time']),
+                    ];
+                }
+            }
         }
+
         return $result;
     }
 
     /**
-     *  Get Working Days between time of checkout and delivery date (min and max)
+     * Get Working Days between time of checkout and delivery date (min and max).
      *
      * @param string $startDate
      * @param string $endDate
@@ -951,21 +1017,25 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     {
         $begin = strtotime($startDate);
         $end = strtotime($endDate);
-        if ($begin > $end) {
-            return 0;
-        } else {
-            $no_days = 0;
-            $weekends = 0;
-            while ($begin <= $end) {
-                $no_days++; // no of days in the given interval
-                $what_day = date("N", $begin);
-                if ($what_day > 5) { // 6 and 7 are weekend days
-                    $weekends++;
-                };
-                $begin += 86400; // +1 day
-            };
-            return $no_days - $weekends;
+
+        // Check if strtotime failed
+        if ($begin === false || $end === false || $begin > $end) {
+            return 0; // or throw an exception if preferred
         }
+
+        $no_days = 0;
+        $weekends = 0;
+
+        while ($begin <= $end) {
+            $no_days++; // number of days in the given interval
+            $what_day = date("N", $begin);
+            if ($what_day > 5) { // 6 and 7 are weekend days
+                $weekends++;
+            }
+            $begin += 86400; // +1 day
+        }
+
+        return $no_days - $weekends;
     }
 
     /**
@@ -974,9 +1044,9 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @param string $trackInfo The tracking information or tracking ID.
      * @return mixed The decoded API response.
      */
-    private function trackbobgoShipment(string $trackInfo): mixed
+    private function trackBobGoShipment(string $trackInfo): mixed
     {
-        $this->curl->get(uData::TRACKING . $trackInfo);
+        $this->curl->get(UData::TRACKING . $trackInfo);
 
         $response = $this->curl->getBody();
 
@@ -984,20 +1054,32 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * Build The Payload for Bob Go API Request and return response
+     * Build the payload for Bob Go API request and return the response.
      *
-     * @param array $payload
-     * @return mixed
+     * @param array<string, mixed> $payload The payload for the API request.
+     * @return array<int|string, mixed>|null The decoded response, or null if the response could not be decoded or is not an array.
      */
-    protected function uRates(array $payload): mixed
+    protected function uRates(array $payload): array|null
     {
-
         $this->curl->addHeader('Content-Type', 'application/json');
-        $this->curl->post($this->getApiUrl(), json_encode($payload));
+
+        $payloadJson = json_encode($payload);
+        if ($payloadJson === false) {
+            // Handle JSON encoding failure if necessary
+            return null; // or throw an exception
+        }
+
+        $this->curl->post($this->getApiUrl(), $payloadJson);
         $rates = $this->curl->getBody();
 
         $rates = json_decode($rates, true);
-        return $rates;
+
+        // Ensure that $rates is an array or return null
+        if (is_array($rates)) {
+            return $rates;
+        }
+
+        return null;
     }
 
     /**
@@ -1073,14 +1155,14 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     /**
      * Calculates the item weight in grams based on the provided weight unit.
      *
-     * @param mixed $weightUnit The unit of weight, either 'KGS' or another unit (assumed to be pounds).
-     * @param mixed $item The item whose weight is to be calculated.
-     * @return float|int The weight of the item in grams.
+     * @param string $weightUnit The unit of weight, either 'KGS' or another unit (assumed to be pounds).
+     * @param \Magento\Quote\Model\Quote\Item $item The item whose weight is to be calculated.
+     * @return float The weight of the item in grams.
      */
-    public function getItemWeight(mixed $weightUnit, mixed $item): int|float
+    public function getItemWeight(string $weightUnit, \Magento\Quote\Model\Quote\Item $item): float
     {
         // 1 lb = 453.59237 g exact. 1 kg = 1000 g. 1 lb = 0.45359237 kg
-        if ($weightUnit == 'KGS') {
+        if ($weightUnit === 'KGS') {
             $mass = $item->getWeight() ? $item->getWeight() * 1000 : 0;
         } else {
             // Pound to Kilogram Conversion Formula
@@ -1092,12 +1174,12 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     /**
      * Processes the items in the cart, calculates their weights, and prepares an array of item details.
      *
-     * @param array $items The items in the cart.
-     * @param mixed $weightUnit The unit of weight used for the items.
-     * @param array $itemsArray The array to store the processed item details.
-     * @return array The array containing details of each item including SKU, quantity, price, and weight.
+     * @param array<int, \Magento\Quote\Model\Quote\Item>  $items The items in the cart.
+     * @param string                                       $weightUnit The unit of weight used for the items.
+     * @param array<int, array<string, mixed>>             $itemsArray The array to store the processed item details.
+     * @return array<int, array<string, mixed>> The array containing details of each item including SKU, quantity, price, and weight.
      */
-    public function getStoreItems(array $items, mixed $weightUnit, array $itemsArray): array
+    public function getStoreItems(array $items, string $weightUnit, array $itemsArray): array
     {
         foreach ($items as $item) {
 
@@ -1135,13 +1217,11 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * Tests the rate retrieval from the BobGo API using a sample payload.
-     * This method checks if the "Show rates for checkout" setting is enabled,
-     * then constructs and sends a sample payload to the API to verify the response.
+     * Trigger a test for rates.
      *
-     * @return array|bool Returns the response array from the API if successful, or false if an error occurs.
+     * @return array<int|string, mixed>|bool Returns an array of results or false on failure.
      */
-    public function triggerRatesTest()
+    public function triggerRatesTest(): array|bool
     {
         // Check if the 'Show rates for checkout' setting is enabled
         $isEnabled = $this->scopeConfig->getValue(
@@ -1187,13 +1267,22 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
             try {
                 // Perform the API request
+                $payloadJson = json_encode($payload);
+                if ($payloadJson === false) {
+                    throw new \RuntimeException('Failed to encode payload to JSON.');
+                }
+
                 $this->curl->addHeader('Content-Type', 'application/json');
-                $this->curl->post($this->getApiUrl(), json_encode($payload));
+                $this->curl->post($this->getApiUrl(), $payloadJson);
                 $statusCode = $this->curl->getStatus();
                 $responseBody = $this->curl->getBody();
 
                 // Decode the response
                 $response = json_decode($responseBody, true);
+
+                if (!is_array($response)) {
+                    throw new LocalizedException(__('Invalid response format.'));
+                }
 
                 // Check if the response contains a 'message' (indicating an error)
                 if (isset($response['message'])) {
