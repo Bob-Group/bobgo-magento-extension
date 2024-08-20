@@ -33,7 +33,7 @@ class GenericTest extends TestCase
         $codeProperty->setValue($this->generic, 'test_code');
     }
 
-    public function testToOptionArray()
+    public function testToOptionArray(): void
     {
         // Set up the expected return value from the BobGo's getCode method
         $this->bobGoMock->method('getCode')->with('test_code')->willReturn([
@@ -53,7 +53,7 @@ class GenericTest extends TestCase
         $this->assertEquals($expected, $result);
     }
 
-    public function testToOptionArrayWithEmptyConfig()
+    public function testToOptionArrayWithEmptyConfig(): void
     {
         // Set up the getCode method to return null
         $this->bobGoMock->method('getCode')->with('test_code')->willReturn(null);

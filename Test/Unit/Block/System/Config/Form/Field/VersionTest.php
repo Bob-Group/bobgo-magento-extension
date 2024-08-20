@@ -34,7 +34,13 @@ class VersionTest extends TestCase
         $this->versionBlock = new Version($this->contextMock, $this->helperMock);
     }
 
-    private function callProtectedMethod($object, $methodName, array $parameters = [])
+    /**
+     * @param object $object
+     * @param string $methodName
+     * @param array<int, mixed> $parameters
+     * @return mixed
+     */
+    private function callProtectedMethod(object $object, string $methodName, array $parameters = [])
     {
         $reflection = new \ReflectionClass($object);
         $method = $reflection->getMethod($methodName);
@@ -43,7 +49,7 @@ class VersionTest extends TestCase
         return $method->invokeArgs($object, $parameters);
     }
 
-    public function testGetElementHtml()
+    public function testGetElementHtml(): void
     {
         // Mock the AbstractElement
         $elementMock = $this->createMock(AbstractElement::class);
@@ -69,7 +75,7 @@ class VersionTest extends TestCase
         $this->assertEquals($expectedHtml, $result);
     }
 
-    public function testGetElementHtmlWithNonStringValue()
+    public function testGetElementHtmlWithNonStringValue(): void
     {
         // Mock the AbstractElement
         $elementMock = $this->createMock(AbstractElement::class);

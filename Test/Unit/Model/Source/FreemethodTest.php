@@ -27,7 +27,7 @@ class FreemethodTest extends TestCase
         $this->freemethod = new Freemethod($this->bobGoMock);
     }
 
-    public function testToOptionArray()
+    public function testToOptionArray(): void
     {
         // Call the method under test
         $result = $this->freemethod->toOptionArray();

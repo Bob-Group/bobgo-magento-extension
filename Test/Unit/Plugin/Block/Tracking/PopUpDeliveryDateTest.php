@@ -20,48 +20,60 @@ class PopupDeliveryDateTest extends TestCase
         $this->plugin = new PopupDeliveryDate();
     }
 
-    public function testAfterFormatDeliveryDateTimeWithBobGoCarrier()
+    public function testAfterFormatDeliveryDateTimeWithBobGoCarrier(): void
     {
-        // Mock the Status class with BobGo carrier code
-        $statusMock = $this->createMock(Status::class);
-        $statusMock->method('getCarrier')->willReturn('bobgo_carrier_code');
+        // Create an instance of the Status class
+        $status = new Status();
+        $status->setCarrier('bobgo_carrier_code');
 
         // Mock the Popup class
         $popupMock = $this->createMock(Popup::class);
         $popupMock->method('getTrackingInfo')->willReturn([
-            ['tracking_info' => $statusMock],
+            ['tracking_info' => $status],
         ]);
 
         // Mock the formatDeliveryDate method
-        $popupMock->method('formatDeliveryDate')->with('2024-08-19')->willReturn('Aug 19, 2024');
+        $popupMock->method('formatDeliveryDate')
+            ->with('2024-08-19')
+            ->willReturn('Aug 19, 2024');
 
         // Call the plugin method afterFormatDeliveryDateTime
-        $result = $this->plugin->afterFormatDeliveryDateTime($popupMock, 'Aug 19, 2024 10:00 AM', '2024-08-19', '10:00 AM');
+        $result = $this->plugin->afterFormatDeliveryDateTime(
+            $popupMock,
+            'Aug 19, 2024 10:00 AM',
+            '2024-08-19',
+            '10:00 AM'
+        );
 
         // Assert that the time was stripped for BobGo carrier
         $this->assertEquals('Aug 19, 2024', $result);
     }
 
-    public function testAfterFormatDeliveryDateTimeWithOtherCarrier()
+    public function testAfterFormatDeliveryDateTimeWithOtherCarrier(): void
     {
-        // Mock the Status class with a different carrier code
-        $statusMock = $this->createMock(Status::class);
-        $statusMock->method('getCarrier')->willReturn('other_carrier_code');
+        // Create an instance of the Status class
+        $status = new Status();
+        $status->setCarrier('other_carrier_code');
 
         // Mock the Popup class
         $popupMock = $this->createMock(Popup::class);
         $popupMock->method('getTrackingInfo')->willReturn([
-            ['tracking_info' => $statusMock],
+            ['tracking_info' => $status],
         ]);
 
         // Call the plugin method afterFormatDeliveryDateTime
-        $result = $this->plugin->afterFormatDeliveryDateTime($popupMock, 'Aug 19, 2024 10:00 AM', '2024-08-19', '10:00 AM');
+        $result = $this->plugin->afterFormatDeliveryDateTime(
+            $popupMock,
+            'Aug 19, 2024 10:00 AM',
+            '2024-08-19',
+            '10:00 AM'
+        );
 
         // Assert that the time remains unchanged for other carriers
         $this->assertEquals('Aug 19, 2024 10:00 AM', $result);
     }
 
-    public function testGetCarrierWithNoTrackingInfo()
+    public function testGetCarrierWithNoTrackingInfo(): void
     {
         // Mock the Popup class with no tracking info
         $popupMock = $this->createMock(Popup::class);

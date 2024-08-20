@@ -51,7 +51,7 @@ class DataTest extends TestCase
         $this->helper = new Data($this->contextMock, $this->moduleListMock);
     }
 
-    public function testIsEnabled()
+    public function testIsEnabled(): void
     {
         // Mock the scopeConfig to return '1' when checking if the module is enabled
         $this->scopeConfigMock->method('getValue')
@@ -62,7 +62,7 @@ class DataTest extends TestCase
         $this->assertEquals('1', $result);
     }
 
-    public function testIsEnabledReturnsNullWhenDisabled()
+    public function testIsEnabledReturnsNullWhenDisabled(): void
     {
         // Mock the scopeConfig to return null when the module is disabled
         $this->scopeConfigMock->method('getValue')
@@ -73,7 +73,7 @@ class DataTest extends TestCase
         $this->assertNull($result);
     }
 
-    public function testGetDebugStatus()
+    public function testGetDebugStatus(): void
     {
         // Mock the scopeConfig to return '1' when checking if debug is enabled
         $this->scopeConfigMock->method('getValue')
@@ -84,7 +84,7 @@ class DataTest extends TestCase
         $this->assertEquals('1', $result);
     }
 
-    public function testGetDebugStatusReturnsNullWhenDisabled()
+    public function testGetDebugStatusReturnsNullWhenDisabled(): void
     {
         // Mock the scopeConfig to return null when debug is disabled
         $this->scopeConfigMock->method('getValue')
@@ -95,7 +95,7 @@ class DataTest extends TestCase
         $this->assertNull($result);
     }
 
-    public function testGetExtensionVersion()
+    public function testGetExtensionVersion(): void
     {
         // Mock the moduleList to return a specific version
         $this->moduleListMock->method('getOne')
@@ -106,7 +106,7 @@ class DataTest extends TestCase
         $this->assertEquals('1.2.3', $result);
     }
 
-    public function testGetExtensionVersionReturnsNAWhenModuleNotFound()
+    public function testGetExtensionVersionReturnsNAWhenModuleNotFound(): void
     {
         // Mock the moduleList to return null (module not found)
         $this->moduleListMock->method('getOne')
@@ -117,7 +117,7 @@ class DataTest extends TestCase
         $this->assertEquals('N/A', $result);
     }
 
-    public function testLogWithDebugEnabled()
+    public function testLogWithDebugEnabled(): void
     {
         // Mock the scopeConfig to return '1' when checking if debug is enabled
         $this->scopeConfigMock->method('getValue')
@@ -132,7 +132,7 @@ class DataTest extends TestCase
         $this->helper->log('Test message');
     }
 
-    public function testLogWithDebugDisabled()
+    public function testLogWithDebugDisabled(): void
     {
         // Mock the scopeConfig to return null when debug is disabled
         $this->scopeConfigMock->method('getValue')
@@ -146,7 +146,7 @@ class DataTest extends TestCase
         $this->helper->log('Test message');
     }
 
-    public function testLogWithSeparator()
+    public function testLogWithSeparator(): void
     {
         // Mock the scopeConfig to return '1' when checking if debug is enabled
         $this->scopeConfigMock->method('getValue')

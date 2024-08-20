@@ -21,7 +21,7 @@ class ChangeTitleTest extends TestCase
         $this->plugin = new ChangeTitle();
     }
 
-    public function testAfterGetTitleWithBobGoCarrier()
+    public function testAfterGetTitleWithBobGoCarrier(): void
     {
         // Create a custom Status object with BobGo carrier
         $status = $this->getMockBuilder(Status::class)
@@ -40,7 +40,7 @@ class ChangeTitleTest extends TestCase
         $this->assertEquals('Expected delivery:', $result);
     }
 
-    public function testAfterGetTitleWithOtherCarrier()
+    public function testAfterGetTitleWithOtherCarrier(): void
     {
         // Create a custom Status object with a different carrier
         $status = $this->getMockBuilder(Status::class)

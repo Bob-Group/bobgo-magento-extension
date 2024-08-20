@@ -57,8 +57,7 @@ class AdditionalInfo
     {
         $data = $this->getRequestBody();
 
-        if (
-            isset($data['address']) && is_array($data['address']) &&
+        if (isset($data['address']) && is_array($data['address']) &&
             isset($data['address']['custom_attributes'][0]) && is_array($data['address']['custom_attributes'][0]) &&
             isset($data['address']['custom_attributes'][0]['value'])
         ) {

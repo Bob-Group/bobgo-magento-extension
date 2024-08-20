@@ -10,9 +10,16 @@ use PHPUnit\Framework\TestCase;
 
 class AdditionalInfoTest extends TestCase
 {
+    /** @var AdditionalInfo */
     private $additionalInfo;
+
+    /** @var Http|\PHPUnit\Framework\MockObject\MockObject */
     private $requestMock;
+
+    /** @var CountryFactory|\PHPUnit\Framework\MockObject\MockObject */
     private $countryFactoryMock;
+
+    /** @var Country|\PHPUnit\Framework\MockObject\MockObject */
     private $countryMock;
 
     protected function setUp(): void
@@ -30,7 +37,7 @@ class AdditionalInfoTest extends TestCase
         $this->additionalInfo = new AdditionalInfo($this->countryFactoryMock, $this->requestMock);
     }
 
-    public function testGetCountryName()
+    public function testGetCountryName(): void
     {
         $countryId = 'US';
 
@@ -42,7 +49,7 @@ class AdditionalInfoTest extends TestCase
         $this->assertEquals('United States', $result);
     }
 
-    public function testGetDestComp()
+    public function testGetDestComp(): void
     {
         $requestBody = json_encode([
             'address' => [
@@ -58,7 +65,7 @@ class AdditionalInfoTest extends TestCase
         $this->assertEquals('Test Company', $result);
     }
 
-    public function testGetDestCompReturnsEmptyStringWhenNotSet()
+    public function testGetDestCompReturnsEmptyStringWhenNotSet(): void
     {
         $requestBody = json_encode([]);
 
@@ -70,7 +77,7 @@ class AdditionalInfoTest extends TestCase
         $this->assertEquals('', $result);
     }
 
-    public function testGetSuburb()
+    public function testGetSuburb(): void
     {
         $requestBody = json_encode([
             'address' => [
@@ -88,7 +95,7 @@ class AdditionalInfoTest extends TestCase
         $this->assertEquals('Test Suburb', $result);
     }
 
-    public function testGetSuburbReturnsEmptyStringWhenNotSet()
+    public function testGetSuburbReturnsEmptyStringWhenNotSet(): void
     {
         $requestBody = json_encode([]);
 
@@ -100,7 +107,7 @@ class AdditionalInfoTest extends TestCase
         $this->assertEquals('', $result);
     }
 
-    public function testGetDestTelephone()
+    public function testGetDestTelephone(): void
     {
         $requestBody = json_encode([
             'address' => [
@@ -116,7 +123,7 @@ class AdditionalInfoTest extends TestCase
         $this->assertEquals('123456789', $result);
     }
 
-    public function testGetDestTelephoneReturnsEmptyStringWhenNotSet()
+    public function testGetDestTelephoneReturnsEmptyStringWhenNotSet(): void
     {
         $requestBody = json_encode([]);
 

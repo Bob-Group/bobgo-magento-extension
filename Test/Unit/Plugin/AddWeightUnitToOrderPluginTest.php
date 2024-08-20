@@ -39,7 +39,7 @@ class AddWeightUnitToOrderPluginTest extends TestCase
         );
     }
 
-    public function testBeforeSaveWithLbsWeightUnit()
+    public function testBeforeSaveWithLbsWeightUnit(): void
     {
         // Mock the OrderInterface
         $orderMock = $this->createMock(OrderInterface::class);
@@ -68,7 +68,7 @@ class AddWeightUnitToOrderPluginTest extends TestCase
         $this->assertSame([$orderMock], $result);
     }
 
-    public function testBeforeSaveWithNonLbsWeightUnit()
+    public function testBeforeSaveWithNonLbsWeightUnit(): void
     {
         // Mock the OrderInterface
         $orderMock = $this->createMock(OrderInterface::class);

@@ -13,11 +13,10 @@ use Magento\Directory\Model\RegionFactory;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\Request\Http as MagentoHttp;
 use Magento\Framework\Controller\Result\JsonFactory;
-use Magento\Framework\DataObject;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Magento\Framework\Xml\Security;
-use Magento\Quote\Model\Quote\Address\RateRequest;
+use Magento\Quote\Model\Quote\Address\RateRequest;  // Correct class reference
 use Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory;
 use Magento\Quote\Model\Quote\Address\RateResult\MethodFactory;
 use Magento\Shipping\Model\Rate\ResultFactory;
@@ -29,12 +28,25 @@ use Psr\Log\LoggerInterface;
 
 class BobGoTest extends TestCase
 {
+    /** @var BobGo */
     private $bobGo;
+
+    /** @var StoreManagerInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $storeManagerMock;
+
+    /** @var ScopeConfigInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $scopeConfigMock;
+
+    /** @var Curl|\PHPUnit\Framework\MockObject\MockObject */
     private $curlMock;
+
+    /** @var ResultFactory|\PHPUnit\Framework\MockObject\MockObject */
     private $resultFactoryMock;
+
+    /** @var MethodFactory|\PHPUnit\Framework\MockObject\MockObject */
     private $methodFactoryMock;
+
+    /** @var AdditionalInfo|\PHPUnit\Framework\MockObject\MockObject */
     private $additionalInfoMock;
 
     protected function setUp(): void
@@ -98,10 +110,7 @@ class BobGoTest extends TestCase
         $this->bobGo->additionalInfo = $this->additionalInfoMock;
     }
 
-
-// Your test methods go here...
-
-public function testGetBaseUrl()
+    public function testGetBaseUrl(): void
     {
         $storeMock = $this->createMock(\Magento\Store\Model\Store::class);
         $this->storeManagerMock->method('getStore')->willReturn($storeMock);
@@ -112,7 +121,7 @@ public function testGetBaseUrl()
         $this->assertEquals('example.com', $baseUrl);
     }
 
-    public function testGetDestComp()
+    public function testGetDestComp(): void
     {
         $this->additionalInfoMock->method('getDestComp')->willReturn('Test Company');
 
@@ -121,7 +130,7 @@ public function testGetBaseUrl()
         $this->assertEquals('Test Company', $destComp);
     }
 
-    public function testGetDestSuburb()
+    public function testGetDestSuburb(): void
     {
         $this->additionalInfoMock->method('getSuburb')->willReturn('Test Suburb');
 
@@ -130,7 +139,7 @@ public function testGetBaseUrl()
         $this->assertEquals('Test Suburb', $destSuburb);
     }
 
-    public function testGetRates()
+    public function testGetRates(): void
     {
         $payload = [
             'identifier' => 'example.com',
@@ -168,7 +177,7 @@ public function testGetBaseUrl()
         $this->assertEquals('rate-1', $rates['rates'][0]['id']);
     }
 
-    public function testProcessAdditionalValidation()
+    public function testProcessAdditionalValidation(): void
     {
         // Create a mock for Product
         $productMock = $this->createMock(\Magento\Catalog\Model\Product::class);
@@ -179,7 +188,7 @@ public function testGetBaseUrl()
         $quoteItemMock = $this->createMock(\Magento\Quote\Model\Quote\Item::class);
         $quoteItemMock->method('getProduct')->willReturn($productMock);
 
-        // Create a real RateRequest object
+        // Create a real RateRequest object from the correct namespace
         $rateRequest = new RateRequest();
         $rateRequest->setDestPostcode('12345');
         $rateRequest->setDestCountryId('ZA');
@@ -189,6 +198,4 @@ public function testGetBaseUrl()
 
         $this->assertInstanceOf(BobGo::class, $result);
     }
-
-
 }

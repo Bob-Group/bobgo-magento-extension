@@ -25,7 +25,7 @@ class USubsTest extends TestCase
         $this->uSubs = new USubs($this->requestMock);
     }
 
-    public function testGetDestComp()
+    public function testGetDestComp(): void
     {
         $requestBody = json_encode([
             'address' => [
@@ -33,6 +33,7 @@ class USubsTest extends TestCase
             ]
         ]);
 
+        // Ensure getContent returns a valid JSON string
         $this->requestMock->method('getContent')
             ->willReturn($requestBody);
 
@@ -41,19 +42,18 @@ class USubsTest extends TestCase
         $this->assertEquals('Test Company', $result);
     }
 
-    public function testGetDestCompReturnsEmptyStringWhenNotSet()
+    public function testGetDestCompReturnsEmptyStringWhenNotSet(): void
     {
-        $requestBody = json_encode([]);
-
+        // Return an empty JSON object
         $this->requestMock->method('getContent')
-            ->willReturn($requestBody);
+            ->willReturn('{}');
 
         $result = $this->uSubs->getDestComp();
 
         $this->assertEquals('', $result);
     }
 
-    public function testGetDestCompReturnsEmptyStringWhenInvalidStructure()
+    public function testGetDestCompReturnsEmptyStringWhenInvalidStructure(): void
     {
         // Test case where the JSON structure is invalid
         $requestBody = json_encode([

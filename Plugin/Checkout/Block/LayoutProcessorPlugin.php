@@ -18,8 +18,8 @@ class LayoutProcessorPlugin
     /**
      * Modify checkout layout to add suburb field.
      *
-     * @param LayoutProcessor $subject
-     * @param array<string, mixed> $jsLayout The JS layout array to be modified.
+     * @param LayoutProcessor $subject The subject being processed.
+     * @param array<string,mixed> $jsLayout The JS layout array to be modified.
      * @return array<string, mixed> The modified JS layout array.
      */
     public function afterProcess(

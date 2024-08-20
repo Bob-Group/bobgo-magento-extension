@@ -46,7 +46,7 @@ class ConfigChangeObserverTest extends TestCase
         );
     }
 
-    public function testExecuteWithActiveCarrierAndSuccessfulConnection()
+    public function testExecuteWithActiveCarrierAndSuccessfulConnection(): void
     {
         // Set up the observer mock
         $observerMock = $this->createMock(Observer::class);
@@ -68,7 +68,7 @@ class ConfigChangeObserverTest extends TestCase
         $this->observer->execute($observerMock);
     }
 
-    public function testExecuteWithActiveCarrierAndFailedConnection()
+    public function testExecuteWithActiveCarrierAndFailedConnection(): void
     {
         // Set up the observer mock
         $observerMock = $this->createMock(Observer::class);
@@ -93,7 +93,7 @@ class ConfigChangeObserverTest extends TestCase
         $this->observer->execute($observerMock);
     }
 
-    public function testExecuteWithInactiveCarrier()
+    public function testExecuteWithInactiveCarrier(): void
     {
         // Set up the observer mock
         $observerMock = $this->createMock(Observer::class);
