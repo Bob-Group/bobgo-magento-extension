@@ -82,7 +82,7 @@ Please visit [Bob Go](https://bobgo.co.za) to create an account.
 9. On Bob Go go to `Rates at checkout > Settings > Installed channels` and enable your channel for rates at checkout
 10. Make sure you have service levels configured and enabled on Bob Go `Rates at checkout > Service levels`
 
-### ✓ Step 2: Login to Magento Admin
+### ✓ Step 3: Login to Magento Admin
 
 1. In the Magento admin portal click on `Stores > Configuration > Sales > Delivery Methods` 
 2. Go to the Bob Go delivery method and enable Bob Go rates at checkout
