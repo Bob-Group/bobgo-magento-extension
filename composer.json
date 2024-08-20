@@ -1,29 +1,25 @@
 {
-    "name": "bob-public-utils/bobgo-magento-extension",
+    "name": "bobgo/bobgo-magento-extension",
     "description": "Smart shipping and order management solution in South Africa",
-  "type": "magento2-module",
-  "version": "1.0.0",
-  "authors": [
-    {
-      "name": "Bob Go",
-      "email": "support@bobgo.co.za",
-      "homepage": "https://www.bobgo.co.za"
-    }
-  ],
-  "license": [
-    "AFL-3.0",
-    "OSL-3.0"
-  ],
+    "type": "magento2-module",
+    "version": "1.0.0",
+    "authors": [
+        {
+            "name": "Bob Go",
+            "email": "support@bobgo.co.za",
+            "homepage": "https://www.bobgo.co.za"
+        }
+    ],
+    "license": "GPL-3.0-or-later",
     "require": {
         "php": "^7.4 || ^8.0 || ^8.2"
     },
-
     "autoload": {
-    "files": [
-      "registration.php"
-    ],
-    "psr-4": {
-        "BobGroup\\BobGo\\": "Model/Carrier/"
+        "files": [
+            "registration.php"
+        ],
+        "psr-4": {
+            "BobGroup\\BobGo\\": ""
+        }
     }
-  }
 }
