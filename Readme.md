@@ -20,7 +20,7 @@ Run the following command in Magento 2 root folder:</br>
 #### 1. Execute the following command to install the module:
 
 ``` 
-composer require bob-public-utils/bobgo-magento-extension
+composer require bobgo/bobgo-magento-extension
 ```
 #### 2. Enter following commands to enable the module:
 
@@ -72,15 +72,14 @@ Please visit [Bob Go](https://bobgo.co.za) to create an account.
 
 ### ✓ Step 2: Integrate Magento and Bob Go
 
-1. In the Magento admin portal click on `System > Integrations` (At this point Bob Go should be under Magento integrations)
-2. Click to edit the Bob Go integration in the magento admin portal
-3. Under Basic settings select `API`
-4. Make sure `All` is selected for `Resource Access`
-5. Click `Save` and enter your Magento admin portal password
-6. The `Integration Details` will be displayed at the bottom of the page
-8. On [Bob Go](https://bobgo.co.za) go to `Sales channels > Add channel > Magento` and enter the Magento integration details from step 6 and click `Grant access`
-9. On Bob Go go to `Rates at checkout > Settings > Installed channels` and enable your channel for rates at checkout
-10. Make sure you have service levels configured and enabled on Bob Go `Rates at checkout > Service levels`
+1. In the Magento admin portal click on `System > Integrations` and click on `Add New Integration`
+2. Under `Basic Settings > Integration Info` fill in the name of the integration eg. Bob Go  
+3. Under `Basic Settings > API` select `All` for Resource access. 
+4. Click `Save` and enter your Magento admin portal password
+5. The `Integration Details` will be displayed on the page
+6. On [Bob Go](https://bobgo.co.za) go to `Sales channels > Add channel > Magento` and enter the Magento integration details from step 5 and click `Grant access`
+7. On Bob Go go to `Rates at checkout > Settings > Installed channels` and enable your channel for rates at checkout
+8. Make sure you have service levels configured and enabled on Bob Go `Rates at checkout > Service levels`
 
 ### ✓ Step 3: Login to Magento Admin
 

@@ -3,7 +3,7 @@
     <default>
         <carriers>
             <bobgo>
-                <active>1</active>
+                <active>0</active>
                 <price>0.00</price>
                 <model>BobGroup\BobGo\Model\Carrier\BobGo</model>
                 <name>Bob Go</name>
