@@ -50,7 +50,7 @@ bin/magento setup:static-content:deploy
 >**{Magento root}**`/app/code/BobGroup/BobGo/`**{Paste here}**
 
 
-3. Go to Magento root folder and run all commands below  to install `BobGroup_BobGo`: </br>
+4. Go to Magento root folder and run all commands below  to install `BobGroup_BobGo`: </br>
 ```
 bin/magento cache:clean
 bin/magento cache:flush
