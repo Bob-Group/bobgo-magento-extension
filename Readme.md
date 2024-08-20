@@ -66,7 +66,7 @@ ________________________________________________________________________________
 
 ### ✓ Step 1: Create an account on Bob Go
 
-You need to create an account on Bob Go to get your Store Identified by the API. 
+You need to create an account on Bob Go to get your store identified by the API. 
 
 Please visit [Bob Go](https://bobgo.co.za) to create an account.
 
@@ -91,8 +91,8 @@ Please visit [Bob Go](https://bobgo.co.za) to create an account.
 
 #### Admin Configurations: Update Store Information*
 
-When the extension is **installed** and **enabled**, a new field will be created in the `Store Information` : `Suburb` and Fill in necessary information;
+When the extension is **installed** and **enabled**, a new field will be created in `Store Information` : `Suburb`. Enter the necessary details:
 
 1. `Stores`> `Configuration`> `General`>`General`
 2. `Store Information`>`Suburb`
-3. Update the store information and click save config
+3. Update the store information and click `Save config`
