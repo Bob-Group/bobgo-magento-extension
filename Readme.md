@@ -15,7 +15,7 @@ A complete guide to install Magento Bob Go Shipping extension in Magento 2.
 
 Run the following command in Magento 2 root folder:</br>
 
->_Note: You must have composer installed on your server & at this point this option_
+>_Note: You must have composer installed on your server for this option_
 
 #### 1. Execute the following command to install the module:
 
@@ -37,7 +37,7 @@ bin/magento setup:static-content:deploy
 
 1. Download the extension zip file from the link below: </br>
 
-    <a href="https://gitlab.bob.co.za/bobgo/bobgo-magento-extension/-/archive/main/bobgo-magento-extension-main.zip"> Download Magento 2 Bob Go Shipping Extension </a>
+    <a href="https://gitlab.bob.co.za/bob-public-utils/bobgo-magento-extension/-/archive/prod/bobgo-magento-extension-prod.zip"> Download Magento 2 Bob Go Shipping Extension </a>
 
 2. Unzip the file and copy contents
 
@@ -70,58 +70,29 @@ You need to create an account on Bob Go to get your Store Identified by the API.
 
 Please visit [Bob Go](https://bobgo.co.za) to create an account.
 
+### ✓ Step 2: Integrate Magento and Bob Go
+
+1. In the Magento admin portal click on `System > Integrations` (At this point Bob Go should be under Magento integrations)
+2. Click to edit the Bob Go integration in the magento admin portal
+3. Under Basic settings select `API`
+4. Make sure `All` is selected for `Resource Access`
+5. Click `Save` and enter your Magento admin portal password
+6. The `Integration Details` will be displayed at the bottom of the page
+8. On [Bob Go](https://bobgo.co.za) go to `Sales channels > Add channel > Magento` and enter the Magento integration details from step 6 and click `Grant access`
+9. On Bob Go go to `Rates at checkout > Settings > Installed channels` and enable your channel for rates at checkout
+10. Make sure you have service levels configured and enabled on Bob Go `Rates at checkout > Service levels`
+
 ### ✓ Step 2: Login to Magento Admin
 
-1. Click on **Bob Go** > Bob Go > Enabled for Checkout > Yes </br>
-
-
-2. and go to `Stores > Configuration > Sales > Delivery Methods` to configure the extension.
-
-### ✓ Step 3: Configure Bob Go Shipping Extension
-
-
-1. Select `Bob Go` as shipping method.
-
-
-2. Select `Enable` to enable the extension.
-
-
+1. In the Magento admin portal click on `Stores > Configuration > Sales > Delivery Methods` 
+2. Go to the Bob Go delivery method and enable Bob Go rates at checkout
 3.  Click `Save Config`
-
-
-### ✓ Step 4: Address Configurations
-#### Admin Configurations: Update Customer Address Fields*
-1. `Stores`>`Configurations`>`Customers`
-2. `Customer Configuration`>`Name and Address Options`
-3. In Input Field `Number of Lines in a Street Address` 
-4. Disable System Value `2` > 
-5. Lastly ,Change to `3` Lines.
+4. A message at the top of the screen will confirm that rates at checkout is enabled correctly: `Bob Go rates at checkout connected.`
 
 #### Admin Configurations: Update Store Information*
 
 When the extension is **installed** and **enabled**, a new field will be created in the `Store Information` : `Suburb` and Fill in necessary information;
 
 1. `Stores`> `Configuration`> `General`>`General`
-
 2. `Store Information`>`Suburb`
-
-## How it works
-
-## How to use Magento 2 Bob Go Shipping Extension (carrier) to Ship Orders
-
-### ✓ Step 1: Add products to cart(Checkout)
-
->1. Go to checkout page.
->2. Select shipping address.
->3. Bob Go will collect **Shipping Rates** From various couriers.
->4. Select shipping method.
->5. Place order.
-
-### ✓ Step 1: Create shipment (Admin)
-`Sales > Orders > View Order > Ship`
-
->1. Go to `Sales > Orders` in Magento Admin
->2. Select an order
->3. Click `Ship` button
->4. Select `Bob Go` as shipping method
->5. Click `Submit Shipment` button
+3. Update the store information and click save config
