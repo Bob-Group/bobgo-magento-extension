@@ -74,7 +74,7 @@ Please visit [Bob Go](https://bobgo.co.za) to create an account.
 
 1. In the Magento admin portal click on `System > Integrations` and click on `Add New Integration`
 2. Under `Basic Settings > Integration Info` fill in the name of the integration eg. Bob Go  
-3. Under `Basic Settings > API` select `All` for Resource access. 
+3. Under `Basic Settings > API` select `All` for Resource access
 4. Click `Save` and enter your Magento admin portal password
 5. The `Integration Details` will be displayed on the page
 6. On [Bob Go](https://bobgo.co.za) go to `Sales channels > Add channel > Magento` and enter the Magento integration details from step 5 and click `Grant access`
