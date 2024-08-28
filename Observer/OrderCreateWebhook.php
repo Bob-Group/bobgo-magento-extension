@@ -18,73 +18,74 @@ class OrderCreateWebhook implements ObserverInterface
     public function __construct(LoggerInterface $logger, Curl $curl, StoreManagerInterface $storeManager)
     {
         $this->logger = $logger;
-        $this->curl = $curl; // Initialize the Curl instance
+        $this->curl = $curl;
         $this->storeManager = $storeManager;
     }
 
     public function execute(Observer $observer)
     {
-        $this->logger->info('OrderCreateWebhook: execute method started');
-
         $order = $observer->getEvent()->getOrder();
         if (!$order) {
-            $this->logger->error('OrderCreateWebhook: No order object found in observer');
+            //$this->logger->error('OrderCreateWebhook: No order object found in observer');
             return;
         }
 
-        // Log order creation data
-        $this->logger->info('Order Created:', ['order_id' => $order->getId(), 'order_data' => $order->getData()]);
-
         // Extract order data and send to the webhook URL
-        $this->sendWebhook($order, 'order_created');
-
-        $this->logger->info('OrderCreateWebhook: execute method finished');
+        $this->sendWebhook($order, 'order_create');
     }
 
     private function sendWebhook($order, $eventType)
     {
-        $this->logger->info('OrderCreateWebhook: sendWebhook method started');
-
         // Webhook URL
         $url = $this->getWebhookUrl();
-        $this->logger->info('OrderCreateWebhook: Webhook URL', ['url' => $url]);
 
-        // Get Store UUID and add to query parameters
-        $storeUuid = $this->getStoreUuid();
-        $this->logger->info('UUID: ', ['uuid' => $storeUuid]);
-        $url .= '?channel=' . urlencode($storeUuid);
-        $this->logger->info('Webhook URL', ['url' => $url]);
+        // Extract order items
+        $itemsData = [];
+        foreach ($order->getAllItems() as $item) {
+            $itemsData[] = $item->getData();
+        }
+
+        // Extract shipping address
+        $shippingAddress = $order->getShippingAddress();
+        $shippingAddressData = $shippingAddress ? $shippingAddress->getData() : [];
+
+        // Extract billing address
+        $billingAddress = $order->getBillingAddress();
+        $billingAddressData = $billingAddress ? $billingAddress->getData() : [];
 
         // Prepare payload
         $data = [
             'event' => $eventType,
             'order_id' => $order->getId(),
-            'order_data' => $order->getData()
+            'channel_identifier' => $this->getStoreUrl(),
+            'store_id' => $this->getStoreId(),
+            'order_data' => $order->getData(),
+            'items' => $itemsData,
+            'shipping_address' => $shippingAddressData,
+            'billing_address'  => $billingAddressData,
         ];
-
-        // Log webhook payload
-        $this->logger->info('Sending Webhook:', ['url' => $url, 'payload' => $data]);
 
         // Send the webhook
         $this->makeHttpPostRequest($url, $data);
-
-        $this->logger->info('OrderCreateWebhook: sendWebhook method finished');
     }
-
 
     private function makeHttpPostRequest($url, $data)
     {
-        $this->logger->info('URL:', ['url' => $url]);
-        $this->logger->info('Data:', ['data' => $data]);
+        // Generate the signature using a secret key and the payload (example using HMAC SHA256)
+        $secretKey = 'your_secret_key';
+        $payloadJson = json_encode($data);
+        $signature = hash_hmac('sha256', $payloadJson, $secretKey);
+
+        // Set headers and post the data
+        $this->curl->addHeader('Content-Type', 'application/json');
+        $this->curl->addHeader('X-M-Webhook-Signature', $signature); // Add your custom header here
 
         // Perform the API request
         $payloadJson = json_encode($data);
         if ($payloadJson === false) {
-            $this->logger->error('Payload Webhook failed: Unable to encode JSON.');
+            //$this->logger->error('Payload Webhook failed: Unable to encode JSON.');
             throw new \RuntimeException('Failed to encode payload to JSON.');
         }
-
-        $this->logger->info('Payload Webhook:', ['response' => $payloadJson]);
 
         // Set headers and post the data
         $this->curl->addHeader('Content-Type', 'application/json');
@@ -92,17 +93,8 @@ class OrderCreateWebhook implements ObserverInterface
         $statusCode = $this->curl->getStatus();
         $responseBody = $this->curl->getBody();
 
-        // Log status code and response body
-        $this->logger->info('Webhook Response Status:', ['status' => $statusCode]);
-        $this->logger->info('Webhook Response Body:', ['response' => $responseBody]);
-
         // Decode the response
         $response = json_decode($responseBody, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            $this->logger->error('Failed to decode webhook response:', ['error' => json_last_error_msg()]);
-        } else {
-            $this->logger->info('Response Webhook:', ['response' => $response]);
-        }
     }
 
     private function getWebhookUrl(): string
@@ -110,10 +102,14 @@ class OrderCreateWebhook implements ObserverInterface
         return UData::WEBHOOK_URL;
     }
 
-    private function getStoreUuid(): string
+    private function getStoreId(): string
     {
         $storeId = $this->storeManager->getStore()->getId();
         return $storeId;
-        //return $this->storeManager->getStore()->getConfig('general/store_information/store_id');
+    }
+
+    private function getStoreUrl(): string
+    {
+        return $this->storeManager->getStore()->getBaseUrl();
     }
 }

@@ -5,9 +5,9 @@ namespace BobGroup\BobGo\Observer;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\HTTP\Client\Curl;
-use Magento\Store\Model\StoreManagerInterface;
 use BobGroup\BobGo\Model\Carrier\UData;
 use Psr\Log\LoggerInterface;
+use Magento\Store\Model\StoreManagerInterface;
 
 class OrderUpdateWebhook implements ObserverInterface
 {
@@ -29,38 +29,70 @@ class OrderUpdateWebhook implements ObserverInterface
             return;
         }
 
+        // Extract order data and send to the webhook URL
         $this->sendWebhook($order, 'order_updated');
     }
 
     private function sendWebhook($order, $eventType)
     {
+        // Webhook URL
         $url = $this->getWebhookUrl();
 
-        // Get Store UUID and add to query parameters
-        $storeUuid = $this->getStoreUuid();
-        $url .= '?channel=' . urlencode($storeUuid);
+        // Extract order items
+        $itemsData = [];
+        foreach ($order->getAllItems() as $item) {
+            $itemsData[] = $item->getData();
+        }
 
+        // Extract shipping address
+        $shippingAddress = $order->getShippingAddress();
+        $shippingAddressData = $shippingAddress ? $shippingAddress->getData() : [];
+
+        // Extract billing address
+        $billingAddress = $order->getBillingAddress();
+        $billingAddressData = $billingAddress ? $billingAddress->getData() : [];
+
+        // Prepare payload
         $data = [
             'event' => $eventType,
             'order_id' => $order->getId(),
-            'order_data' => $order->getData()
+            'channel_identifier' => $this->getStoreUrl(),
+            'store_id' => $this->getStoreId(),
+            'order_data' => $order->getData(),
+            'items' => $itemsData,
+            'shipping_address' => $shippingAddressData,
+            'billing_address'  => $billingAddressData,
         ];
 
+        // Send the webhook
         $this->makeHttpPostRequest($url, $data);
     }
 
     private function makeHttpPostRequest($url, $data)
     {
+        // Generate the signature using a secret key and the payload (example using HMAC SHA256)
+        $secretKey = 'your_secret_key';
+        $payloadJson = json_encode($data);
+        $signature = hash_hmac('sha256', $payloadJson, $secretKey);
+
+        // Set headers and post the data
+        $this->curl->addHeader('Content-Type', 'application/json');
+        $this->curl->addHeader('X-M-Webhook-Signature', $signature); // Add your custom header here
+
+        // Perform the API request
         $payloadJson = json_encode($data);
         if ($payloadJson === false) {
+            //$this->logger->error('Payload Webhook failed: Unable to encode JSON.');
             throw new \RuntimeException('Failed to encode payload to JSON.');
         }
 
+        // Set headers and post the data
         $this->curl->addHeader('Content-Type', 'application/json');
         $this->curl->post($url, $payloadJson);
         $statusCode = $this->curl->getStatus();
         $responseBody = $this->curl->getBody();
 
+        // Decode the response
         $response = json_decode($responseBody, true);
     }
 
@@ -69,8 +101,14 @@ class OrderUpdateWebhook implements ObserverInterface
         return UData::WEBHOOK_URL;
     }
 
-    private function getStoreUuid(): string
+    private function getStoreId(): string
     {
-        return $this->storeManager->getStore()->getConfig('general/store_information/store_id');
+        $storeId = $this->storeManager->getStore()->getId();
+        return $storeId;
+    }
+
+    private function getStoreUrl(): string
+    {
+        return $this->storeManager->getStore()->getBaseUrl();
     }
 }
