@@ -21,17 +21,36 @@ abstract class OrderWebhookBase implements ObserverInterface
         $this->storeManager = $storeManager;
     }
 
-    protected function sendWebhook($order, $eventType)
+    protected function sendWebhook($order)
     {
         // Webhook URL
         $url = $this->getWebhookUrl();
 
         $storeId = $this->getStoreId();
 
+        $orderId = $order->getId();
+
+        // Get the order creation time
+        $createdAt = strtotime($order->getCreatedAt());
+        $currentTime = time();
+
+        // Define a time threshold  to consider the order as newly created
+        $threshold = 5; // 5  seconds
+
+        // Determine the event type based on the creation time
+        if (($currentTime - $createdAt) < $threshold) {
+            $eventType = 'order_created';
+        } else {
+            $eventType = 'order_updated';
+        }
+
+        // Log the event type for debugging purposes
+        $this->logger->info('event: ' . $eventType);
+
         // Prepare payload
         $data = [
             'event' => $eventType,
-            'order_id' => $order->getId(),
+            'order_id' => $orderId,
             'channel_identifier' => $this->getStoreUrl(),
             'store_id' => $storeId,
         ];

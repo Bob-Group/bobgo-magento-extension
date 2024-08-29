@@ -14,6 +14,6 @@ class OrderCreateWebhook extends OrderWebhookBase
         }
 
         // Extract order data and send to the webhook URL
-        $this->sendWebhook($order, 'order_created');
+        $this->sendWebhook($order);
     }
 }
