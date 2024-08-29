@@ -9,7 +9,7 @@ use BobGroup\BobGo\Model\Carrier\UData;
 use Psr\Log\LoggerInterface;
 use Magento\Store\Model\StoreManagerInterface;
 
-class OrderCreateWebhook implements ObserverInterface
+class OrderCreateWebhook extends OrderWebhookBase
 {
     protected Curl $curl;
     protected LoggerInterface $logger;
@@ -26,112 +26,10 @@ class OrderCreateWebhook implements ObserverInterface
     {
         $order = $observer->getEvent()->getOrder();
         if (!$order) {
-            //$this->logger->error('OrderCreateWebhook: No order object found in observer');
             return;
         }
 
         // Extract order data and send to the webhook URL
         $this->sendWebhook($order, 'order_created');
-    }
-
-    private function sendWebhook($order, $eventType)
-    {
-        // Webhook URL
-        $url = $this->getWebhookUrl();
-
-        // Extract order items
-        $itemsData = [];
-        foreach ($order->getAllItems() as $item) {
-            $itemsData[] = $item->getData();
-        }
-
-        // Extract shipping address
-        $shippingAddress = $order->getShippingAddress();
-        $shippingAddressData = $shippingAddress ? $shippingAddress->getData() : [];
-
-        // Extract billing address
-        $billingAddress = $order->getBillingAddress();
-        $billingAddressData = $billingAddress ? $billingAddress->getData() : [];
-
-        $storeId = $this->getStoreId();
-
-        // Prepare payload
-        $data = [
-            'event' => $eventType,
-            'order_id' => $order->getId(),
-            'channel_identifier' => $this->getStoreUrl(),
-            'store_id' => $storeId,
-            //'order_data' => $order->getData(),
-            //'items' => $itemsData,
-            //'shipping_address' => $shippingAddressData,
-            //'billing_address'  => $billingAddressData,
-        ];
-
-        // Send the webhook
-        $this->makeHttpPostRequest($url, $data, $storeId);
-    }
-
-    private function makeHttpPostRequest($url, $data, $storeId)
-    {
-        // Generate the signature using a secret key and the payload (example using HMAC SHA256)
-        $secretKey = 'KaJGW2cxx1-6z_qjGhSq5Hj4qh_OXl0R1tUPurVs66A';
-        // Generate the HMAC-SHA256 hash as raw binary data
-        $rawSignature = hash_hmac('sha256', $storeId, $secretKey, true);
-
-        // Encode the binary data in Base64
-        $signature = base64_encode($rawSignature);
-
-
-        // Set headers and post the data
-        $this->curl->addHeader('Content-Type', 'application/json');
-        $this->curl->addHeader('X-M-Webhook-Signature', $signature); // Add your custom header here
-
-        // Perform the API request
-        $payloadJson = json_encode($data);
-        if ($payloadJson === false) {
-            //$this->logger->error('Payload Webhook failed: Unable to encode JSON.');
-            throw new \RuntimeException('Failed to encode payload to JSON.');
-        }
-
-        // Set headers and post the data
-        $this->curl->addHeader('Content-Type', 'application/json');
-        $this->curl->post($url, $payloadJson);
-        $statusCode = $this->curl->getStatus();
-        $responseBody = $this->curl->getBody();
-
-        // Decode the response
-        $response = json_decode($responseBody, true);
-    }
-
-    private function getWebhookUrl(): string
-    {
-        return UData::WEBHOOK_URL;
-    }
-
-    private function getStoreId(): string
-    {
-        $storeId = $this->storeManager->getStore()->getId();
-        return $storeId;
-    }
-
-    private function getStoreUrl(): string
-    {
-        $url = $this->storeManager->getStore()->getBaseUrl();
-
-        // Remove protocol (http:// or https://)
-        $host = preg_replace('#^https?://#', '', $url);
-
-        // Ensure $host is a string before using it in explode
-        $host = $host ?? '';
-
-        // Remove everything after the host (e.g., paths, query strings)
-        $host = explode('/', $host)[0];
-
-        // If the host starts with 'www.', remove it
-        if (strpos($host, 'www.') === 0) {
-            $host = substr($host, 4);
-        }
-
-        return $host;
     }
 }
