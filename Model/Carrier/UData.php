@@ -26,5 +26,5 @@ class UData
      *
      * @var string
      */
-    public const WEBHOOK_URL = 'https://api.dev.bobgo.co.za/webhook/channel';
+    public const WEBHOOK_URL = 'https://api.dev.bobgo.co.za/webhook/channel/magento';
 }
