@@ -110,6 +110,22 @@ class OrderCreateWebhook implements ObserverInterface
 
     private function getStoreUrl(): string
     {
-        return $this->storeManager->getStore()->getBaseUrl();
+        $url = $this->storeManager->getStore()->getBaseUrl();
+
+        // Remove protocol (http:// or https://)
+        $host = preg_replace('#^https?://#', '', $url);
+
+        // Ensure $host is a string before using it in explode
+        $host = $host ?? '';
+
+        // Remove everything after the host (e.g., paths, query strings)
+        $host = explode('/', $host)[0];
+
+        // If the host starts with 'www.', remove it
+        if (strpos($host, 'www.') === 0) {
+            $host = substr($host, 4);
+        }
+
+        return $host;
     }
 }
