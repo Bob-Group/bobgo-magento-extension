@@ -52,28 +52,33 @@ class OrderUpdateWebhook implements ObserverInterface
         $billingAddress = $order->getBillingAddress();
         $billingAddressData = $billingAddress ? $billingAddress->getData() : [];
 
+        $storeId = $this->getStoreId();
+
         // Prepare payload
         $data = [
             'event' => $eventType,
             'order_id' => $order->getId(),
             'channel_identifier' => $this->getStoreUrl(),
-            'store_id' => $this->getStoreId(),
-            'order_data' => $order->getData(),
-            'items' => $itemsData,
-            'shipping_address' => $shippingAddressData,
-            'billing_address'  => $billingAddressData,
+            'store_id' => $storeId,
+            //'order_data' => $order->getData(),
+            //'items' => $itemsData,
+            //'shipping_address' => $shippingAddressData,
+            //'billing_address'  => $billingAddressData,
         ];
 
         // Send the webhook
-        $this->makeHttpPostRequest($url, $data);
+        $this->makeHttpPostRequest($url, $data, $storeId);
     }
 
-    private function makeHttpPostRequest($url, $data)
+    private function makeHttpPostRequest($url, $data, $storeId)
     {
         // Generate the signature using a secret key and the payload (example using HMAC SHA256)
-        $secretKey = 'your_secret_key';
-        $payloadJson = json_encode($data);
-        $signature = hash_hmac('sha256', $payloadJson, $secretKey);
+        $secretKey = 'KaJGW2cxx1-6z_qjGhSq5Hj4qh_OXl0R1tUPurVs66A';
+        // Generate the HMAC-SHA256 hash as raw binary data
+        $rawSignature = hash_hmac('sha256', $storeId, $secretKey, true);
+
+        // Encode the binary data in Base64
+        $signature = base64_encode($rawSignature);
 
         // Set headers and post the data
         $this->curl->addHeader('Content-Type', 'application/json');
