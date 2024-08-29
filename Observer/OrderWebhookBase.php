@@ -4,9 +4,23 @@ namespace BobGroup\BobGo\Observer;
 
 use BobGroup\BobGo\Model\Carrier\UData;
 use Magento\Framework\Event\ObserverInterface;
+use Magento\Framework\HTTP\Client\Curl;
+use Magento\Store\Model\StoreManagerInterface;
+use Psr\Log\LoggerInterface;
 
 abstract class OrderWebhookBase implements ObserverInterface
 {
+    protected Curl $curl;
+    protected LoggerInterface $logger;
+    protected StoreManagerInterface $storeManager;
+
+    public function __construct(LoggerInterface $logger, Curl $curl, StoreManagerInterface $storeManager)
+    {
+        $this->logger = $logger;
+        $this->curl = $curl;
+        $this->storeManager = $storeManager;
+    }
+
     protected function sendWebhook($order, $eventType)
     {
         // Webhook URL
