@@ -44,9 +44,6 @@ abstract class OrderWebhookBase implements ObserverInterface
             $eventType = 'order_updated';
         }
 
-        // Log the event type for debugging purposes
-        $this->logger->info('event: ' . $eventType);
-
         // Prepare payload
         $data = [
             'event' => $eventType,
