@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" layout="1column" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceBlock name="customer_account_navigation">
+            <!-- Add menu to the end of the sidebar -->
+            <block class="Magento\Framework\View\Element\Html\Link\Current" name="customer-account-navigation-your-first-link">
+                <arguments>
+                    <argument name="path" xsi:type="string">BobGo/TrackOrder/index</argument>
+                    <argument name="label" xsi:type="string">Your First Link</argument>
+                </arguments>
+            </block>
+            <block class="Magento\Framework\View\Element\Html\Link\Current" name="customer-account-navigation-your-second-link">
+                <arguments>
+                    <argument name="path" xsi:type="string">BobGo/TrackOrder/index</argument>
+                    <argument name="label" xsi:type="string">Your Second Link</argument>
+                </arguments>
+            </block>
+        </referenceBlock>
+    </body>
+</page>
