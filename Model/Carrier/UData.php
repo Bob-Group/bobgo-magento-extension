@@ -12,12 +12,12 @@ class UData
      *
      * @var string
      */
-    public const TRACKING = 'https://api.bobgo.co.za/tracking?channel=%s&tracking_reference=%s';
+    public const TRACKING = 'https://api.dev.bobgo.co.za/tracking?channel=%s&tracking_reference=%s';
 
     /**
      * Rates API Endpoint
      *
      * @var string
      */
-    public const RATES_ENDPOINT = 'https://api.bobgo.co.za/rates-at-checkout/magento';
+    public const RATES_ENDPOINT = 'https://api.dev.bobgo.co.za/rates-at-checkout/magento';
 }

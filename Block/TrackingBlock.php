@@ -1,18 +1,27 @@
 <?php
+
 namespace BobGroup\BobGo\Block;
+
+use Magento\Framework\View\Element\Template;
+
 class TrackingBlock extends \Magento\Framework\View\Element\Template
 {
-    public function __construct(
-        \Magento\Backend\Block\Template\Context $context,
-        array $data = []
-    )
+    protected $response;
+
+    protected function _toHtml()
     {
-        parent::__construct($context, $data);
+        $this->_logger->info('Block HTML rendered: ' . $this->getNameInLayout());
+        return parent::_toHtml();
     }
 
-    public function getHelloWorld()
+    public function setResponse(array $response): self
     {
-        return 'Hello World';
+        $this->_response = $response;
+        return $this;
     }
 
+    public function getResponse()
+    {
+        return $this->response;
+    }
 }

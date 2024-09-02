@@ -6,7 +6,7 @@
         <block class="Magento\Framework\View\Element\Html\Link\Current" name="customer-account-navigation-tracking">
             <arguments>
                 <argument name="path" xsi:type="string">bobgo/tracking/index</argument>
-                <argument name="label" xsi:type="string">Tracking</argument>
+                <argument name="label" xsi:type="string">Track my order</argument>
             </arguments>
         </block>
     </referenceBlock>
