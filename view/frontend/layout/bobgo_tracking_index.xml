@@ -3,12 +3,12 @@
     <update handle="customer_account"/>
     <head>
         <title>
-            Your Second Link
+            Tracking
         </title>
     </head>
     <body>
         <referenceContainer name="content">
-            <block class="Magento\Framework\View\Element\Template" name="bobgo.secondlink.index" template="BobGroup_BobGo::yoursecondlink/index.phtml" cacheable="false" />
+            <block class="BobGroup\BobGo\Block\TrackingBlock" name="bobgo.tracking.index" template="BobGroup_BobGo::tracking/index.phtml" cacheable="false" />
         </referenceContainer>
     </body>
 </page>

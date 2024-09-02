@@ -1,5 +1,5 @@
 <?php
-namespace BobGroup\BobGo\Controller\YourFirstLink;
+namespace BobGroup\BobGo\Controller\Tracking;
 
 use Psr\Log\LoggerInterface;
 

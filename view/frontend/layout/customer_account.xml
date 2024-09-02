@@ -3,16 +3,10 @@
 <body>
     <referenceBlock name="customer_account_navigation">
         <!-- Add menu to the end of the sidebar -->
-        <block class="Magento\Framework\View\Element\Html\Link\Current" name="customer-account-navigation-your-first-link">
+        <block class="Magento\Framework\View\Element\Html\Link\Current" name="customer-account-navigation-tracking">
             <arguments>
-                <argument name="path" xsi:type="string">bobgo/yourfirstlink/index</argument>
-                <argument name="label" xsi:type="string">Your First Link</argument>
-            </arguments>
-        </block>
-        <block class="Magento\Framework\View\Element\Html\Link\Current" name="customer-account-navigation-your-second-link">
-            <arguments>
-                <argument name="path" xsi:type="string">bobgo/yoursecondlink/index</argument>
-                <argument name="label" xsi:type="string">Your Second Link</argument>
+                <argument name="path" xsi:type="string">bobgo/tracking/index</argument>
+                <argument name="label" xsi:type="string">Tracking</argument>
             </arguments>
         </block>
     </referenceBlock>
