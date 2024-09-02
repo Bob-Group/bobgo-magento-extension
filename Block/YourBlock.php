@@ -1,6 +1,6 @@
 <?php
 namespace BobGroup\BobGo\Block;
-class TrackOrder extends \Magento\Framework\View\Element\Template
+class YourBlock extends \Magento\Framework\View\Element\Template
 {
     public function __construct(
         \Magento\Backend\Block\Template\Context $context,
