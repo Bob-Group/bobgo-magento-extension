@@ -13,9 +13,4 @@
             <argument name="logger" xsi:type="object">Psr\Log\LoggerInterface</argument>
         </arguments>
     </type>
-    <type name="Magento\Framework\View\Layout">
-        <arguments>
-            <argument name="debug" xsi:type="boolean">true</argument>
-        </arguments>
-    </type>
 </config>

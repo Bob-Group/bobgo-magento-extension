@@ -32,7 +32,7 @@ class Index extends \Magento\Framework\App\Action\Action
         RedirectFactory $redirectFactory,
         StoreManagerInterface $storeManager,
         Curl $curl,
-        Registry $registry // Add Registry
+        Registry $registry
     ) {
         $this->resultPageFactory = $resultPageFactory;
         $this->jsonFactory = $jsonFactory;
@@ -41,12 +41,13 @@ class Index extends \Magento\Framework\App\Action\Action
         $this->redirectFactory = $redirectFactory;
         $this->storeManager = $storeManager;
         $this->curl = $curl;
-        $this->registry = $registry; // Assign Registry
+        $this->registry = $registry;
         parent::__construct($context);
     }
 
     public function execute()
     {
+        // This is only an extra check after the TrackOrderLink block
         // Check if the "Track My Order" feature is enabled
         $isEnabled = $this->scopeConfig->isSetFlag(
             'carriers/bobgo/enable_track_order',
@@ -58,47 +59,31 @@ class Index extends \Magento\Framework\App\Action\Action
             return $this->redirectFactory->create()->setPath('noroute');
         }
 
-        $this->logger->info('Page Controller is executed.');
         $trackingReference = $this->getRequest()->getParam('order_reference');
-
-        $this->logger->info('Tracking reference:', [$trackingReference]);
 
         $channel = $this->getStoreUrl();
 
-        $this->logger->info('Channel:', [$channel]);
-
         if ($trackingReference) {
             $trackingUrl = sprintf(UData::TRACKING, $channel, $trackingReference);
-
-            try {
                 $this->curl->get($trackingUrl);
                 $response = $this->curl->getBody();
 
-                $this->logger->info('Response:', [$response]);
-
                 $decodedResponse = json_decode($response, true);
-                $this->logger->info('Decoded Response:', [$decodedResponse]);
 
                 if (is_array($decodedResponse) && isset($decodedResponse[0])) {
                     $shipmentData = $decodedResponse[0];
 
                     // Save data to the registry
                     $this->registry->register('shipment_data', $shipmentData);
-                    $this->logger->info('Shipment data registered in the registry.');
 
                 } else {
-                    $this->logger->info('Unexpected response format.');
+                    // Return early the response is not valid
+                    return $this->resultPageFactory->create();
                 }
-
-            } catch (\Exception $e) {
-                $this->logger->info('Track error: ' . $e->getMessage());
-                $this->messageManager->addErrorMessage(__('Unable to track the order.'));
-            }
         }
 
         return $this->resultPageFactory->create();
     }
-
 
     private function getStoreUrl(): string
     {

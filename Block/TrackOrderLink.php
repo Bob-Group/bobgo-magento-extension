@@ -12,11 +12,11 @@ class TrackOrderLink extends Current
     public function __construct(
         \Magento\Framework\View\Element\Template\Context $context,
         ScopeConfigInterface $scopeConfig,
-        \Magento\Framework\App\DefaultPathInterface $defaultPath, // Add this dependency
+        \Magento\Framework\App\DefaultPathInterface $defaultPath,
         array $data = []
     ) {
         $this->scopeConfig = $scopeConfig;
-        parent::__construct($context, $defaultPath, $data); // Pass it to the parent constructor
+        parent::__construct($context, $defaultPath, $data);
     }
 
     protected function _toHtml()
@@ -27,11 +27,13 @@ class TrackOrderLink extends Current
             \Magento\Store\Model\ScopeInterface::SCOPE_STORE
         );
 
+        // Return an empty string if the feature is disabled
         if (!$isEnabled) {
-            return ''; // Return an empty string if the feature is disabled
+            return '';
         }
 
-        return parent::_toHtml(); // Use the parent class's rendering method
+        // Use the parent class's rendering method
+        return parent::_toHtml();
     }
 }
 
