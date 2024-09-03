@@ -528,141 +528,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * Get tracking
-     *
-     * @param string|string[] $trackings
-     * @return \Magento\Shipping\Model\Tracking\Result|null
-     */
-    public function getTracking($trackings)
-    {
-        $this->setTrackingRequest(); // Ensure this method is correctly defined
-
-        if (!is_array($trackings)) {
-            $trackings = [$trackings];
-        }
-
-        foreach ($trackings as $tracking) {
-            $this->_getXMLTracking([$tracking]); // Ensure _getXMLTracking processes tracking correctly
-        }
-
-        return $this->_result; // Ensure _result is a \Magento\Shipping\Model\Tracking\Result
-    }
-
-    /**
-     * Set tracking request
-     *
-     * @return void
-     */
-    protected function setTrackingRequest()
-    {
-        $r = new \Magento\Framework\DataObject();
-
-        $account = $this->getConfigData('account');
-        $r->setData('account', $account); // Using setData with the key 'account'
-
-        $this->_rawTrackingRequest = $r;
-    }
-
-    /**
-     * Get tracking request
-     *
-     * @return \Magento\Framework\DataObject|null
-     */
-    protected function getTrackingRequest(): ?\Magento\Framework\DataObject
-    {
-        return $this->_rawTrackingRequest;
-    }
-
-    /**
-     * Send request for tracking
-     *
-     * @param string[] $tracking
-     * @return void
-     */
-    protected function _getXMLTracking($tracking)
-    {
-        $this->_parseTrackingResponse($tracking);
-    }
-
-    /**
-     * Parse tracking response
-     *
-     * @param string|array<int,string> $trackingValue
-     * @return void
-     */
-    protected function _parseTrackingResponse($trackingValue)
-    {
-        $result = $this->getResult();
-        $carrierTitle = $this->getConfigData('title');
-        $counter = 0;
-
-        if (!is_array($trackingValue)) {
-            $trackingValue = [$trackingValue];
-        }
-
-        foreach ($trackingValue as $trackingReference) {
-            $tracking = $this->_trackStatusFactory->create();
-
-            $tracking->setCarrier(self::CODE);
-            $tracking->setCarrierTitle($carrierTitle);
-
-            // Adjust as needed based on the environment
-            $tracking->setUrl(UData::TRACKING . $trackingReference);
-            $tracking->setTracking($trackingReference);
-            $tracking->addData($this->processTrackingDetails($trackingReference));
-
-            if ($result) {
-                $result->append($tracking);
-                $counter++;
-            }
-        }
-
-        // Tracking Details Not Available
-        if ($counter === 0) {
-            $this->appendTrackingError(
-                $trackingValue[0] ?? '',
-                (string)__('For some reason we can\'t retrieve tracking info right now.')
-            );
-        }
-    }
-
-    /**
-     * Get tracking response
-     *
-     * @return string
-     */
-    public function getResponse(): string
-    {
-        $statuses = '';
-
-        // If $_result is of type \Magento\Shipping\Model\Tracking\Result, handle it
-        if ($this->_result instanceof \Magento\Shipping\Model\Tracking\Result) {
-            if ($trackings = $this->_result->getAllTrackings()) {
-                foreach ($trackings as $tracking) {
-                    if ($data = $tracking->getAllData()) {
-                        if (!empty($data['status'])) {
-                            $statuses .= __($data['status']) . "\n<br/>";
-                        } else {
-                            $statuses .= __('Empty response') . "\n<br/>";
-                        }
-                    }
-                }
-            }
-        }
-
-//        // Handle \Magento\Shipping\Model\Rate\Result if needed
-//        if ($this->_result instanceof \Magento\Shipping\Model\Rate\Result) {
-//            // Implement the logic for Rate\Result if applicable
-//        }
-
-        if (trim($statuses) === '') {
-            $statuses = (string)__('Empty response');
-        }
-
-        return $statuses;
-    }
-
-    /**
      * Get allowed shipping methods
      *
      * @return array<string, mixed>
@@ -774,55 +639,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * Parse track details response from Bob Go.
-     *
-     * @param string $trackInfo
-     * @return array<string, array<int, array<string, string>>>
-     * @SuppressWarnings(PHPMD.CyclomaticComplexity)
-     * @SuppressWarnings(PHPMD.NPathComplexity)
-     */
-    private function processTrackingDetails(string $trackInfo): array
-    {
-        $result = [
-            'shippeddate' => [],  // Initializing as an array of arrays
-            'deliverydate' => [], // Initializing as an array of arrays
-            'deliverytime' => [], // Initializing as an array of arrays
-            'deliverylocation' => [], // Initializing as an array of arrays
-            'weight' => [], // Initializing as an array of arrays
-            'progressdetail' => [],  // This will be populated with an array of arrays
-        ];
-
-        $result = $this->_requestTracking($trackInfo, $result);
-
-        return $result;
-    }
-
-    /**
-     * Append error message to rate result instance.
-     *
-     * @param string $trackingValue
-     * @param string $errorMessage
-     * @return void
-     */
-    private function appendTrackingError(string $trackingValue, string $errorMessage): void
-    {
-        $error = $this->_trackErrorFactory->create();
-        $error->setCarrier(self::CODE);
-        $error->setCarrierTitle($this->getConfigData('title'));
-        $error->setTracking($trackingValue);
-        $error->setErrorMessage($errorMessage);
-
-        $result = $this->getResult();
-
-        if ($result !== null) {
-            $result->append($error);
-        } else {
-            // Handle the case where $result is null, such as logging an error
-            $this->_logger->error('Failed to append tracking error: Result object is null.');
-        }
-    }
-
-    /**
      * Format a date to 'd M Y'.
      *
      * @param string $date
@@ -881,26 +697,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         } else {
             $this->_logger->error('Bob Go API returned an invalid response');
         }
-    }
-
-    /**
-     * Perform API Request for Shipment Tracking to Bob Go API and return response.
-     *
-     * @param string $trackInfo The tracking information or tracking ID.
-     * @param array<string,array<int,array<string,string>>> $result The result array to be
-     * populated with tracking details.
-     * @return array<string, array<int, array<string, string>>> The updated result array with tracking details.
-     */
-    private function _requestTracking(string $trackInfo, array $result): array
-    {
-        $response = $this->trackBobGoShipment($trackInfo);
-
-        // Validate that the response is an array and contains at least one element
-        if (is_array($response) && isset($response[0]) && is_array($response[0])) {
-            $result = $this->prepareActivity($response[0], $result);
-        }
-
-        return $result;
     }
 
     /**
@@ -977,35 +773,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * Prepare received checkpoints and activity from Bob Go Shipment Tracking API.
-     *
-     * @param array<string,mixed> $response The API response containing tracking checkpoints.
-     * @param array<string,array<int,array<string,string>>> $result The result array to be
-     * populated with activity details.
-     * @return array<string, array<int, array<string, string>>> The updated result array with activity details.
-     */
-    private function prepareActivity(array $response, array $result): array
-    {
-        if (isset($response['checkpoints']) && is_array($response['checkpoints'])) {
-            foreach ($response['checkpoints'] as $checkpoint) {
-                if (is_array($checkpoint) &&
-                    isset($checkpoint['status'], $checkpoint['time']) &&
-                    is_string($checkpoint['status']) &&
-                    is_string($checkpoint['time'])
-                ) {
-                    $result['progressdetail'][] = [
-                        'activity' => $checkpoint['status'],
-                        'deliverydate' => $this->formatDate($checkpoint['time']),
-                        'deliverytime' => $this->formatTime($checkpoint['time']),
-                    ];
-                }
-            }
-        }
-
-        return $result;
-    }
-
-    /**
      * Get Working Days between time of checkout and delivery date (min and max).
      *
      * @param string $startDate
@@ -1035,21 +802,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         }
 
         return $no_days - $weekends;
-    }
-
-    /**
-     * Curl request to Bob Go Shipment Tracking API.
-     *
-     * @param string $trackInfo The tracking information or tracking ID.
-     * @return mixed The decoded API response.
-     */
-    private function trackBobGoShipment(string $trackInfo): mixed
-    {
-        $this->curl->get(UData::TRACKING . $trackInfo);
-
-        $response = $this->curl->getBody();
-
-        return json_decode($response, true);
     }
 
     /**
@@ -1197,27 +949,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         }
 
         return $itemsArray;
-    }
-
-    /**
-     * Checks if the required data fields are present in the request.
-     *
-     * @param \Magento\Framework\DataObject $request The data object containing the request information.
-     * @return bool True if all required fields are present, otherwise false.
-     */
-    public function hasRequiredData(\Magento\Framework\DataObject $request): bool
-    {
-        $requiredFields = [
-            'dest_country_id',
-            'dest_region_id',
-        ];
-
-        foreach ($requiredFields as $field) {
-            if (!$request->getData($field)) {
-                return false;
-            }
-        }
-        return true;
     }
 
     /**
