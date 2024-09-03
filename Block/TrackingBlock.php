@@ -3,25 +3,24 @@
 namespace BobGroup\BobGo\Block;
 
 use Magento\Framework\View\Element\Template;
+use Magento\Framework\Registry;
 
 class TrackingBlock extends \Magento\Framework\View\Element\Template
 {
-    protected $response;
+    protected $registry;
 
-    protected function _toHtml()
-    {
-        $this->_logger->info('Block HTML rendered: ' . $this->getNameInLayout());
-        return parent::_toHtml();
-    }
-
-    public function setResponse(array $response): self
-    {
-        $this->_response = $response;
-        return $this;
+    public function __construct(
+        Template\Context $context,
+        Registry $registry,
+        array $data = []
+    ) {
+        $this->registry = $registry;
+        parent::__construct($context, $data);
     }
 
     public function getResponse()
     {
-        return $this->response;
+        return $this->registry->registry('shipment_data');
     }
 }
+

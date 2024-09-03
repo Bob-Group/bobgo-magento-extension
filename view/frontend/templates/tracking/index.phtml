@@ -39,38 +39,44 @@
         </div>
     </form>
 
-<!--    --><?php //if ($response = $block->getResponse()): ?>
-<!--        <div class="tracking-response">-->
-<!--            <!-- Handle and display the API response -->-->
-<!--            <h2>--><?php //echo __('Tracking Information'); ?><!--</h2>-->
-<!--            <p>--><?php //echo __('Status: ' . $response['status']); ?><!--</p>-->
-<!--            <!-- Add more fields as needed from the response -->-->
-<!--        </div>-->
-<!--    --><?php //endif; ?>
+    <?php
+    $shipmentData = $this->getResponse();
 
-        <?php
+    if ($shipmentData && is_array($shipmentData)) {
+        echo '<div class="tracking-details">';
+        echo '<h2>' . __('Shipping Details') . '</h2>';
 
-//<!--    --><?php
-//    $shipmentData = $block->getResponse();
-//    if ($shipmentData && is_array($shipmentData)) {
-//        foreach ($shipmentData as $shipment) {
-//            echo '<div class="tracking-details">';
-//            echo '<h2>' . __('Shipping Details') . '</h2>';
-//            echo '<p>' . __('Shipment: ') . $shipment['shipment_tracking_reference'] . '</p>';
-//            echo '<p>' . __('Order: ') . ltrim($shipment['order_number'], '0') . '</p>';
-//            echo '<p>' . __('Courier: ') . $shipment['courier_name'] . '</p>';
-//
-//            echo '<h2>' . __('Tracking Details') . '</h2>';
-//            echo '<p>' . __('Current Status: ') . $shipment['status_friendly'] . '</p>';
-//
-//            echo '<footer>';
-//            echo '<p>' . __('For additional information, please contact BobGo (support@bobgo.co.za).') . '</p>';
-//            echo '<img src="' . $shipment['courier_logo'] . '" alt="Courier Logo" style="width: 100px;"/>';
-//            echo '</footer>';
-//            echo '</div>';
-//        }
-//    } else {
-//        echo '<p>No tracking data available.</p>';
-//    }
-//    ?>
+        // Ensure each accessed array key exists and contains an array where expected
+        if (isset($shipmentData['shipment_tracking_reference'])) {
+            echo '<p>' . __('Shipment: ') . $shipmentData['shipment_tracking_reference'] . '</p>';
+        }
+
+        if (isset($shipmentData['order_number'])) {
+            echo '<p>' . __('Order: ') . ltrim($shipmentData['order_number'], '0') . '</p>';
+        }
+
+        if (isset($shipmentData['courier_name'])) {
+            echo '<p>' . __('Courier: ') . $shipmentData['courier_name'] . '</p>';
+        }
+
+        echo '<h2>' . __('Tracking Details') . '</h2>';
+
+        if (isset($shipmentData['status_friendly'])) {
+            echo '<p>' . __('Current Status: ') . $shipmentData['status_friendly'] . '</p>';
+        }
+
+        if (isset($shipmentData['courier_logo'])) {
+            echo '<footer>';
+            echo '<p>' . __('For additional information, please contact BobGo (support@bobgo.co.za).') . '</p>';
+            echo '<img src="' . $shipmentData['courier_logo'] . '" alt="Courier Logo" style="width: 100px;"/>';
+            echo '</footer>';
+        }
+
+        echo '</div>';
+    } else {
+        echo '<p>No tracking data available.</p>';
+    }
+    ?>
+
+
 </div>

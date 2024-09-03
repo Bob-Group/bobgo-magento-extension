@@ -1,13 +1,14 @@
 <?php
 namespace BobGroup\BobGo\Controller\Tracking;
 
-use Psr\Log\LoggerInterface;
 use Magento\Framework\App\Action\Context;
 use Magento\Framework\View\Result\PageFactory;
-use BobGroup\BobGo\Model\Carrier\UData;
+use Magento\Framework\Registry;
+use Psr\Log\LoggerInterface;
 use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Store\Model\StoreManagerInterface;
+use BobGroup\BobGo\Model\Carrier\UData;
 
 class Index extends \Magento\Framework\App\Action\Action
 {
@@ -15,6 +16,7 @@ class Index extends \Magento\Framework\App\Action\Action
     protected $jsonFactory;
     protected $curl;
     protected $logger;
+    protected $registry;
     protected StoreManagerInterface $storeManager;
 
     public function __construct(
@@ -23,13 +25,15 @@ class Index extends \Magento\Framework\App\Action\Action
         JsonFactory $jsonFactory,
         LoggerInterface $logger,
         StoreManagerInterface $storeManager,
-        Curl $curl
+        Curl $curl,
+        Registry $registry // Add Registry
     ) {
         $this->resultPageFactory = $resultPageFactory;
         $this->jsonFactory = $jsonFactory;
         $this->logger = $logger;
         $this->storeManager = $storeManager;
         $this->curl = $curl;
+        $this->registry = $registry; // Assign Registry
         parent::__construct($context);
     }
 
@@ -44,35 +48,13 @@ class Index extends \Magento\Framework\App\Action\Action
 
         $this->logger->info('Channel:', [$channel]);
 
-//        if ($trackingReference) {
-//            $trackingUrl = sprintf(UData::TRACKING, $channel, $trackingReference);
-//
-//            try {
-//                // Make the API call
-//                $this->curl->get($trackingUrl);
-//                $response = $this->curl->getBody();
-//
-//                // Optionally, you can decode the response if it's JSON
-//                $response = json_decode($response, true);
-//
-//                // Handle the response (e.g., display it on the page)
-//                $resultJson = $this->jsonFactory->create();
-//                return $resultJson->setData($response);
-//
-//            } catch (\Exception $e) {
-//                $this->messageManager->addErrorMessage(__('Unable to track the order.'));
-//            }
-//        }
-
         if ($trackingReference) {
             $trackingUrl = sprintf(UData::TRACKING, $channel, $trackingReference);
 
             try {
-                // Make the API call
                 $this->curl->get($trackingUrl);
                 $response = $this->curl->getBody();
 
-                // Decode the response
                 $this->logger->info('Response:', [$response]);
 
                 $decodedResponse = json_decode($response, true);
@@ -81,31 +63,10 @@ class Index extends \Magento\Framework\App\Action\Action
                 if (is_array($decodedResponse) && isset($decodedResponse[0])) {
                     $shipmentData = $decodedResponse[0];
 
-                    // Set response in the block
-                    // In your controller action or block:
-                    $layout = $this->_view->getLayout();
-                    $this->logger->info('Layout Handles: ' . implode(', ', $layout->getUpdate()->getHandles()));
+                    // Save data to the registry
+                    $this->registry->register('shipment_data', $shipmentData);
+                    $this->logger->info('Shipment data registered in the registry.');
 
-
-                    $blocks = $layout->getAllBlocks();
-
-                    $blockNames = [];
-                    foreach ($blocks as $block) {
-                        $blockNames[] = $block->getNameInLayout();
-                    }
-
-                    $this->logger->info('Available Blocks:', $blockNames);
-
-                    $block = $layout->getBlock('bobgo.tracking.index');
-
-                    $this->logger->info('BobGo block:', [$block]);
-
-                    if ($block) {
-                        $block->setResponse($shipmentData);
-                        $this->logger->info('Block found and data set.');
-                    } else {
-                        $this->logger->info('Block not found.');
-                    }
                 } else {
                     $this->logger->info('Unexpected response format.');
                 }
