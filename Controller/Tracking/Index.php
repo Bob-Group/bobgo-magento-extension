@@ -5,6 +5,8 @@ use Magento\Framework\App\Action\Context;
 use Magento\Framework\View\Result\PageFactory;
 use Magento\Framework\Registry;
 use Psr\Log\LoggerInterface;
+use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Framework\Controller\Result\RedirectFactory;
 use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Store\Model\StoreManagerInterface;
@@ -16,6 +18,8 @@ class Index extends \Magento\Framework\App\Action\Action
     protected $jsonFactory;
     protected $curl;
     protected $logger;
+    protected $scopeConfig;
+    protected $redirectFactory;
     protected $registry;
     protected StoreManagerInterface $storeManager;
 
@@ -24,6 +28,8 @@ class Index extends \Magento\Framework\App\Action\Action
         PageFactory $resultPageFactory,
         JsonFactory $jsonFactory,
         LoggerInterface $logger,
+        ScopeConfigInterface $scopeConfig,
+        RedirectFactory $redirectFactory,
         StoreManagerInterface $storeManager,
         Curl $curl,
         Registry $registry // Add Registry
@@ -31,6 +37,8 @@ class Index extends \Magento\Framework\App\Action\Action
         $this->resultPageFactory = $resultPageFactory;
         $this->jsonFactory = $jsonFactory;
         $this->logger = $logger;
+        $this->scopeConfig = $scopeConfig;
+        $this->redirectFactory = $redirectFactory;
         $this->storeManager = $storeManager;
         $this->curl = $curl;
         $this->registry = $registry; // Assign Registry
@@ -39,6 +47,17 @@ class Index extends \Magento\Framework\App\Action\Action
 
     public function execute()
     {
+        // Check if the "Track My Order" feature is enabled
+        $isEnabled = $this->scopeConfig->isSetFlag(
+            'carriers/bobgo/enable_track_order',
+            \Magento\Store\Model\ScopeInterface::SCOPE_STORE
+        );
+
+        if (!$isEnabled) {
+            // If the feature is disabled, redirect to home page or show a 404 error
+            return $this->redirectFactory->create()->setPath('noroute');
+        }
+
         $this->logger->info('Page Controller is executed.');
         $trackingReference = $this->getRequest()->getParam('order_reference');
 
