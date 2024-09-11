@@ -1,0 +1,127 @@
+<?php
+$shipmentData = $this->getResponse();
+?>
+
+<style>
+    .track-order-container {
+        max-width: 600px;
+        margin: auto;
+        padding: 20px;
+        border: 1px solid #ddd;
+        background-color: #f9f9f9;
+    }
+
+    .tracking-details h2 {
+        margin-top: 20px;
+    }
+
+    .tracking-details p {
+        margin: 5px 0;
+    }
+
+    footer {
+        margin-top: 20px;
+        font-size: 0.9em;
+        text-align: center;
+    }
+
+    footer img {
+        display: block;
+        margin: 10px auto;
+    }
+</style>
+
+<div class="track-order-container">
+    <?php if (empty($shipmentData)) : ?>
+        <form action="<?php echo $this->getUrl('bobgo/tracking/index'); ?>" method="post" class="track-order-form">
+            <div class="field">
+                <label for="order_reference"><?php echo __('Order Number/Tracking Reference:'); ?></label>
+                <input type="text" id="order_reference" name="order_reference" required>
+            </div>
+            <br>
+            <div class="actions-toolbar">
+                <button type="submit" class="action submit primary"><?php echo __('Track Order'); ?></button>
+            </div>
+        </form>
+    <?php endif; ?>
+
+    <?php if ($shipmentData && is_array($shipmentData)) : ?>
+        <div class="tracking-details">
+            <h2><?php echo __('Shipping Details'); ?></h2>
+
+            <?php if (isset($shipmentData['shipment_tracking_reference'])) : ?>
+                <p><strong><?php echo __('Shipment:'); ?></strong> <?php echo $shipmentData['shipment_tracking_reference']; ?></p>
+            <?php endif; ?>
+
+            <?php if (isset($shipmentData['order_number'])) : ?>
+                <p><strong><?php echo __('Order:'); ?></strong> <?php echo ltrim($shipmentData['order_number'], '0'); ?></p>
+            <?php endif; ?>
+
+            <?php if (isset($shipmentData['courier_name'])) : ?>
+                <p><strong><?php echo __('Courier:'); ?></strong> <?php echo $shipmentData['courier_name']; ?></p>
+            <?php endif; ?>
+
+            <br>
+            <h2><?php echo __('Tracking Details'); ?></h2>
+
+            <?php if (isset($shipmentData['status']) && isset($shipmentData['status_friendly'])) : ?>
+                <?php if ($shipmentData['status'] == 'pending-collection') : ?>
+                    <p><?php echo 'Your shipment will be collected soon. Please check back later for more information.' ?></p>
+                    <p><strong><?php echo __('Current Status:'); ?></strong> <?php echo $shipmentData['status_friendly']; ?></p>
+                <?php elseif (in_array($shipmentData['status'], ['cancelled-by-courier', 'cancelled'])) : ?>
+                    <p><?php echo 'The shipment has been cancelled.'; ?></p>
+                    <p><strong><?php echo __('Current Status:'); ?></strong> <?php echo $shipmentData['status_friendly']; ?></p>
+                <?php else : ?>
+                    <?php if (empty($shipmentData['checkpoints'])) : ?>
+                        <p><?php echo 'Tracking information is not yet available. Please check back later for more information.'; ?></p>
+                    <?php else : ?>
+                        <p><?php echo 'Tracking information is available below:'; ?></p>
+                        <table id="table_checkpoints">
+                            <thead>
+                            <tr>
+                                <th><?php echo __('Date and Time'); ?></th>
+                                <th><?php echo __('Status'); ?></th>
+                                <th><?php echo __('Message'); ?></th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach ($shipmentData['checkpoints'] as $checkpoint) : ?>
+                                <tr>
+                                    <td>
+                                        <?php
+                                        $timeDate = new DateTime($checkpoint['time']);
+                                        echo $timeDate->format('Y M d, H:i');
+                                        ?>
+                                    </td>
+                                    <td><strong><?php echo $checkpoint['status_friendly']; ?></strong></td>
+                                    <td><?php echo $checkpoint['message']; ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php endif; ?>
+                <?php endif; ?>
+            <?php endif; ?>
+        </div>
+
+    <br>
+        <footer>
+            <p>
+                <?php
+                echo sprintf(
+                    __('For additional information, please contact %s (%s) and quote tracking reference %s.'),
+                    $shipmentData['courier_name'],
+                    $shipmentData['courier_phone'],
+                    $shipmentData['id']
+                );
+                ?>
+            </p>
+            <img id="show_branding" class="image"
+                 src="https://img.bob.co.za/bobgo/image/upload/bobgo-logos/bobgo_logo_smart_shipping_black.png?tr=w-400&ts=20231024"
+                 alt="Bob Go logo"  style="width: 200px;">
+        </footer>
+    <?php else : ?>
+    <br>
+        <p><?php echo __('No tracking data available.'); ?></p>
+    <?php endif; ?>
+</div>
