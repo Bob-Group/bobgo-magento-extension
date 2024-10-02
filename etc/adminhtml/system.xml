@@ -28,6 +28,22 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <comment>Displays the delivery timeframe and additional service level description, as configured on Bob Go.</comment>
                 </field>
+
+                <!-- Enable Webhooks Checkbox -->
+                <field id="enable_webhooks" translate="label" type="select" sortOrder="8" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Enable webhooks</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>Enable or disable the webhook functionality for Bob Go.</comment>
+                </field>
+
+                <!-- Webhook Key Input Field -->
+                <field id="webhook_key" translate="label" type="text" sortOrder="9" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Webhook key</label>
+                    <comment>Enter the webhook key for authentication.</comment>
+                    <depends>
+                        <field id="enable_webhooks">1</field>
+                    </depends>
+                </field>
                     <field id="enable_track_order" translate="label" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
                         <label>Enable Track My Order</label>
                         <comment>When this setting is enabled, your customers will be presented with a page to track orders.</comment>
@@ -35,6 +51,5 @@
                     </field>
             </group>
         </section>
-
     </system>
 </config>

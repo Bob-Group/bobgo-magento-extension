@@ -3,6 +3,7 @@
 namespace BobGroup\BobGo\Observer;
 
 use BobGroup\BobGo\Model\Carrier\UData;
+use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Store\Model\StoreManagerInterface;
@@ -13,18 +14,29 @@ abstract class OrderWebhookBase implements ObserverInterface
     protected Curl $curl;
     protected LoggerInterface $logger;
     protected StoreManagerInterface $storeManager;
+    protected ScopeConfigInterface $scopeConfig;
 
-    public function __construct(LoggerInterface $logger, Curl $curl, StoreManagerInterface $storeManager)
+    public function __construct(LoggerInterface $logger, Curl $curl, StoreManagerInterface $storeManager, ScopeConfigInterface $scopeConfig)
     {
         $this->logger = $logger;
         $this->curl = $curl;
         $this->storeManager = $storeManager;
+        $this->scopeConfig = $scopeConfig;
     }
 
     protected function sendWebhook($order)
     {
+        $enabled = $this->scopeConfig->getValue('carriers/bobgo/enable_webhooks', \Magento\Store\Model\ScopeInterface::SCOPE_STORE);
+
+        // Return early if webhooks is disabled
+        if (!$enabled) {
+            $this->logger->info('Webhooks are disabled. Exiting webhook process for order: ' . $order->getIncrementId());
+            return;
+        }
+
         // Webhook URL
         $url = $this->getWebhookUrl();
+        $this->logger->info('Webhooks url: ' . $url);
 
         $storeId = $this->getStoreId();
 
@@ -54,14 +66,17 @@ abstract class OrderWebhookBase implements ObserverInterface
 
         // Send the webhook
         $this->makeHttpPostRequest($url, $data, $storeId);
+        $this->logger->info('Webhooks sent');
     }
 
     private function makeHttpPostRequest($url, $data, $storeId)
     {
-        // Generate the signature using a secret key and the payload (example using HMAC SHA256)
-        $secretKey = 'KaJGW2cxx1-6z_qjGhSq5Hj4qh_OXl0R1tUPurVs66A';
+        // Generate the signature using the webhook key saved in config
+        $webhookKey = $this->scopeConfig->getValue('carriers/bobgo/webhook_key', \Magento\Store\Model\ScopeInterface::SCOPE_STORE);
+        $this->logger->info('Webhooks - key: ' . $webhookKey);
+//        $secretKey = 'KaJGW2cxx1-6z_qjGhSq5Hj4qh_OXl0R1tUPurVs66A';
         // Generate the HMAC-SHA256 hash as raw binary data
-        $rawSignature = hash_hmac('sha256', $storeId, $secretKey, true);
+        $rawSignature = hash_hmac('sha256', $storeId, $webhookKey, true);
 
         // Encode the binary data in Base64
         $signature = base64_encode($rawSignature);
@@ -79,6 +94,7 @@ abstract class OrderWebhookBase implements ObserverInterface
         // Set headers and post the data
         $this->curl->addHeader('Content-Type', 'application/json');
         $this->curl->post($url, $payloadJson);
+        $this->logger->info('Webhooks payload: ' . $payloadJson);
     }
 
     private function getWebhookUrl(): string

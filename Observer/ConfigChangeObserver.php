@@ -52,6 +52,7 @@ class ConfigChangeObserver implements ObserverInterface
     {
         $changedPaths = $observer->getEvent()->getData('changed_paths');
 
+        // Test for rates at checkout
         if (is_array($changedPaths) && in_array('carriers/bobgo/active', $changedPaths)) {
             if ($this->bobGo->isActive()) {
                 $result = $this->bobGo->triggerRatesTest();
@@ -69,6 +70,25 @@ class ConfigChangeObserver implements ObserverInterface
                     );
                 }
             }
+        }
+
+        // Test for webhooks
+        if (is_array($changedPaths) && in_array('carriers/bobgo/enable_webhooks', $changedPaths)) {
+//            if ($this->bobGo->isWebhookEnabled()) {
+                $this->logger->info('Webhooks test start: ');
+                $result = $this->bobGo->triggerWebhookTest();
+                $this->logger->info('Webhooks test end: ' . $result);
+
+                if ($result) {
+                    $this->messageManager->addSuccessMessage(
+                        __('Webhook validation successful.')
+                    );
+                } else {
+                    $this->messageManager->addErrorMessage(
+                        __('Webhook validation failed. Please check the webhook key and try again.')
+                    );
+                }
+//            }
         }
     }
 }

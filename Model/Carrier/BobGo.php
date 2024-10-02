@@ -680,6 +680,11 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         return UData::RATES_ENDPOINT;
     }
 
+    private function getWebhookUrl(): string
+    {
+        return UData::WEBHOOK_URL;
+    }
+
     /**
      * Perform API Request to Bob Go API and return response.
      *
@@ -1041,4 +1046,86 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         }
         return false;
     }
+
+    public function isWebhookEnabled(): bool
+    {
+        $enabled = $this->scopeConfig->getValue(
+            'carriers/bobgo/enable_webhooks',
+            \Magento\Store\Model\ScopeInterface::SCOPE_STORE
+        );
+
+        // Cast the value to a boolean
+        return filter_var($enabled, FILTER_VALIDATE_BOOLEAN);
+    }
+
+
+    public function triggerWebhookTest(): bool
+    {
+        $webhookKey = $this->scopeConfig->getValue(
+            'carriers/bobgo/webhook_key',
+            \Magento\Store\Model\ScopeInterface::SCOPE_STORE
+        );
+
+        $isEnabled = $this->scopeConfig->getValue(
+            'carriers/bobgo/enable_webhooks',
+            \Magento\Store\Model\ScopeInterface::SCOPE_STORE
+        );
+
+        // Convert the string to a boolean value
+        $isEnabled = filter_var($isEnabled, FILTER_VALIDATE_BOOLEAN);
+
+//        if (!$webhookKey) {
+//            $this->_logger->error('Webhook key not configured.');
+//            return false;
+//        }
+
+        $storeId = strval($this->_storeManager->getStore()->getId());
+
+        $payload = [
+            'event' => 'webhook_validation',
+            'channel_identifier' => $this->getBaseUrl(),
+            'store_id' => $storeId,
+            'webhooks_enabled' => $isEnabled,
+        ];
+
+        try {
+            // Generate the HMAC-SHA256 hash as raw binary data
+            $rawSignature = hash_hmac('sha256', $storeId, $webhookKey, true);
+            // Encode the binary data in Base64
+            $signature = base64_encode($rawSignature);
+            // Set headers and post the data
+            $this->curl->addHeader('Content-Type', 'application/json');
+            $this->curl->addHeader('X-M-Webhook-Signature', $signature);
+
+            $payloadJson = json_encode($payload);
+            $this->_logger->info('Webhooks payload: ' . $payloadJson);
+            if ($payloadJson === false) {
+                throw new \RuntimeException('Failed to encode payload to JSON.');
+            }
+
+            $this->curl->addHeader('Content-Type', 'application/json');
+            $this->curl->post($this->getWebhookUrl(), $payloadJson);
+            $statusCode = $this->curl->getStatus();
+            $this->_logger->info('Webhooks statuscode: ' . $statusCode);
+            $responseBody = $this->curl->getBody();
+            $this->_logger->info('Webhooks response: ' . $responseBody);
+
+            $response = json_decode($responseBody, true);
+
+            if ($statusCode == 200 && isset($response['success']) && $response['success'] === true) {
+                $this->_logger->info('Webhook validation successful.');
+//                throw new LocalizedException(__('Rates received but id field is empty or invalid.'));
+                return true;
+            } else {
+                $this->_logger->error('Webhook validation failed: ' . ($response['message'] ?? 'Unknown error'));
+//                throw new LocalizedException(__('Rates received but id field is empty or invalid.'));
+                return false;
+            }
+        } catch (\Exception $e) {
+            $this->_logger->error('Webhook validation exception: ' . $e->getMessage());
+//            throw new LocalizedException(__('Rates received but id field is empty or invalid.'));
+            return false;
+        }
+    }
+
 }
