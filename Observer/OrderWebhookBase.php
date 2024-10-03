@@ -66,7 +66,7 @@ abstract class OrderWebhookBase implements ObserverInterface
 
         // Set headers and post the data
         $this->curl->addHeader('Content-Type', 'application/json');
-        $this->curl->addHeader('X-M-Webhook-Signature', $signature);
+        $this->curl->addHeader('x-m-webhook-signature', $signature);
 
         // Perform the API request
         $payloadJson = json_encode($data);

@@ -1360,7 +1360,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             $signature = base64_encode($rawSignature);
             // Set headers and post the data
             $this->curl->addHeader('Content-Type', 'application/json');
-            $this->curl->addHeader('X-M-Webhook-Signature', $signature);
+            $this->curl->addHeader('x-m-webhook-signature', $signature);
 
             $payloadJson = json_encode($payload);
             $this->_logger->info('Webhooks payload: ' . $payloadJson);
@@ -1377,20 +1377,13 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
             $response = json_decode($responseBody, true);
 
-            if ($statusCode == 200 && isset($response['success']) && $response['success'] === true) {
-                $this->_logger->info('Webhook validation successful.');
-//                throw new LocalizedException(__('Rates received but id field is empty or invalid.'));
-                return true;
-            } else {
-                $this->_logger->error('Webhook validation failed: ' . ($response['message'] ?? 'Unknown error'));
-//                throw new LocalizedException(__('Rates received but id field is empty or invalid.'));
-                return false;
+            if ($statusCode != 200) {
+                throw new LocalizedException(__('Status code from BobGo: %1', $statusCode));
             }
         } catch (\Exception $e) {
-            $this->_logger->error('Webhook validation exception: ' . $e->getMessage());
-//            throw new LocalizedException(__('Rates received but id field is empty or invalid.'));
             return false;
         }
+        return true;
     }
 
 }

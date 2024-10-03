@@ -73,10 +73,8 @@ class ConfigChangeObserver implements ObserverInterface
         }
 
         // Test for webhooks
-        if (is_array($changedPaths) && in_array('carriers/bobgo/enable_webhooks', $changedPaths)) {
-            $this->logger->info('Webhooks test start: ');
+        if ((is_array($changedPaths) && in_array('carriers/bobgo/enable_webhooks', $changedPaths)) || (is_array($changedPaths) && in_array('carriers/bobgo/webhook_key', $changedPaths))) {
             $result = $this->bobGo->triggerWebhookTest();
-            $this->logger->info('Webhooks test end: ' . $result);
 
             if ($this->bobGo->isWebhookEnabled()) {
                 if ($result) {
