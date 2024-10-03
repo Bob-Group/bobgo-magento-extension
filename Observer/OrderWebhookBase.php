@@ -8,6 +8,7 @@ use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
+use BobGroup\BobGo\Model\Carrier\BobGo;
 
 abstract class OrderWebhookBase implements ObserverInterface
 {
@@ -15,66 +16,48 @@ abstract class OrderWebhookBase implements ObserverInterface
     protected LoggerInterface $logger;
     protected StoreManagerInterface $storeManager;
     protected ScopeConfigInterface $scopeConfig;
+    protected $bobGo;
 
-    public function __construct(LoggerInterface $logger, Curl $curl, StoreManagerInterface $storeManager, ScopeConfigInterface $scopeConfig)
+    public function __construct(LoggerInterface $logger, Curl $curl, StoreManagerInterface $storeManager, ScopeConfigInterface $scopeConfig, BobGo $bobGo)
     {
         $this->logger = $logger;
         $this->curl = $curl;
         $this->storeManager = $storeManager;
         $this->scopeConfig = $scopeConfig;
+        $this->bobGo = $bobGo;
     }
 
     protected function sendWebhook($order)
     {
-        $enabled = $this->scopeConfig->getValue('carriers/bobgo/enable_webhooks', \Magento\Store\Model\ScopeInterface::SCOPE_STORE);
-
-        // Return early if webhooks is disabled
-        if (!$enabled) {
-            $this->logger->info('Webhooks are disabled. Exiting webhook process for order: ' . $order->getIncrementId());
+        // Return early if not enabled
+        if (!$this->bobGo->isWebhookEnabled()) {
             return;
         }
 
         // Webhook URL
         $url = $this->getWebhookUrl();
-        $this->logger->info('Webhooks url: ' . $url);
 
         $storeId = $this->getStoreId();
 
         $orderId = $order->getId();
 
-        // Get the order creation time
-        $createdAt = strtotime($order->getCreatedAt());
-        $currentTime = time();
-
-        // Define a time threshold  to consider the order as newly created
-        $threshold = 5; // 5  seconds
-
-        // Determine the event type based on the creation time
-        if (($currentTime - $createdAt) < $threshold) {
-            $eventType = 'order_created';
-        } else {
-            $eventType = 'order_updated';
-        }
-
         // Prepare payload
         $data = [
-            'event' => $eventType,
+            'event' => 'order_updated',
             'order_id' => $orderId,
-            'channel_identifier' => $this->getStoreUrl(),
+            'channel_identifier' => $this->bobGo->getBaseUrl(),
             'store_id' => $storeId,
+            'webhooks_enabled' => true, // If we get to this point webhooks are enabled
         ];
 
         // Send the webhook
         $this->makeHttpPostRequest($url, $data, $storeId);
-        $this->logger->info('Webhooks sent');
     }
 
     private function makeHttpPostRequest($url, $data, $storeId)
     {
         // Generate the signature using the webhook key saved in config
         $webhookKey = $this->scopeConfig->getValue('carriers/bobgo/webhook_key', \Magento\Store\Model\ScopeInterface::SCOPE_STORE);
-        $this->logger->info('Webhooks - key: ' . $webhookKey);
-//        $secretKey = 'KaJGW2cxx1-6z_qjGhSq5Hj4qh_OXl0R1tUPurVs66A';
         // Generate the HMAC-SHA256 hash as raw binary data
         $rawSignature = hash_hmac('sha256', $storeId, $webhookKey, true);
 
@@ -94,7 +77,6 @@ abstract class OrderWebhookBase implements ObserverInterface
         // Set headers and post the data
         $this->curl->addHeader('Content-Type', 'application/json');
         $this->curl->post($url, $payloadJson);
-        $this->logger->info('Webhooks payload: ' . $payloadJson);
     }
 
     private function getWebhookUrl(): string
@@ -106,26 +88,5 @@ abstract class OrderWebhookBase implements ObserverInterface
     {
         $storeId = $this->storeManager->getStore()->getId();
         return $storeId;
-    }
-
-    private function getStoreUrl(): string
-    {
-        $url = $this->storeManager->getStore()->getBaseUrl();
-
-        // Remove protocol (http:// or https://)
-        $host = preg_replace('#^https?://#', '', $url);
-
-        // Ensure $host is a string before using it in explode
-        $host = $host ?? '';
-
-        // Remove everything after the host (e.g., paths, query strings)
-        $host = explode('/', $host)[0];
-
-        // If the host starts with 'www.', remove it
-        if (strpos($host, 'www.') === 0) {
-            $host = substr($host, 4);
-        }
-
-        return $host;
     }
 }
