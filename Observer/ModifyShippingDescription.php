@@ -25,10 +25,10 @@ class ModifyShippingDescription implements ObserverInterface
         // Get the current shipping description
         $shippingDescription = $order->getShippingDescription();
 
-        // Get the method title from the shipping description (which might already include the title)
+        // Get the method title from the shipping description
         $methodTitle = $this->extractMethodTitle($shippingDescription);
 
-        // Set the new dynamic shipping description based only on MethodTitle
+        // Set the new shipping description based only on MethodTitle
         $newDescription = $methodTitle;
 
         // Update the shipping description in the order
