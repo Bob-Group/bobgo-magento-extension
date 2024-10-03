@@ -74,21 +74,23 @@ class ConfigChangeObserver implements ObserverInterface
 
         // Test for webhooks
         if (is_array($changedPaths) && in_array('carriers/bobgo/enable_webhooks', $changedPaths)) {
-//            if ($this->bobGo->isWebhookEnabled()) {
-                $this->logger->info('Webhooks test start: ');
-                $result = $this->bobGo->triggerWebhookTest();
-                $this->logger->info('Webhooks test end: ' . $result);
+            $this->logger->info('Webhooks test start: ');
+            $result = $this->bobGo->triggerWebhookTest();
+            $this->logger->info('Webhooks test end: ' . $result);
 
+            if ($this->bobGo->isWebhookEnabled()) {
                 if ($result) {
                     $this->messageManager->addSuccessMessage(
                         __('Webhook validation successful.')
                     );
                 } else {
                     $this->messageManager->addErrorMessage(
-                        __('Webhook validation failed. Please check the webhook key and try again.')
+                        __('Webhook validation failed. Please check your internet connection
+                        and get the webhook key for your channel on Bob Go sales channels page.
+                        https://my.bobgo.co.za/sales-channels')
                     );
                 }
-//            }
+            }
         }
     }
 }

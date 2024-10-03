@@ -1343,10 +1343,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         // Convert the string to a boolean value
         $isEnabled = filter_var($isEnabled, FILTER_VALIDATE_BOOLEAN);
 
-//        if (!$webhookKey) {
-//            $this->_logger->error('Webhook key not configured.');
-//            return false;
-//        }
 
         $storeId = strval($this->_storeManager->getStore()->getId());
 
