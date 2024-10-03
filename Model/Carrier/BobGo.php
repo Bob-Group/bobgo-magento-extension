@@ -1335,14 +1335,8 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             \Magento\Store\Model\ScopeInterface::SCOPE_STORE
         );
 
-        $isEnabled = $this->scopeConfig->getValue(
-            'carriers/bobgo/enable_webhooks',
-            \Magento\Store\Model\ScopeInterface::SCOPE_STORE
-        );
-
         // Convert the string to a boolean value
-        $isEnabled = filter_var($isEnabled, FILTER_VALIDATE_BOOLEAN);
-
+        $isEnabled = $this->isWebhookEnabled();
 
         $storeId = strval($this->_storeManager->getStore()->getId());
 
@@ -1354,28 +1348,9 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         ];
 
         try {
-            // Generate the HMAC-SHA256 hash as raw binary data
-            $rawSignature = hash_hmac('sha256', $storeId, $webhookKey, true);
-            // Encode the binary data in Base64
-            $signature = base64_encode($rawSignature);
-            // Set headers and post the data
-            $this->curl->addHeader('Content-Type', 'application/json');
-            $this->curl->addHeader('x-m-webhook-signature', $signature);
-
-            $payloadJson = json_encode($payload);
-            $this->_logger->info('Webhooks payload: ' . $payloadJson);
-            if ($payloadJson === false) {
-                throw new \RuntimeException('Failed to encode payload to JSON.');
-            }
-
-            $this->curl->addHeader('Content-Type', 'application/json');
-            $this->curl->post($this->getWebhookUrl(), $payloadJson);
+            $this->encodeWebhookAndPostRequest($this->getWebhookUrl(), $payload, $storeId, $webhookKey);
             $statusCode = $this->curl->getStatus();
-            $this->_logger->info('Webhooks statuscode: ' . $statusCode);
             $responseBody = $this->curl->getBody();
-            $this->_logger->info('Webhooks response: ' . $responseBody);
-
-            $response = json_decode($responseBody, true);
 
             if ($statusCode != 200) {
                 throw new LocalizedException(__('Status code from BobGo: %1', $statusCode));
@@ -1386,4 +1361,21 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         return true;
     }
 
+    public function encodeWebhookAndPostRequest($url, $data, $storeId, $webhookKey) {
+        // Generate the HMAC-SHA256 hash as raw binary data
+        $rawSignature = hash_hmac('sha256', $storeId, $webhookKey, true);
+        // Encode the binary data in Base64
+        $signature = base64_encode($rawSignature);
+        // Set headers and post the data
+        $this->curl->addHeader('Content-Type', 'application/json');
+        $this->curl->addHeader('x-m-webhook-signature', $signature);
+
+        $payloadJson = json_encode($data);
+        if ($payloadJson === false) {
+            throw new \RuntimeException('Failed to encode payload to JSON.');
+        }
+
+        $this->curl->addHeader('Content-Type', 'application/json');
+        $this->curl->post($url, $payloadJson);
+    }
 }

@@ -50,33 +50,10 @@ abstract class OrderWebhookBase implements ObserverInterface
             'webhooks_enabled' => true, // If we get to this point webhooks are enabled
         ];
 
-        // Send the webhook
-        $this->makeHttpPostRequest($url, $data, $storeId);
-    }
-
-    private function makeHttpPostRequest($url, $data, $storeId)
-    {
         // Generate the signature using the webhook key saved in config
         $webhookKey = $this->scopeConfig->getValue('carriers/bobgo/webhook_key', \Magento\Store\Model\ScopeInterface::SCOPE_STORE);
-        // Generate the HMAC-SHA256 hash as raw binary data
-        $rawSignature = hash_hmac('sha256', $storeId, $webhookKey, true);
-
-        // Encode the binary data in Base64
-        $signature = base64_encode($rawSignature);
-
-        // Set headers and post the data
-        $this->curl->addHeader('Content-Type', 'application/json');
-        $this->curl->addHeader('x-m-webhook-signature', $signature);
-
-        // Perform the API request
-        $payloadJson = json_encode($data);
-        if ($payloadJson === false) {
-            throw new \RuntimeException('Failed to encode payload to JSON.');
-        }
-
-        // Set headers and post the data
-        $this->curl->addHeader('Content-Type', 'application/json');
-        $this->curl->post($url, $payloadJson);
+        // Send the webhook
+        $this->bobGo->encodeWebhookAndPostRequest($url, $data, $storeId, $webhookKey);
     }
 
     private function getWebhookUrl(): string
