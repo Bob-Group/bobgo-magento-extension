@@ -39,7 +39,7 @@
                 <!-- Webhook Key Input Field -->
                 <field id="webhook_key" translate="label" type="text" sortOrder="9" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Webhook key</label>
-                    <comment>Enter the webhook key for authentication.</comment>
+                    <comment>Enter Bob Go integration consumer secret key for webhook authentication.</comment>
                     <depends>
                         <field id="enable_webhooks">1</field>
                     </depends>
