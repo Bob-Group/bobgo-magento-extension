@@ -84,8 +84,7 @@ class ConfigChangeObserver implements ObserverInterface
                 } else {
                     $this->messageManager->addErrorMessage(
                         __('Webhook validation failed. Please check your internet connection
-                        and get the webhook key for your channel on Bob Go sales channels page.
-                        https://my.bobgo.co.za/sales-channels')
+                        and use your Bob Go integration consumer secret key for webhook validation.')
                     );
                 }
             }
