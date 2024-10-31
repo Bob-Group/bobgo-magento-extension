@@ -1,0 +1,19 @@
+{
+  "name": "bobgo-magento-plugin",
+  "description": "Bob Go magento plugin",
+  "version": "1.0.34",
+  "license": "GPL-2.0-or-later",
+  "scripts": {
+    "prepare": "husky install",
+    "update-version-files": "node update-version.js"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "npm config set git-tag-version false && npm version patch && npm run update-version-files && git add package.json etc/module.xml composer.json && pretty-quick --staged"
+    }
+  },
+  "devDependencies": {
+    "husky": "^8.0.1",
+    "npm-run-all": "^4.1.5"
+  }
+}
