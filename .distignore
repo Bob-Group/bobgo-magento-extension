@@ -9,3 +9,4 @@ make-zip.sh
 update-version.js
 .gitlab-ci.yml
 .gitignore
+package
