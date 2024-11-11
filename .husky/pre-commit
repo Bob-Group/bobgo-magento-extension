@@ -1,0 +1,1 @@
+npm config set git-tag-version false && npm version patch && npm run update-version-files && git add package.json etc/module.xml composer.json
