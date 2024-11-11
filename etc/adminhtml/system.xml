@@ -45,11 +45,11 @@
                     </depends>
                 </field>
 <!--                Hiding the `Enable Track My Order` setting for now-->
-<!--                <field id="enable_track_order" translate="label" type="select" sortOrder="10" showInDefault="0" showInWebsite="0" showInStore="0">-->
-<!--                    <label>Enable Track My Order</label>-->
-<!--                    <comment>When this setting is enabled, your customers will be presented with a page to track orders.</comment>-->
-<!--                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>-->
-<!--                </field>-->
+                <field id="enable_track_order" translate="label" type="select" sortOrder="10" showInDefault="0" showInWebsite="0" showInStore="0">
+                    <label>Enable Track My Order</label>
+                    <comment>When this setting is enabled, your customers will be presented with a page to track orders.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                </field>
             </group>
         </section>
     </system>
