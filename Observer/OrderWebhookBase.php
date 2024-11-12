@@ -52,6 +52,11 @@ abstract class OrderWebhookBase implements ObserverInterface
 
         // Generate the signature using the webhook key saved in config
         $webhookKey = $this->scopeConfig->getValue('carriers/bobgo/webhook_key', \Magento\Store\Model\ScopeInterface::SCOPE_STORE);
+        // Check if the webhook key is empty and return false
+        if (empty($webhookKey)) {
+            return;
+        }
+
         // Send the webhook
         $this->bobGo->encodeWebhookAndPostRequest($url, $data, $storeId, $webhookKey);
     }

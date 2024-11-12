@@ -1066,6 +1066,11 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             \Magento\Store\Model\ScopeInterface::SCOPE_STORE
         );
 
+        // Check if the webhook key is empty and return false
+        if (empty($webhookKey)) {
+            return false;
+        }
+
         // Convert the string to a boolean value
         $isEnabled = $this->isWebhookEnabled();
 
