@@ -535,7 +535,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     public function getAllowedMethods(): array
     {
         $allowedMethods = $this->getConfigData('allowed_methods');
-        if ($allowedMethods === false) {
+        if ($allowedMethods === false || $allowedMethods === null || trim($allowedMethods) === '') {
             return []; // Return an empty array if no allowed methods are configured
         }
 
