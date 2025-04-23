@@ -40,9 +40,6 @@
                 <field id="webhook_key" translate="label" type="text" sortOrder="9" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Webhook authentication key</label>
                     <comment>Enter your Bob Go integration API consumer secret key for webhook authentication.</comment>
-                    <depends>
-                        <field id="enable_webhooks">1</field>
-                    </depends>
                 </field>
 <!--                Hiding the `Enable Track My Order` setting for now-->
                 <field id="enable_track_order" translate="label" type="select" sortOrder="10" showInDefault="0" showInWebsite="0" showInStore="0">
