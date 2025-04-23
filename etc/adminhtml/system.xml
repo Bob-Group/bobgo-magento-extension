@@ -33,13 +33,13 @@
                 <field id="enable_webhooks" translate="label" type="select" sortOrder="8" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Enable webhooks</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <comment>Enable or disable the webhook functionality for Bob Go.</comment>
+                    <comment>When enabled, webhooks will be sent to Bob Go to notify about order creation and updates, ensuring real-time synchronization between your store and Bob Go.</comment>
                 </field>
 
                 <!-- Webhook Key Input Field -->
                 <field id="webhook_key" translate="label" type="text" sortOrder="9" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>Webhook key</label>
-                    <comment>Enter Bob Go integration consumer secret key for webhook authentication.</comment>
+                    <label>Webhook authentication key</label>
+                    <comment>Enter your Bob Go integration API consumer secret key for webhook authentication.</comment>
                     <depends>
                         <field id="enable_webhooks">1</field>
                     </depends>
