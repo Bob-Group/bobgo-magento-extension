@@ -20,7 +20,7 @@
                 </field>
                 <field id="active" translate="label" type="select" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Enable Bob Go rates at checkout</label>
-                    <comment>When this setting is enabled, your customers will be presented with shipping rates at checkout, as configured on the Bob Go platform under Rates at checkout.</comment>
+                    <comment>When enabled, your customers will be presented with shipping rates at checkout, as configured on the Bob Go platform under Rates at checkout.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
                 <field id="additional_info" translate="label" type="select" sortOrder="7" showInDefault="1" showInWebsite="1">
@@ -43,7 +43,7 @@
                 </field>
 <!--                Hiding the `Enable Track My Order` setting for now-->
                 <field id="enable_track_order" translate="label" type="select" sortOrder="10" showInDefault="0" showInWebsite="0" showInStore="0">
-                    <label>Enable Track My Order</label>
+                    <label>Enable Track my order</label>
                     <comment>When this setting is enabled, your customers will be presented with a page to track orders.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
