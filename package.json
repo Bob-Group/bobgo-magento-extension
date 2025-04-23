@@ -1,7 +1,7 @@
 {
   "name": "bobgo-magento-plugin",
   "description": "Bob Go magento plugin",
-  "version": "1.0.40",
+  "version": "1.0.41",
   "license": "GPL-2.0-or-later",
   "scripts": {
     "prepare": "husky install",

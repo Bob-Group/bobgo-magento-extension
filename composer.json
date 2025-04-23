@@ -2,7 +2,7 @@
     "name": "bobgo/bobgo-magento-extension",
     "description": "Smart shipping and order management solution in South Africa",
     "type": "magento2-module",
-    "version": "1.0.40",
+    "version": "1.0.41",
     "authors": [
         {
             "name": "Bob Go",
