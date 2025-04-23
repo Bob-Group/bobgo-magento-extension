@@ -33,7 +33,7 @@
                 <field id="enable_webhooks" translate="label" type="select" sortOrder="8" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Enable webhooks</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <comment>When enabled, webhooks will be sent to Bob Go to notify about order creation and updates, ensuring real-time synchronization between your store and Bob Go.</comment>
+                    <comment>When this setting is enabled, webhooks will be sent to Bob Go to notify about order creation and updates, ensuring real-time synchronization between your store and Bob Go.</comment>
                 </field>
 
                 <!-- Webhook Key Input Field -->
