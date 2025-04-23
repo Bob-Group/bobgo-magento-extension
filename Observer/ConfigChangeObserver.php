@@ -52,6 +52,7 @@ class ConfigChangeObserver implements ObserverInterface
     {
         $changedPaths = $observer->getEvent()->getData('changed_paths');
 
+        // Test for rates at checkout
         if (is_array($changedPaths) && in_array('carriers/bobgo/active', $changedPaths)) {
             if ($this->bobGo->isActive()) {
                 $result = $this->bobGo->triggerRatesTest();
@@ -66,6 +67,24 @@ class ConfigChangeObserver implements ObserverInterface
                         and make sure Rates at checkout is enabled for your channel on Bob Go. Please visit Bob Go
                         settings page to make sure your Magento channel is enabled to receive rates.
                         https://my.bobgo.co.za/rates-at-checkout?tab=settings')
+                    );
+                }
+            }
+        }
+
+        // Test for webhooks
+        if ((is_array($changedPaths) && in_array('carriers/bobgo/enable_webhooks', $changedPaths)) || (is_array($changedPaths) && in_array('carriers/bobgo/webhook_key', $changedPaths))) {
+            $result = $this->bobGo->triggerWebhookTest();
+
+            if ($this->bobGo->isWebhookEnabled()) {
+                if ($result) {
+                    $this->messageManager->addSuccessMessage(
+                        __('Webhook validation successful.')
+                    );
+                } else {
+                    $this->messageManager->addErrorMessage(
+                        __('Webhook validation failed. Please check your internet connection
+                        and use your Bob Go integration consumer secret key for webhook validation.')
                     );
                 }
             }
