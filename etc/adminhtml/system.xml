@@ -20,32 +20,13 @@
                 </field>
                 <field id="active" translate="label" type="select" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Enable Bob Go rates at checkout</label>
-                    <comment>When enabled, your customers will be presented with shipping rates at checkout, as configured on the Bob Go platform under Rates at checkout.</comment>
+                    <comment>When this setting is enabled, your customers will be presented with shipping rates at checkout, as configured on the Bob Go platform under Rates at checkout.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
                 <field id="additional_info" translate="label" type="select" sortOrder="7" showInDefault="1" showInWebsite="1">
                     <label>Show additional rate information</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <comment>Displays the delivery timeframe and additional service level description, as configured on Bob Go.</comment>
-                </field>
-
-                <!-- Enable Webhooks Checkbox -->
-                <field id="enable_webhooks" translate="label" type="select" sortOrder="8" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>Enable webhooks</label>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <comment>When this setting is enabled, webhooks will be sent to Bob Go to notify about order creation and updates, ensuring real-time synchronization between your store and Bob Go.</comment>
-                </field>
-
-                <!-- Webhook Key Input Field -->
-                <field id="webhook_key" translate="label" type="text" sortOrder="9" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>Webhook authentication key</label>
-                    <comment>Enter your Bob Go integration API consumer secret key for webhook authentication.</comment>
-                </field>
-<!--                Hiding the `Enable Track My Order` setting for now-->
-                <field id="enable_track_order" translate="label" type="select" sortOrder="10" showInDefault="0" showInWebsite="0" showInStore="0">
-                    <label>Enable Track my order</label>
-                    <comment>When this setting is enabled, your customers will be presented with a page to track orders.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
             </group>
         </section>

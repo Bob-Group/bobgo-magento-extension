@@ -20,11 +20,4 @@ class UData
      * @var string
      */
     public const RATES_ENDPOINT = 'https://api.bobgo.co.za/rates-at-checkout/magento';
-
-    /**
-     * Order create/update webhook URL
-     *
-     * @var string
-     */
-    public const WEBHOOK_URL = 'https://api.bobgo.co.za/webhook/channel/magento';
 }
