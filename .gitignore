@@ -1,4 +1,16 @@
-node_modules
+# packages, not needed in final build
+node_modules/
+
+#general
+.DS_Store
+phpcs.xml
+phpunit.xml
+Thumbs.db
+wp-cli.local.yml
+*.sql
+*.tar.gz
 *.zip
-.idea
-/.idea/
+package-lock.json
+
+#PhpStorm
+.idea/

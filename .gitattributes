@@ -1,0 +1,8 @@
+# Exclude specific files and directories from archives
+/.husky export-ignore
+/.distignore export-ignore
+/.gitignore export-ignore
+/.gitlab-ci.yml export-ignore
+/make-zip.sh export-ignore
+/update-version.js export-ignore
+/.gitattributes export-ignore
