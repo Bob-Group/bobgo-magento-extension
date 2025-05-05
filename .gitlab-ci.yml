@@ -21,7 +21,7 @@ deploy:
     - ./make-zip.sh
     - aws s3 cp bobgo-magento-plugin.zip s3://bobgo-s3-magento-plugin-dev/ --region=af-south-1
   rules:
-    - if: $CI_COMMIT_BRANCH == "dev" && $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_COMMIT_BRANCH == "dev"
       when: always
 
 tag_deploy:
@@ -40,7 +40,7 @@ tag_deploy:
     - "TAG_ARCHIVE_URL=https://gitlab.bob.co.za/bob-public-utils/bobgo-magento-extension/-/archive/${CI_COMMIT_TAG}/bobgo-magento-extension-${CI_COMMIT_TAG}.zip"
     - curl -o bobgo-magento-extension-${CI_COMMIT_TAG}.zip "$TAG_ARCHIVE_URL"
     - aws s3 cp bobgo-magento-extension-${CI_COMMIT_TAG}.zip s3://bobgo-s3-magento-plugin-prod/tags/bobgo-magento-extension-${CI_COMMIT_TAG}.zip --region=af-south-1 --acl public-read
-    - aws s3 cp bobgo-magento-extension-${CI_COMMIT_TAG}.zip s3://bobgo-s3-magento-plugin-prod/latest/bobgo-magento-extension-latest.zip --region=af-south-1 --acl public-read
+    - aws s3 cp bobgo-magento-extension-${CI_COMMIT_TAG}.zip s3://bobgo-s3-magento-plugin-prod/latest/latest.zip --region=af-south-1 --acl public-read
     - echo "Tagged version URL in S3 bucket ready for download"
   rules:
     - if: $CI_COMMIT_TAG
