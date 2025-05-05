@@ -33,15 +33,18 @@ tag_deploy:
     - AWS_SECRET_ACCESS_KEY=$(eval echo -e "\$$AWS_SECRET_ACCESS_KEY_KEY")
     - export AWS_ACCESS_KEY_ID
     - export AWS_SECRET_ACCESS_KEY
-    - git fetch origin prod
-    - TAG_BRANCH=$(git for-each-ref --format='%(refname:short)' --contains $CI_COMMIT_SHA refs/heads/ | grep "^prod$" || echo "")
-    - echo "Current branches containing this commit: $(git for-each-ref --format='%(refname:short)' --contains $CI_COMMIT_SHA refs/heads/)"
+    # Ensure all branches and tags are fetched
+    - echo "Fetching all branches and tags..."
+    - git fetch --all
+    - git fetch --tags
+    # Verify the branch of origin for the tag
     - |
-      if [ -z "$TAG_BRANCH" ]; then
-        echo "Tag ${CI_COMMIT_TAG} was not created on the prod branch."
-        exit 1
+      branch=$(git branch -r --contains "${CI_COMMIT_SHA}" | grep -v 'tags/' | awk '{print $1}' | sed 's/origin\///' | head -n 1)
+      if [ "$branch" = "prod" ]; then
+        echo "Tag ${CI_COMMIT_TAG} is from the prod branch.";
       else
-        echo "Tag ${CI_COMMIT_TAG} was created on the prod branch."
+        echo "Tag ${CI_COMMIT_TAG} is not from the prod branch. It was created from the '${branch}' branch.";
+        exit 1;
       fi
   script:
     - "TAG_ARCHIVE_URL=https://gitlab.bob.co.za/bob-public-utils/bobgo-magento-extension/-/archive/${CI_COMMIT_TAG}/bobgo-magento-extension-${CI_COMMIT_TAG}.zip"
