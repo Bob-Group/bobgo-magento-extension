@@ -10,8 +10,6 @@ stages:
 
 deploy:
   stage: deploy
-  only:
-    - dev
   before_script:
     - AWS_ACCESS_KEY_ID_KEY=$(echo "$CI_COMMIT_BRANCH"_"AWS_ACCESS_KEY_ID")
     - AWS_ACCESS_KEY_ID=$(eval echo -e "\$$AWS_ACCESS_KEY_ID_KEY")
@@ -22,6 +20,9 @@ deploy:
   script:
     - ./make-zip.sh
     - aws s3 cp bobgo-magento-plugin.zip s3://bobgo-s3-magento-plugin-dev/ --region=af-south-1
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev" && $CI_COMMIT_TAG == null'
+      when: always
 
 tag_deploy:
   stage: tag_deploy
