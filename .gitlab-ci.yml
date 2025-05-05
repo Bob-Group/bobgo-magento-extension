@@ -35,12 +35,14 @@ tag_deploy:
     - export AWS_SECRET_ACCESS_KEY
     # Fetch the prod branch
     - git fetch origin prod
-    # Check if the tagged commit is from the prod branch using merge-base
-    - if git merge-base --is-ancestor "${CI_COMMIT_SHA}" origin/prod; then
-      echo "Tag ${CI_COMMIT_TAG} is from the prod branch.";
-      else
-      echo "Tag ${CI_COMMIT_TAG} is not from the prod branch.";
+    # Get the current branch or tag pointing ref
+    - TAG_BRANCH=$(git for-each-ref --format='%(refname:short)' --contains $CI_COMMIT_SHA refs/heads/ | grep "^prod$" || echo "")
+    - echo "Current branches containing this commit: $(git for-each-ref --format='%(refname:short)' --contains $CI_COMMIT_SHA refs/heads/)"
+    - if [ -z "$TAG_BRANCH" ]; then
+      echo "Tag ${CI_COMMIT_TAG} was not created on the prod branch.";
       exit 1;
+      else
+      echo "Tag ${CI_COMMIT_TAG} was created on the prod branch.";
       fi
   script:
     - "TAG_ARCHIVE_URL=https://gitlab.bob.co.za/bob-public-utils/bobgo-magento-extension/-/archive/${CI_COMMIT_TAG}/bobgo-magento-extension-${CI_COMMIT_TAG}.zip"
