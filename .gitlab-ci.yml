@@ -13,8 +13,6 @@ deploy:
   rules:
     - if: '$CI_COMMIT_BRANCH == "dev" && $CI_PIPELINE_SOURCE == "push"'
       when: always
-    - if: '$CI_COMMIT_BRANCH == "dev" && $CI_PIPELINE_SOURCE == "merge_request_event"'
-      when: always
   before_script:
     - AWS_ACCESS_KEY_ID_KEY=$(echo "${CI_COMMIT_BRANCH}_AWS_ACCESS_KEY_ID")
     - AWS_ACCESS_KEY_ID=$(eval echo -e "\$$AWS_ACCESS_KEY_ID_KEY")
