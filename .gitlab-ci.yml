@@ -10,6 +10,8 @@ stages:
 
 deploy:
   stage: deploy
+  only:
+    - dev
   before_script:
     - AWS_ACCESS_KEY_ID_KEY=$(echo "$CI_COMMIT_BRANCH"_"AWS_ACCESS_KEY_ID")
     - AWS_ACCESS_KEY_ID=$(eval echo -e "\$$AWS_ACCESS_KEY_ID_KEY")
@@ -20,9 +22,6 @@ deploy:
   script:
     - ./make-zip.sh
     - aws s3 cp bobgo-magento-plugin.zip s3://bobgo-s3-magento-plugin-dev/ --region=af-south-1
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "dev"'
-      when: always
 
 tag_deploy:
   stage: tag_deploy
@@ -45,31 +44,31 @@ tag_deploy:
     - COMMIT_BRANCH=$(git branch -r --contains $CI_COMMIT_SHA | grep "origin/prod" || echo "")
     - if [ -z "$COMMIT_BRANCH" ]; then echo "Tag was not created from prod branch. Skipping deployment."; exit 1; fi
   script:
-    # Download the tagged version archive
-    - TAG_ARCHIVE_URL="https://gitlab.bob.co.za/bob-public-utils/bobgo-magento-extension/-/archive/${CI_COMMIT_TAG}/bobgo-magento-extension-${CI_COMMIT_TAG}.zip"
-    - curl -o "bobgo-magento-extension-${CI_COMMIT_TAG}.zip" "$TAG_ARCHIVE_URL"
-    
-    # Upload to S3 bucket both as versioned and as "latest"
-    - aws s3 cp "bobgo-magento-extension-${CI_COMMIT_TAG}.zip" "s3://bobgo-s3-magento-plugin-prod/tags/bobgo-magento-extension-${CI_COMMIT_TAG}.zip" --region=af-south-1 --acl public-read
-    - aws s3 cp "bobgo-magento-extension-${CI_COMMIT_TAG}.zip" "s3://bobgo-s3-magento-plugin-prod/latest/latest.zip" --region=af-south-1 --acl public-read
-    
-    # Cleanup old tag versions - keep only the most recent MAX_TAGS_TO_KEEP
-    - echo "Cleaning up old tag versions, keeping only the most recent $MAX_TAGS_TO_KEEP..."
-    - >
-      aws s3 ls s3://bobgo-s3-magento-plugin-prod/tags/ --region=af-south-1 | 
-      grep "bobgo-magento-extension-" | 
-      sort -r | 
-      tail -n +$((MAX_TAGS_TO_KEEP + 1)) | 
-      awk '{print $4}' | 
-      while read KEY; do 
-        echo "Deleting old tag version: $KEY"; 
-        aws s3 rm "s3://bobgo-s3-magento-plugin-prod/tags/$KEY" --region=af-south-1; 
-      done
-    
-    # Output the URLs
-    - echo "Tagged version URL: https://magento-plugin.bobgo.co.za/tags/bobgo-magento-extension-${CI_COMMIT_TAG}.zip"
-    - echo "Latest version URL: https://magento-plugin.bobgo.co.za/latest/latest.zip"
-    - echo "Retained the latest $MAX_TAGS_TO_KEEP tag versions in S3 bucket."
+  # Download the tagged version archive
+  - TAG_ARCHIVE_URL="https://gitlab.bob.co.za/bob-public-utils/bobgo-magento-extension/-/archive/${CI_COMMIT_TAG}/bobgo-magento-extension-${CI_COMMIT_TAG}.zip"
+  - curl -o "bobgo-magento-extension-${CI_COMMIT_TAG}.zip" "$TAG_ARCHIVE_URL"
+  
+  # Upload to S3 bucket both as versioned and as "latest"
+  - aws s3 cp "bobgo-magento-extension-${CI_COMMIT_TAG}.zip" "s3://bobgo-s3-magento-plugin-prod/tags/bobgo-magento-extension-${CI_COMMIT_TAG}.zip" --region=af-south-1 --acl public-read
+  - aws s3 cp "bobgo-magento-extension-${CI_COMMIT_TAG}.zip" "s3://bobgo-s3-magento-plugin-prod/latest/latest.zip" --region=af-south-1 --acl public-read
+  
+  # Cleanup old tag versions - keep only the most recent MAX_TAGS_TO_KEEP
+  - echo "Cleaning up old tag versions, keeping only the most recent $MAX_TAGS_TO_KEEP..."
+  - aws s3 ls s3://bobgo-s3-magento-plugin-prod/tags/ --region=af-south-1 > tag_list.txt
+  - grep "bobgo-magento-extension-" tag_list.txt > filtered_tags.txt
+  - sort -r filtered_tags.txt > sorted_tags.txt
+  - tail -n +$((MAX_TAGS_TO_KEEP + 1)) sorted_tags.txt > tags_to_delete.txt
+  - cat tags_to_delete.txt | awk '{print $4}' > keys_to_delete.txt
+  - |
+    while read KEY; do 
+      echo "Deleting old tag version: $KEY"
+      aws s3 rm "s3://bobgo-s3-magento-plugin-prod/tags/$KEY" --region=af-south-1
+    done < keys_to_delete.txt
+  
+  # Output the URLs
+  - echo "Tagged version URL: https://bobgo-s3-magento-plugin-prod.s3.af-south-1.amazonaws.com/tags/bobgo-magento-extension-${CI_COMMIT_TAG}.zip"
+  - echo "Latest version URL: https://bobgo-s3-magento-plugin-prod.s3.af-south-1.amazonaws.com/latest/latest.zip"
+  - echo "Retained the latest $MAX_TAGS_TO_KEEP tag versions in S3 bucket."
   rules:
     - if: '$CI_COMMIT_TAG'
       when: always
