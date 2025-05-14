@@ -11,3 +11,4 @@ update-version.js
 .gitignore
 .gitattributes
 package
+scripts/

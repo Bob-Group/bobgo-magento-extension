@@ -6,3 +6,4 @@
 /make-zip.sh export-ignore
 /update-version.js export-ignore
 /.gitattributes export-ignore
+/scripts export-ignore
