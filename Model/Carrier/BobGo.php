@@ -918,8 +918,10 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     public function getItemWeight(string $weightUnit, \Magento\Quote\Model\Quote\Item $item): float
     {
+        $weightUnit = strtolower($weightUnit); // 'kgs' or 'lbs'
+
         // 1 lb = 453.59237 g exact. 1 kg = 1000 g. 1 lb = 0.45359237 kg
-        if ($weightUnit === 'KGS') {
+        if ($weightUnit === 'kgs') {
             $mass = $item->getWeight() ? $item->getWeight() * 1000 : 0;
         } else {
             // Pound to Kilogram Conversion Formula
