@@ -10,7 +10,7 @@ stages:
 
 deploy:
   stage: deploy
-  image: shiplogic/ci-wp-plugin:ubuntu-24-node18
+  image: shiplogic/ci-wp-plugin:node18
   before_script:
     - AWS_ACCESS_KEY_ID_KEY=$(echo "$CI_COMMIT_BRANCH"_"AWS_ACCESS_KEY_ID")
     - AWS_ACCESS_KEY_ID=$(eval echo -e "\$$AWS_ACCESS_KEY_ID_KEY")
