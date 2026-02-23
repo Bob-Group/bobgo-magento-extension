@@ -1,5 +1,6 @@
 # packages, not needed in final build
 node_modules/
+vendor/
 
 #general
 .DS_Store
