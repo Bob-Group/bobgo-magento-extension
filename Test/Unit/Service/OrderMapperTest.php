@@ -55,9 +55,9 @@ class OrderMapperTest extends TestCase
         $order->method('getShippingAddress')->willReturn($address);
         $order->method('getItems')->willReturn([$item]);
         $order->method('getData')->willReturnMap([
-            ['tax_amount', null, 59.99],
-            ['shipping_incl_tax', null, 75.00],
-            ['bobgo_order_id', null, null],
+            ['tax_amount', 59.99],
+            ['shipping_incl_tax', 75.00],
+            ['bobgo_order_id', null],
         ]);
 
         $payload = $this->mapper->mapOrderToPayload($order);
@@ -94,7 +94,7 @@ class OrderMapperTest extends TestCase
 
     public function testStatusMappingCanceled(): void
     {
-        $order = $this->createOrderWithStatus('canceled');
+        $order = $this->createOrderMock(['status' => 'canceled']);
         $payload = $this->mapper->mapOrderToPayload($order);
 
         $this->assertSame('Cancelled', $payload['Status']);
@@ -102,7 +102,7 @@ class OrderMapperTest extends TestCase
 
     public function testStatusMappingComplete(): void
     {
-        $order = $this->createOrderWithStatus('complete');
+        $order = $this->createOrderMock(['status' => 'complete']);
         $payload = $this->mapper->mapOrderToPayload($order);
 
         $this->assertSame('Completed', $payload['Status']);
@@ -110,7 +110,7 @@ class OrderMapperTest extends TestCase
 
     public function testStatusMappingDefault(): void
     {
-        $order = $this->createOrderWithStatus('some_unknown_status');
+        $order = $this->createOrderMock(['status' => 'some_unknown_status']);
         $payload = $this->mapper->mapOrderToPayload($order);
 
         $this->assertSame('Active', $payload['Status']);
@@ -118,7 +118,7 @@ class OrderMapperTest extends TestCase
 
     public function testPaymentStatusPaid(): void
     {
-        $order = $this->createOrderWithPayment(0.0, 100.00);
+        $order = $this->createOrderMock(['totalDue' => 0.0, 'grandTotal' => 100.00]);
         $payload = $this->mapper->mapOrderToPayload($order);
 
         $this->assertSame('Paid', $payload['PaymentStatus']);
@@ -126,7 +126,7 @@ class OrderMapperTest extends TestCase
 
     public function testPaymentStatusUnpaid(): void
     {
-        $order = $this->createOrderWithPayment(100.00, 100.00);
+        $order = $this->createOrderMock(['totalDue' => 100.00, 'grandTotal' => 100.00]);
         $payload = $this->mapper->mapOrderToPayload($order);
 
         $this->assertSame('Unpaid', $payload['PaymentStatus']);
@@ -134,7 +134,7 @@ class OrderMapperTest extends TestCase
 
     public function testPaymentStatusPartiallyPaid(): void
     {
-        $order = $this->createOrderWithPayment(50.00, 100.00);
+        $order = $this->createOrderMock(['totalDue' => 50.00, 'grandTotal' => 100.00]);
         $payload = $this->mapper->mapOrderToPayload($order);
 
         $this->assertSame('Partially Paid', $payload['PaymentStatus']);
@@ -154,9 +154,7 @@ class OrderMapperTest extends TestCase
         $childItem = $this->createMock(OrderItemInterface::class);
         $childItem->method('getParentItemId')->willReturn(1);
 
-        $order = $this->createMinimalOrder();
-        $order->method('getItems')->willReturn([$parentItem, $childItem]);
-
+        $order = $this->createOrderMock(['items' => [$parentItem, $childItem]]);
         $payload = $this->mapper->mapOrderToPayload($order);
 
         $this->assertCount(1, $payload['Items']);
@@ -165,9 +163,7 @@ class OrderMapperTest extends TestCase
 
     public function testDiscountAbsoluteValue(): void
     {
-        $order = $this->createMinimalOrder();
-        $order->method('getDiscountAmount')->willReturn(-25.50);
-
+        $order = $this->createOrderMock(['discountAmount' => -25.50]);
         $payload = $this->mapper->mapOrderToPayload($order);
 
         $this->assertSame(25.50, $payload['TotalDiscount']);
@@ -175,73 +171,70 @@ class OrderMapperTest extends TestCase
 
     public function testMapOrderToUpdatePayloadIncludesId(): void
     {
-        $order = $this->createMinimalOrder();
-        $order->method('getData')->willReturnMap([
-            ['tax_amount', null, 0.0],
-            ['shipping_incl_tax', null, 0.0],
-            ['bobgo_order_id', null, 'bg-order-abc-123'],
-        ]);
-
+        $order = $this->createOrderMock(['bobgo_order_id' => 'bg-order-abc-123']);
         $payload = $this->mapper->mapOrderToUpdatePayload($order);
 
         $this->assertSame('bg-order-abc-123', $payload['id']);
     }
 
     /**
-     * Helper: create an order mock with a specific status, minimal other fields.
+     * Create an order mock with configurable field overrides.
+     *
+     * @param array<string,mixed> $overrides
+     * @return OrderInterface&\PHPUnit\Framework\MockObject\MockObject
      */
-    private function createOrderWithStatus(string $status): OrderInterface
+    private function createOrderMock(array $overrides = []): OrderInterface
     {
-        $order = $this->createMinimalOrder();
-        $order->method('getStatus')->willReturn($status);
+        $defaults = [
+            'entityId' => 1,
+            'incrementId' => '000000001',
+            'grandTotal' => 100.00,
+            'totalDue' => 0.0,
+            'discountAmount' => 0.0,
+            'currencyCode' => 'ZAR',
+            'status' => 'processing',
+            'shippingMethod' => 'bobgo_standard',
+            'shippingDescription' => 'Standard',
+            'createdAt' => '2026-01-01 00:00:00',
+            'updatedAt' => '2026-01-01 00:00:00',
+            'taxAmount' => 0.0,
+            'shippingInclTax' => 0.0,
+            'bobgo_order_id' => null,
+        ];
 
-        return $order;
-    }
+        $config = array_merge($defaults, $overrides);
 
-    /**
-     * Helper: create an order mock with specific payment amounts.
-     */
-    private function createOrderWithPayment(float $totalDue, float $grandTotal): OrderInterface
-    {
-        $order = $this->createMinimalOrder();
-        $order->method('getTotalDue')->willReturn($totalDue);
-        $order->method('getGrandTotal')->willReturn($grandTotal);
-
-        return $order;
-    }
-
-    /**
-     * Helper: create a minimal order mock with all required methods stubbed.
-     */
-    private function createMinimalOrder(): OrderInterface
-    {
-        $item = $this->createMock(OrderItemInterface::class);
-        $item->method('getParentItemId')->willReturn(null);
-        $item->method('getItemId')->willReturn(1);
-        $item->method('getSku')->willReturn('SKU-001');
-        $item->method('getName')->willReturn('Product');
-        $item->method('getPriceInclTax')->willReturn(100.00);
-        $item->method('getQtyOrdered')->willReturn(1.0);
-        $item->method('getWeight')->willReturn(1.0);
+        // Create default item if not provided
+        if (!isset($config['items'])) {
+            $item = $this->createMock(OrderItemInterface::class);
+            $item->method('getParentItemId')->willReturn(null);
+            $item->method('getItemId')->willReturn(1);
+            $item->method('getSku')->willReturn('SKU-001');
+            $item->method('getName')->willReturn('Product');
+            $item->method('getPriceInclTax')->willReturn(100.00);
+            $item->method('getQtyOrdered')->willReturn(1.0);
+            $item->method('getWeight')->willReturn(1.0);
+            $config['items'] = [$item];
+        }
 
         $order = $this->createMock(OrderInterface::class);
-        $order->method('getEntityId')->willReturn(1);
-        $order->method('getIncrementId')->willReturn('000000001');
-        $order->method('getGrandTotal')->willReturn(100.00);
-        $order->method('getTotalDue')->willReturn(0.0);
-        $order->method('getDiscountAmount')->willReturn(0.0);
-        $order->method('getOrderCurrencyCode')->willReturn('ZAR');
-        $order->method('getStatus')->willReturn('processing');
-        $order->method('getShippingMethod')->willReturn('bobgo_standard');
-        $order->method('getShippingDescription')->willReturn('Standard');
-        $order->method('getCreatedAt')->willReturn('2026-01-01 00:00:00');
-        $order->method('getUpdatedAt')->willReturn('2026-01-01 00:00:00');
+        $order->method('getEntityId')->willReturn($config['entityId']);
+        $order->method('getIncrementId')->willReturn($config['incrementId']);
+        $order->method('getGrandTotal')->willReturn($config['grandTotal']);
+        $order->method('getTotalDue')->willReturn($config['totalDue']);
+        $order->method('getDiscountAmount')->willReturn($config['discountAmount']);
+        $order->method('getOrderCurrencyCode')->willReturn($config['currencyCode']);
+        $order->method('getStatus')->willReturn($config['status']);
+        $order->method('getShippingMethod')->willReturn($config['shippingMethod']);
+        $order->method('getShippingDescription')->willReturn($config['shippingDescription']);
+        $order->method('getCreatedAt')->willReturn($config['createdAt']);
+        $order->method('getUpdatedAt')->willReturn($config['updatedAt']);
         $order->method('getShippingAddress')->willReturn(null);
-        $order->method('getItems')->willReturn([$item]);
+        $order->method('getItems')->willReturn($config['items']);
         $order->method('getData')->willReturnMap([
-            ['tax_amount', null, 0.0],
-            ['shipping_incl_tax', null, 0.0],
-            ['bobgo_order_id', null, null],
+            ['tax_amount', $config['taxAmount']],
+            ['shipping_incl_tax', $config['shippingInclTax']],
+            ['bobgo_order_id', $config['bobgo_order_id']],
         ]);
 
         return $order;
