@@ -1,0 +1,180 @@
+<?php
+declare(strict_types=1);
+
+namespace BobGroup\BobGo\Test\Unit\Api;
+
+use BobGroup\BobGo\Api\BobGoApiClient;
+use BobGroup\BobGo\Api\BobGoApiException;
+use BobGroup\BobGo\Model\Config\ApiConfig;
+use Magento\Framework\HTTP\Client\Curl;
+use Magento\Framework\HTTP\Client\CurlFactory;
+use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+
+class BobGoApiClientTest extends TestCase
+{
+    /**
+     * @var BobGoApiClient
+     */
+    private $client;
+
+    /**
+     * @var \PHPUnit\Framework\MockObject\MockObject
+     */
+    private $apiConfigMock;
+
+    /**
+     * @var \PHPUnit\Framework\MockObject\MockObject
+     */
+    private $curlFactoryMock;
+
+    /**
+     * @var \PHPUnit\Framework\MockObject\MockObject
+     */
+    private $curlMock;
+
+    /**
+     * @var \PHPUnit\Framework\MockObject\MockObject
+     */
+    private $loggerMock;
+
+    protected function setUp(): void
+    {
+        $this->apiConfigMock = $this->createMock(ApiConfig::class);
+        $this->curlFactoryMock = $this->createMock(CurlFactory::class);
+        $this->curlMock = $this->createMock(Curl::class);
+        $this->loggerMock = $this->createMock(LoggerInterface::class);
+
+        $this->curlFactoryMock->method('create')->willReturn($this->curlMock);
+
+        $this->client = new BobGoApiClient(
+            $this->apiConfigMock,
+            $this->curlFactoryMock,
+            $this->loggerMock
+        );
+    }
+
+    public function testPostSendsCorrectHeaders(): void
+    {
+        $this->apiConfigMock->method('getApiKey')->willReturn('test-key-abc123');
+        $this->apiConfigMock->method('getBaseUrl')->willReturn(ApiConfig::BASE_URL_SANDBOX);
+
+        $this->curlMock->expects($this->exactly(2))
+            ->method('addHeader')
+            ->willReturnCallback(function (string $name, string $value) {
+                static $callIndex = 0;
+                if ($callIndex === 0) {
+                    $this->assertSame('Content-Type', $name);
+                    $this->assertSame('application/json', $value);
+                } elseif ($callIndex === 1) {
+                    $this->assertSame('Authorization', $name);
+                    $this->assertSame('Bearer test-key-abc123', $value);
+                }
+                $callIndex++;
+            });
+
+        $this->curlMock->method('getStatus')->willReturn(200);
+        $this->curlMock->method('getBody')->willReturn('{"success":true}');
+
+        $this->client->post('orders', ['order_id' => '123']);
+    }
+
+    public function testPostBuildsCorrectUrl(): void
+    {
+        $this->apiConfigMock->method('getApiKey')->willReturn('test-key');
+        $this->apiConfigMock->method('getBaseUrl')->willReturn(ApiConfig::BASE_URL_SANDBOX);
+
+        $expectedUrl = ApiConfig::BASE_URL_SANDBOX . 'orders';
+
+        $this->curlMock->expects($this->once())
+            ->method('post')
+            ->with($expectedUrl, $this->anything());
+
+        $this->curlMock->method('getStatus')->willReturn(200);
+        $this->curlMock->method('getBody')->willReturn('{}');
+
+        $this->client->post('orders', ['data' => 'value']);
+    }
+
+    public function testGetBuildsUrlWithQueryParams(): void
+    {
+        $this->apiConfigMock->method('getApiKey')->willReturn('test-key');
+        $this->apiConfigMock->method('getBaseUrl')->willReturn(ApiConfig::BASE_URL_SANDBOX);
+
+        $expectedUrl = ApiConfig::BASE_URL_SANDBOX . 'shipments?status=pending&page=2';
+
+        $this->curlMock->expects($this->once())
+            ->method('get')
+            ->with($expectedUrl);
+
+        $this->curlMock->method('getStatus')->willReturn(200);
+        $this->curlMock->method('getBody')->willReturn('[]');
+
+        $this->client->get('shipments', ['status' => 'pending', 'page' => '2']);
+    }
+
+    public function testThrowsExceptionOn4xx(): void
+    {
+        $this->apiConfigMock->method('getApiKey')->willReturn('test-key-abc123');
+        $this->apiConfigMock->method('getBaseUrl')->willReturn(ApiConfig::BASE_URL_SANDBOX);
+
+        $this->curlMock->method('getStatus')->willReturn(422);
+        $this->curlMock->method('getBody')->willReturn('{"error":"Invalid payload"}');
+
+        $this->loggerMock->expects($this->once())->method('error');
+
+        $this->expectException(BobGoApiException::class);
+        $this->expectExceptionMessage('Bob Go API request to orders failed with status 422');
+
+        $this->client->post('orders', ['bad' => 'data']);
+    }
+
+    public function testThrowsExceptionWhenNoApiKey(): void
+    {
+        $this->apiConfigMock->method('getApiKey')->willReturn(null);
+
+        $this->expectException(BobGoApiException::class);
+        $this->expectExceptionMessage('Bob Go API key is not configured');
+
+        $this->client->get('orders');
+    }
+
+    public function testHandlesEmptyResponse(): void
+    {
+        $this->apiConfigMock->method('getApiKey')->willReturn('test-key');
+        $this->apiConfigMock->method('getBaseUrl')->willReturn(ApiConfig::BASE_URL_SANDBOX);
+
+        $this->curlMock->method('getStatus')->willReturn(204);
+        $this->curlMock->method('getBody')->willReturn('');
+
+        $result = $this->client->get('orders/123/cancel');
+
+        $this->assertSame([], $result);
+    }
+
+    public function testMasksApiKeyInLogs(): void
+    {
+        $this->apiConfigMock->method('getApiKey')->willReturn('super-secret-key-9999');
+        $this->apiConfigMock->method('getBaseUrl')->willReturn(ApiConfig::BASE_URL_SANDBOX);
+
+        $this->curlMock->method('getStatus')->willReturn(500);
+        $this->curlMock->method('getBody')->willReturn('Internal Server Error');
+
+        $this->loggerMock->expects($this->once())
+            ->method('error')
+            ->with(
+                'Bob Go API error',
+                $this->callback(function (array $context) {
+                    $this->assertSame('****9999', $context['api_key']);
+                    $this->assertStringNotContainsString('super-secret-key', $context['api_key']);
+                    return true;
+                })
+            );
+
+        try {
+            $this->client->get('test-endpoint');
+        } catch (BobGoApiException $e) {
+            // Expected
+        }
+    }
+}

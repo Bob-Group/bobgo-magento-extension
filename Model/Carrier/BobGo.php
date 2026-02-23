@@ -5,22 +5,17 @@ namespace BobGroup\BobGo\Model\Carrier;
 
 use Magento\Catalog\Model\ResourceModel\Product\CollectionFactory;
 use Magento\CatalogInventory\Api\StockRegistryInterface;
-use Magento\Checkout\Api\Data\ShippingInformationInterface;
 use Magento\Directory\Helper\Data;
 use Magento\Directory\Model\CountryFactory;
 use Magento\Directory\Model\CurrencyFactory;
 use Magento\Directory\Model\RegionFactory;
 use Magento\Framework\App\Config\ScopeConfigInterface;
-use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\DataObject;
 use Magento\Framework\Exception\LocalizedException;
-use Magento\Framework\HTTP\Client\CurlFactory;
-use Magento\Framework\Module\Dir\Reader;
 use Magento\Framework\Xml\Security;
 use Magento\Quote\Model\Quote\Address\RateRequest;
 use Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory;
 use Magento\Quote\Model\Quote\Address\RateResult\MethodFactory;
-use Magento\Sales\Model\Order\Shipment;
 use Magento\Shipping\Model\Carrier\AbstractCarrier;
 use Magento\Shipping\Model\Carrier\AbstractCarrierOnline;
 use Magento\Shipping\Model\Rate\Result;
@@ -30,8 +25,10 @@ use Magento\Shipping\Model\Tracking\Result\StatusFactory;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
-use Magento\Framework\App\RequestInterface;
 use Magento\Framework\App\Request\Http as MagentoHttp;
+use BobGroup\BobGo\Api\BobGoApiClient;
+use BobGroup\BobGo\Api\BobGoApiException;
+use BobGroup\BobGo\Model\Config\ApiConfig;
 
 /**
  * Bob Go shipping implementation
@@ -98,19 +95,9 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     private DataObject $_rawTrackingRequest;
 
     /**
-     * @var \Magento\Framework\HTTP\Client\Curl
-     */
-    protected \Magento\Framework\HTTP\Client\Curl $curl;
-
-    /**
      * @var ScopeConfigInterface
      */
     protected ScopeConfigInterface $scopeConfig;
-
-    /**
-     * @var JsonFactory
-     */
-    protected JsonFactory $jsonFactory;
 
     /**
      * @var AdditionalInfo
@@ -121,6 +108,16 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @var MagentoHttp
      */
     protected MagentoHttp $request;
+
+    /**
+     * @var BobGoApiClient
+     */
+    protected BobGoApiClient $apiClient;
+
+    /**
+     * @var ApiConfig
+     */
+    protected ApiConfig $apiConfig;
 
     /**
      * BobGo constructor.
@@ -142,9 +139,9 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @param StockRegistryInterface $stockRegistry
      * @param StoreManagerInterface $storeManager
      * @param CollectionFactory $productCollectionFactory
-     * @param JsonFactory $jsonFactory
-     * @param CurlFactory $curlFactory
      * @param MagentoHttp $request
+     * @param BobGoApiClient $apiClient
+     * @param ApiConfig $apiConfig
      * @param array<string,mixed> $data
      */
     public function __construct(
@@ -165,15 +162,17 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         StockRegistryInterface $stockRegistry,
         StoreManagerInterface $storeManager,
         CollectionFactory $productCollectionFactory,
-        JsonFactory $jsonFactory,
-        CurlFactory $curlFactory,
         MagentoHttp $request,
+        BobGoApiClient $apiClient,
+        ApiConfig $apiConfig,
         array $data = []
     ) {
         $this->request = $request;
         $this->_storeManager = $storeManager;
         $this->_productCollectionFactory = $productCollectionFactory;
         $this->scopeConfig = $scopeConfig;
+        $this->apiClient = $apiClient;
+        $this->apiConfig = $apiConfig;
 
         parent::__construct(
             $scopeConfig,
@@ -194,8 +193,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             $data
         );
 
-        $this->jsonFactory = $jsonFactory;
-        $this->curl = $curlFactory->create();
         $this->additionalInfo = new AdditionalInfo($countryFactory, $this->request);
     }
 
@@ -357,7 +354,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             $originStreet1,
             $originStreet2,
             $storeName,
-            $baseIdentifier,
             $originSuburb,
             $weightUnit
         ] = $this->storeInformation();
@@ -371,7 +367,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         $itemsArray = $this->getStoreItems($items, $weightUnit, $itemsArray);
 
         $payload = [
-            'identifier' => $baseIdentifier,
             'rate' => [
                 'origin' => [
                     'company' => $storeName,
@@ -419,7 +414,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         $storeName = $this->getStringValue('general/store_information/name');
         $originSuburb = $this->getStringValue('general/store_information/suburb');
         $weightUnit = $this->getStringValue('general/locale/weight_unit');
-        $baseIdentifier = $this->getBaseUrl();
 
         return [
             $originStreet,
@@ -429,7 +423,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             $originStreet1,
             $originStreet2,
             $storeName,
-            $baseIdentifier,
             $originSuburb,
             $weightUnit,
         ];
@@ -670,20 +663,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         return date('H:i', $timestamp);
     }
 
-    /**
-     * Get the API URL for Bob Go.
-     *
-     * @return string
-     */
-    private function getApiUrl(): string
-    {
-        return UData::RATES_ENDPOINT;
-    }
-
-    private function getWebhookUrl(): string
-    {
-        return UData::WEBHOOK_URL;
-    }
 
     /**
      * Perform API Request to Bob Go API and return response.
@@ -818,25 +797,12 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     protected function uRates(array $payload): ?array
     {
-        $this->curl->addHeader('Content-Type', 'application/json');
-
-        $payloadJson = json_encode($payload);
-        if ($payloadJson === false) {
-            // Handle JSON encoding failure if necessary
-            return null; // or throw an exception
+        try {
+            return $this->apiClient->post('rates-at-checkout', $payload);
+        } catch (BobGoApiException $e) {
+            $this->_logger->error('Bob Go rates API error: ' . $e->getMessage());
+            return null;
         }
-
-        $this->curl->post($this->getApiUrl(), $payloadJson);
-        $rates = $this->curl->getBody();
-
-        $rates = json_decode($rates, true);
-
-        // Ensure that $rates is an array or return null
-        if (is_array($rates)) {
-            return $rates;
-        }
-
-        return null;
     }
 
     /**
@@ -972,9 +938,8 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         );
 
         if ($isEnabled) {
-            // Sample test payload, replace with actual structure
+            // Sample test payload
             $payload = [
-                'identifier' => $this->getBaseUrl(),
                 'rate' => [
                     'origin' => [
                         'company' => 'Jamie Ds Emporium',
@@ -1008,23 +973,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             ];
 
             try {
-                // Perform the API request
-                $payloadJson = json_encode($payload);
-                if ($payloadJson === false) {
-                    throw new \RuntimeException('Failed to encode payload to JSON.');
-                }
-
-                $this->curl->addHeader('Content-Type', 'application/json');
-                $this->curl->post($this->getApiUrl(), $payloadJson);
-                $statusCode = $this->curl->getStatus();
-                $responseBody = $this->curl->getBody();
-
-                // Decode the response
-                $response = json_decode($responseBody, true);
-
-                if (!is_array($response)) {
-                    throw new LocalizedException(__('Invalid response format.'));
-                }
+                $response = $this->apiClient->post('rates-at-checkout', $payload);
 
                 // Check if the response contains a 'message' (indicating an error)
                 if (isset($response['message'])) {
@@ -1049,71 +998,4 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         return false;
     }
 
-    public function isWebhookEnabled(): bool
-    {
-        $enabled = $this->scopeConfig->getValue(
-            'carriers/bobgo/enable_webhooks',
-            \Magento\Store\Model\ScopeInterface::SCOPE_STORE
-        );
-
-        // Cast the value to a boolean
-        return filter_var($enabled, FILTER_VALIDATE_BOOLEAN);
-    }
-
-
-    public function triggerWebhookTest(): bool
-    {
-        $webhookKey = $this->scopeConfig->getValue(
-            'carriers/bobgo/webhook_key',
-            \Magento\Store\Model\ScopeInterface::SCOPE_STORE
-        );
-
-        // Check if the webhook key is empty and return false
-        if (empty($webhookKey)) {
-            return false;
-        }
-
-        // Convert the string to a boolean value
-        $isEnabled = $this->isWebhookEnabled();
-
-        $storeId = strval($this->_storeManager->getStore()->getId());
-
-        $payload = [
-            'event' => 'webhook_validation',
-            'channel_identifier' => $this->getBaseUrl(),
-            'store_id' => $storeId,
-            'webhooks_enabled' => $isEnabled,
-        ];
-
-        try {
-            $this->encodeWebhookAndPostRequest($this->getWebhookUrl(), $payload, $storeId, $webhookKey);
-            $statusCode = $this->curl->getStatus();
-            $responseBody = $this->curl->getBody();
-
-            if ($statusCode != 200) {
-                throw new LocalizedException(__('Status code from BobGo: %1', $statusCode));
-            }
-        } catch (\Exception $e) {
-            return false;
-        }
-        return true;
-    }
-
-    public function encodeWebhookAndPostRequest($url, $data, $storeId, $webhookKey) {
-        // Generate the HMAC-SHA256 hash as raw binary data
-        $rawSignature = hash_hmac('sha256', $storeId, $webhookKey, true);
-        // Encode the binary data in Base64
-        $signature = base64_encode($rawSignature);
-        // Set headers and post the data
-        $this->curl->addHeader('Content-Type', 'application/json');
-        $this->curl->addHeader('x-m-webhook-signature', $signature);
-
-        $payloadJson = json_encode($data);
-        if ($payloadJson === false) {
-            throw new \RuntimeException('Failed to encode payload to JSON.');
-        }
-
-        $this->curl->addHeader('Content-Type', 'application/json');
-        $this->curl->post($url, $payloadJson);
-    }
 }

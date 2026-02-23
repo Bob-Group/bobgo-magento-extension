@@ -18,28 +18,39 @@
                     <label>Version</label>
                     <frontend_model>BobGroup\BobGo\Block\System\Config\Form\Field\Version</frontend_model>
                 </field>
-                <field id="active" translate="label" type="select" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
+                <field id="environment" translate="label" type="select" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Environment</label>
+                    <source_model>BobGroup\BobGo\Model\Source\Environment</source_model>
+                </field>
+                <field id="api_key" translate="label" type="obscure" sortOrder="2" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>API Key</label>
+                    <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
+                    <comment>Enter your Bob Go API key.</comment>
+                </field>
+                <field id="active" translate="label" type="select" sortOrder="3" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Enable Bob Go rates at checkout</label>
                     <comment>When enabled, your customers will be presented with shipping rates at checkout, as configured on the Bob Go platform under Rates at checkout.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
-                <field id="additional_info" translate="label" type="select" sortOrder="7" showInDefault="1" showInWebsite="1">
+                <field id="additional_info" translate="label" type="select" sortOrder="4" showInDefault="1" showInWebsite="1">
                     <label>Show additional rate information</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <comment>Displays the delivery timeframe and additional service level description, as configured on Bob Go.</comment>
                 </field>
-
-                <!-- Enable Webhooks Checkbox -->
-                <field id="enable_webhooks" translate="label" type="select" sortOrder="8" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>Enable webhooks</label>
+                <field id="enable_order_push" translate="label" type="select" sortOrder="5" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Enable order push</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <comment>When this setting is enabled, webhooks will be sent to Bob Go to notify about order creation and updates, ensuring real-time synchronization between your store and Bob Go.</comment>
+                    <comment>When enabled, orders will be pushed to Bob Go for fulfillment.</comment>
                 </field>
-
-                <!-- Webhook Key Input Field -->
-                <field id="webhook_key" translate="label" type="text" sortOrder="9" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>Webhook authentication key</label>
-                    <comment>Enter your Bob Go integration API consumer secret key for webhook authentication.</comment>
+                <field id="enable_fulfillment_sync" translate="label" type="select" sortOrder="6" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Enable fulfillment sync</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>When enabled, fulfillments from Bob Go will be synced back to create shipments in Magento.</comment>
+                </field>
+                <field id="notify_customer_on_shipment" translate="label" type="select" sortOrder="7" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Notify customer on shipment</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>When enabled, customers will receive an email notification when a shipment is created.</comment>
                 </field>
 <!--                Hiding the `Enable Track My Order` setting for now-->
                 <field id="enable_track_order" translate="label" type="select" sortOrder="10" showInDefault="0" showInWebsite="0" showInStore="0">

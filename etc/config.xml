@@ -8,6 +8,10 @@
                 <model>BobGroup\BobGo\Model\Carrier\BobGo</model>
                 <name>Bob Go</name>
                 <title>Bob Go</title>
+                <environment>sandbox</environment>
+                <enable_order_push>0</enable_order_push>
+                <enable_fulfillment_sync>0</enable_fulfillment_sync>
+                <notify_customer_on_shipment>1</notify_customer_on_shipment>
             </bobgo>
         </carriers>
 

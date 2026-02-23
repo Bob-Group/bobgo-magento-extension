@@ -1,6 +1,16 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <preference for="BobGroup\BobGo\Api\OrderMapperInterface" type="BobGroup\BobGo\Service\OrderMapper" />
+    <preference for="BobGroup\BobGo\Api\WebhookReceiverInterface" type="BobGroup\BobGo\Model\WebhookReceiver" />
+
     <type name="Magento\Sales\Api\OrderRepositoryInterface">
         <plugin name="add_weight_unit_to_order_item" type="BobGroup\BobGo\Plugin\AddWeightUnitToOrderPlugin" />
+        <plugin name="bobgo_order_repository_plugin" type="BobGroup\BobGo\Plugin\OrderRepositoryPlugin" sortOrder="20" />
     </type>
 
+    <type name="BobGroup\BobGo\Api\BobGoApiClient">
+        <arguments>
+            <argument name="curlFactory" xsi:type="object">Magento\Framework\HTTP\Client\CurlFactory</argument>
+            <argument name="logger" xsi:type="object">Psr\Log\LoggerInterface</argument>
+        </arguments>
+    </type>
 </config>

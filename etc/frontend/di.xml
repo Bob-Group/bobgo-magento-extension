@@ -7,18 +7,4 @@
             </argument>
         </arguments>
     </type>
-    <type name="BobGroup\BobGo\Observer\ConfigChangeObserver">
-        <arguments>
-            <argument name="scopeConfig" xsi:type="object">Magento\Framework\App\Config\ScopeConfigInterface</argument>
-            <argument name="logger" xsi:type="object">Psr\Log\LoggerInterface</argument>
-        </arguments>
-    </type>
-    <type name="BobGroup\BobGo\Observer\OrderCreateWebhook">
-        <arguments>
-            <argument name="logger" xsi:type="object">Psr\Log\LoggerInterface</argument>
-            <argument name="curl" xsi:type="object">Magento\Framework\HTTP\Client\Curl</argument>
-            <argument name="storeManager" xsi:type="object">Magento\Store\Model\StoreManagerInterface</argument>
-        </arguments>
-    </type>
-
 </config>

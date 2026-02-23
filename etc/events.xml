@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:Event/etc/events.xsd">
     <event name="sales_order_save_after">
-        <observer name="order_create_webhook" instance="BobGroup\BobGo\Observer\OrderCreateWebhook"/>
+        <observer name="bobgo_order_save_observer" instance="BobGroup\BobGo\Observer\OrderSaveObserver"/>
     </event>
     <!-- app/code/Vendor/Module/etc/events.xml -->
     <event name="sales_order_place_before">
