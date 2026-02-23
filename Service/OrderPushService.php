@@ -9,6 +9,13 @@ use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Pushes and updates Magento orders to the Bob Go API.
+ *
+ * New orders are POSTed to /v2/orders and the returned Bob Go order ID is
+ * stored on the Magento order. Existing orders (those already pushed) are
+ * PATCHed to keep Bob Go in sync with status and item changes.
+ */
 class OrderPushService
 {
     /**

@@ -15,18 +15,56 @@ use BobGroup\BobGo\Api\BobGoApiClient;
 use BobGroup\BobGo\Api\BobGoApiException;
 use BobGroup\BobGo\Model\Config\ApiConfig;
 
+/**
+ * Customer-facing order tracking page controller.
+ *
+ * Accepts an order_reference parameter, queries the Bob Go tracking API,
+ * and renders the tracking results. Only accessible when the track order
+ * feature is enabled in admin configuration.
+ *
+ * Route: /bobgo/tracking/index
+ */
 class Index extends \Magento\Framework\App\Action\Action
 {
+    /** @var PageFactory */
     protected $resultPageFactory;
+
+    /** @var JsonFactory */
     protected $jsonFactory;
+
+    /** @var LoggerInterface */
     protected $logger;
+
+    /** @var ScopeConfigInterface */
     protected $scopeConfig;
+
+    /** @var RedirectFactory */
     protected $redirectFactory;
+
+    /** @var Registry */
     protected $registry;
+
+    /** @var StoreManagerInterface */
     protected StoreManagerInterface $storeManager;
+
+    /** @var BobGoApiClient */
     private BobGoApiClient $apiClient;
+
+    /** @var ApiConfig */
     private ApiConfig $apiConfig;
 
+    /**
+     * @param Context $context
+     * @param PageFactory $resultPageFactory
+     * @param JsonFactory $jsonFactory
+     * @param LoggerInterface $logger
+     * @param ScopeConfigInterface $scopeConfig
+     * @param RedirectFactory $redirectFactory
+     * @param StoreManagerInterface $storeManager
+     * @param BobGoApiClient $apiClient
+     * @param ApiConfig $apiConfig
+     * @param Registry $registry
+     */
     public function __construct(
         Context $context,
         PageFactory $resultPageFactory,
@@ -51,6 +89,15 @@ class Index extends \Magento\Framework\App\Action\Action
         parent::__construct($context);
     }
 
+    /**
+     * Execute the tracking page action.
+     *
+     * Redirects to 404 if the feature is disabled. Otherwise, fetches
+     * tracking data from the Bob Go API using the order_reference param
+     * and renders the tracking page template.
+     *
+     * @return \Magento\Framework\View\Result\Page|\Magento\Framework\Controller\Result\Redirect
+     */
     public function execute()
     {
         $isEnabled = $this->scopeConfig->isSetFlag(

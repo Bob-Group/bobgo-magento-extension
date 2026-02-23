@@ -8,6 +8,15 @@ use BobGroup\BobGo\Api\BobGoApiException;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Manages Bob Go webhook subscriptions for fulfillment and tracking events.
+ *
+ * When fulfillment sync is enabled, this service subscribes the Magento store's
+ * webhook endpoint to receive real-time notifications from Bob Go. When disabled,
+ * it cleans up by deleting all existing subscriptions.
+ *
+ * Delivery URL format: {store_base_url}/rest/V1/bobgo/webhook
+ */
 class WebhookSubscriptionService
 {
     private const WEBHOOK_TOPICS = [

@@ -9,6 +9,13 @@ use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Pushes orders to Bob Go when they are saved in Magento.
+ *
+ * On the first save (no bobgo_order_id), the order is POSTed to Bob Go.
+ * On subsequent saves, the order is PATCHed to keep Bob Go in sync.
+ * Errors are caught and logged — order saving is never blocked.
+ */
 class OrderSaveObserver implements ObserverInterface
 {
     /**
@@ -36,6 +43,12 @@ class OrderSaveObserver implements ObserverInterface
         $this->logger = $logger;
     }
 
+    /**
+     * Handle order save event — push new orders or update existing ones in Bob Go.
+     *
+     * @param Observer $observer
+     * @return void
+     */
     public function execute(Observer $observer): void
     {
         try {

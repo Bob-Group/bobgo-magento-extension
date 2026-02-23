@@ -7,6 +7,15 @@ use BobGroup\BobGo\Model\Config\ApiConfig;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Psr\Log\LoggerInterface;
 
+/**
+ * HTTP client for all Bob Go API v2 communication.
+ *
+ * Provides GET, POST, PATCH, and DELETE methods with automatic Bearer token
+ * authentication, JSON encoding/decoding, and structured error handling.
+ * Uses Magento's CurlFactory for HTTP transport with a 30-second timeout.
+ *
+ * API keys are read from ApiConfig and masked in error logs for security.
+ */
 class BobGoApiClient
 {
     /**

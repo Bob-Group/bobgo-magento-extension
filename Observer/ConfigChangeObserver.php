@@ -12,6 +12,14 @@ use BobGroup\BobGo\Api\BobGoApiException;
 use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Service\WebhookSubscriptionService;
 
+/**
+ * Reacts to admin configuration changes in the carriers section.
+ *
+ * When the Bob Go API key, environment, active toggle, or fulfillment sync
+ * settings change, this observer tests API connectivity, validates rates,
+ * and manages webhook subscriptions accordingly. Results are displayed as
+ * admin success/error messages.
+ */
 class ConfigChangeObserver implements ObserverInterface
 {
     /**
@@ -53,6 +61,17 @@ class ConfigChangeObserver implements ObserverInterface
         $this->messageManager = $messageManager;
     }
 
+    /**
+     * Handle carrier config section save event.
+     *
+     * Checks which config paths changed and triggers appropriate actions:
+     * - API key or environment change → test API connectivity
+     * - Active toggle enabled → test rates-at-checkout connectivity
+     * - Fulfillment sync, environment, or API key change → manage webhook subscriptions
+     *
+     * @param Observer $observer
+     * @return void
+     */
     public function execute(Observer $observer): void
     {
         $changedPaths = $observer->getEvent()->getData('changed_paths');
@@ -81,6 +100,11 @@ class ConfigChangeObserver implements ObserverInterface
         }
     }
 
+    /**
+     * Test basic API connectivity by fetching webhook subscriptions.
+     *
+     * @return void
+     */
     private function testConnectivity(): void
     {
         if (!$this->apiConfig->isConfigured()) {
@@ -100,6 +124,11 @@ class ConfigChangeObserver implements ObserverInterface
         }
     }
 
+    /**
+     * Test rates-at-checkout connectivity by posting a sample rate request.
+     *
+     * @return void
+     */
     private function testRacConnectivity(): void
     {
         if (!$this->apiConfig->isConfigured()) {
@@ -160,6 +189,11 @@ class ConfigChangeObserver implements ObserverInterface
         }
     }
 
+    /**
+     * Subscribe or unsubscribe webhooks based on the fulfillment sync toggle.
+     *
+     * @return void
+     */
     private function manageWebhookSubscriptions(): void
     {
         if (!$this->apiConfig->isConfigured()) {

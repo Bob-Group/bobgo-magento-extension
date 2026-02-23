@@ -11,6 +11,14 @@ use Magento\Framework\Api\SearchCriteriaBuilder;
 use Magento\Sales\Model\Order;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Cron job that polls the Bob Go API for new fulfillments.
+ *
+ * Runs every 15 minutes (configured in etc/crontab.xml) as a fallback
+ * mechanism alongside real-time webhooks. Finds all orders in "processing"
+ * state that have a Bob Go order ID, fetches their fulfillments from the API,
+ * and delegates to FulfillmentService to create Magento shipments.
+ */
 class FulfillmentCronService
 {
     /**

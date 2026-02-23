@@ -12,6 +12,16 @@ use Magento\Sales\Model\Order\Shipment\TrackFactory;
 use BobGroup\BobGo\Model\Config\ApiConfig;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Creates Magento shipments from Bob Go fulfillment data.
+ *
+ * Handles two types of incoming data:
+ * - Fulfillment creation: Creates a new shipment with items and tracking numbers.
+ *   Includes idempotency checks to prevent duplicate shipments.
+ * - Tracking updates: Adds new tracking numbers to the latest existing shipment.
+ *
+ * Called by both the webhook receiver (real-time) and cron service (polling fallback).
+ */
 class FulfillmentService
 {
     /**

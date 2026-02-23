@@ -7,6 +7,15 @@ use BobGroup\BobGo\Api\WebhookReceiverInterface;
 use BobGroup\BobGo\Service\FulfillmentService;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Processes incoming Bob Go webhooks by routing them to the appropriate handler.
+ *
+ * Supports the following topics:
+ * - fulfillment/created → Creates a Magento shipment via FulfillmentService
+ * - tracking/updated   → Adds tracking numbers to an existing shipment
+ *
+ * Called via the REST API endpoint POST /rest/V1/bobgo/webhook.
+ */
 class WebhookReceiver implements WebhookReceiverInterface
 {
     /**

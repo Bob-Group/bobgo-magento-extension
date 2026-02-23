@@ -8,6 +8,13 @@ use Psr\Log\LoggerInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Sales\Api\Data\OrderItemInterface;
 
+/**
+ * Converts order item weights from pounds (LBS) to kilograms (KG) before saving.
+ *
+ * Bob Go expects item weights in kilograms. When the Magento store is configured
+ * to use pounds as the weight unit, this plugin converts each order item's weight
+ * using the exact conversion factor: 1 lb = 0.45359237 kg.
+ */
 class AddWeightUnitToOrderPlugin
 {
     /**

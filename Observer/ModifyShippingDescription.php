@@ -6,17 +6,36 @@ use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Event\Observer;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Simplifies the shipping description before an order is placed.
+ *
+ * Magento stores the full carrier + method title (e.g. "Bob Go - Delivery in 3 - 5 days - Standard Delivery").
+ * This observer extracts only the method title portion after the last " - " separator
+ * so the stored description is cleaner (e.g. "Standard Delivery").
+ */
 class ModifyShippingDescription implements ObserverInterface
 {
     public const CODE = 'bobgo';
 
+    /**
+     * @var LoggerInterface
+     */
     protected $logger;
 
+    /**
+     * @param LoggerInterface $logger
+     */
     public function __construct(LoggerInterface $logger)
     {
         $this->logger = $logger;
     }
 
+    /**
+     * Extract the method title from the shipping description before order placement.
+     *
+     * @param Observer $observer
+     * @return void
+     */
     public function execute(Observer $observer)
     {
         // Get the order object from the event

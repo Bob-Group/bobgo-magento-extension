@@ -7,6 +7,13 @@ use BobGroup\BobGo\Api\OrderMapperInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\Data\OrderItemInterface;
 
+/**
+ * Transforms Magento orders into Bob Go API payload format.
+ *
+ * Handles mapping of order data, shipping address, line items, order status,
+ * and payment status. Used by OrderPushService for both create (POST) and
+ * update (PATCH) operations.
+ */
 class OrderMapper implements OrderMapperInterface
 {
     /**

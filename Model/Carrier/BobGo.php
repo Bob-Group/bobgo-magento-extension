@@ -285,17 +285,23 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             }
         }
 
+        // Require postal code for countries where it is mandatory
         if (!$errorMsg && !$rateRequest->getDestPostcode()
             && $this->isZipCodeRequired($rateRequest->getDestCountryId())) {
             $errorMsg = __('This shipping method is not available. Please specify the zip code.');
         }
 
+        // Bob Go shipping is only available for South Africa (ZA).
+        // Clear any previous error for ZA; set error for all other countries.
         if ($rateRequest->getDestCountryId() == 'ZA') {
             $errorMsg = '';
         } else {
             $errorMsg = $configErrorMsg ? $configErrorMsg : $defaultErrorMsg;
         }
 
+        // If there's an error and showMethod is enabled, return an error rate object
+        // so the customer sees the carrier with an error message. Otherwise return false
+        // to silently hide the carrier.
         if ($errorMsg && $showMethod) {
             $error = $this->_rateErrorFactory->create();
             $error->setCarrier($this->_code);
