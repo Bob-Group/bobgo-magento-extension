@@ -86,6 +86,43 @@ Webhooks use HMAC-SHA256 signatures sent in the `x-m-webhook-signature` header. 
 - DI/plugins: `etc/di.xml`
 - Events: `etc/events.xml`, `etc/adminhtml/events.xml`
 
+## Remote Test Server
+
+- **SSH:** `bitnami@ip-10-107-3-85` (Bitnami Magento AMI on AWS)
+- **Magento root:** `/opt/bitnami/magento`
+- **Extension path:** `/opt/bitnami/magento/app/code/BobGroup/BobGo/`
+- **Generated code:** `/opt/bitnami/magento/generated/code/`
+- **Generated metadata:** `/opt/bitnami/magento/generated/metadata/`
+- **Cache dir:** `/opt/bitnami/magento/var/cache/`
+- **Exception log:** `/opt/bitnami/magento/var/log/exception.log`
+- **Permissions:** `var/` and `generated/` often need `sudo chmod -R 777` after compile
+
+### Deployment workflow
+
+```bash
+# Rsync extension to server (from local Mac)
+rsync -avz --exclude='node_modules' --exclude='.git' --exclude='vendor' --exclude='Test' \
+  /Users/jacoroux/Documents/Projects/bobgo-magento-extension/ \
+  bitnami@ip-10-107-3-85:/opt/bitnami/magento/app/code/BobGroup/BobGo/
+
+# On server: recompile DI (needed after di.xml, events.xml, or constructor changes)
+sudo rm -rf generated/code/* generated/metadata/*
+php bin/magento setup:di:compile && sudo php bin/magento cache:flush
+
+# On server: flush cache only (sufficient for most PHP logic changes)
+sudo php bin/magento cache:flush
+
+# On server: restart web server
+sudo /opt/bitnami/ctlscript.sh restart apache
+
+# IMPORTANT: Clear PHP opcache from web context after code changes
+# Apache restart alone does NOT reliably clear opcache.
+# Create a temp script, hit it from browser, then delete:
+echo '<?php opcache_reset(); echo "cleared"; ?>' | sudo tee /opt/bitnami/magento/pub/opcache_reset.php
+# Visit https://<domain>/opcache_reset.php in browser
+sudo rm /opt/bitnami/magento/pub/opcache_reset.php
+```
+
 ## Branches
 
 - **`dev`** — Main development branch (CI deploys to dev S3)

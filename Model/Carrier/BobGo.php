@@ -107,7 +107,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     /**
      * @var MagentoHttp
      */
-    protected MagentoHttp $request;
+    protected MagentoHttp $httpRequest;
 
     /**
      * @var BobGoApiClient
@@ -139,7 +139,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @param StockRegistryInterface $stockRegistry
      * @param StoreManagerInterface $storeManager
      * @param CollectionFactory $productCollectionFactory
-     * @param MagentoHttp $request
+     * @param MagentoHttp $httpRequest
      * @param BobGoApiClient $apiClient
      * @param ApiConfig $apiConfig
      * @param array<string,mixed> $data
@@ -162,12 +162,12 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         StockRegistryInterface $stockRegistry,
         StoreManagerInterface $storeManager,
         CollectionFactory $productCollectionFactory,
-        MagentoHttp $request,
+        MagentoHttp $httpRequest,
         BobGoApiClient $apiClient,
         ApiConfig $apiConfig,
         array $data = []
     ) {
-        $this->request = $request;
+        $this->httpRequest = $httpRequest;
         $this->_storeManager = $storeManager;
         $this->_productCollectionFactory = $productCollectionFactory;
         $this->scopeConfig = $scopeConfig;
@@ -193,7 +193,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             $data
         );
 
-        $this->additionalInfo = new AdditionalInfo($countryFactory, $this->request);
+        $this->additionalInfo = new AdditionalInfo($countryFactory, $this->httpRequest);
     }
 
     /**
@@ -373,29 +373,26 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         $itemsArray = $this->getStoreItems($items, $weightUnit, $itemsArray);
 
         $payload = [
-            'rate' => [
-                'origin' => [
-                    'company' => $storeName,
-                    'address1' => $originStreet1,
-                    'address2' => $originStreet2,
-                    'city' => $originCity,
-                    'suburb' => $originSuburb,
-                    'province' => $originRegion,
-                    'country_code' => $originCountry,
-                    'postal_code' => $originStreet,
-                ],
-                'destination' => [
-                    'company' => $destComp,
-                    'address1' => $destStreet1,
-                    'address2' => $destStreet2,
-                    'suburb' => $destSuburb,
-                    'city' => $destCity,
-                    'province' => $destRegion,
-                    'country_code' => $destCountry,
-                    'postal_code' => $destination,
-                ],
-                'items' => $itemsArray,
-            ]
+            'collection_address' => [
+                'company' => $storeName,
+                'street_address' => $originStreet1,
+                'local_area' => $originSuburb,
+                'city' => $originCity,
+                'zone' => $originRegion,
+                'country' => $originCountry,
+                'code' => $originStreet,
+            ],
+            'delivery_address' => [
+                'company' => $destComp,
+                'street_address' => $destStreet1,
+                'local_area' => $destSuburb,
+                'city' => $destCity,
+                'zone' => $destRegion,
+                'country' => $destCountry,
+                'code' => $destination,
+            ],
+            'items' => $itemsArray,
+            'declared_value' => 0,
         ];
 
         $this->_getRates($payload, $result);
@@ -917,13 +914,17 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         array $itemsArray
     ): array {
         foreach ($items as $item) {
-            $mass = $this->getItemWeight($weightUnit, $item);
+            $massGrams = $this->getItemWeight($weightUnit, $item);
+            $weightKg = round($massGrams / 1000, 2);
 
             $itemsArray[] = [
-                'sku' => $item->getSku(),
-                'quantity' => $item->getQty(),
-                'price' => $item->getPrice(),
-                'weight' => round($mass),
+                'description' => $item->getName() ?: $item->getSku(),
+                'quantity' => (int) $item->getQty(),
+                'price' => (float) $item->getPrice(),
+                'length_cm' => 0,
+                'width_cm' => 0,
+                'height_cm' => 0,
+                'weight_kg' => $weightKg,
             ];
         }
 
@@ -946,36 +947,36 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         if ($isEnabled) {
             // Sample test payload
             $payload = [
-                'rate' => [
-                    'origin' => [
-                        'company' => 'Jamie Ds Emporium',
-                        'address1' => '36 Marelu Street',
-                        'address2' => 'Six Fountains Estate',
-                        'city' => 'Pretoria',
-                        'suburb' => 'Pretoria',
-                        'province' => 'GT',
-                        'country_code' => 'ZA',
-                        'postal_code' => '0081',
-                    ],
-                    'destination' => [
-                        'company' => 'Test Company',
-                        'address1' => '456 Test Ave',
-                        'address2' => '',
-                        'suburb' => 'Test Suburb',
-                        'city' => 'Test City',
-                        'province' => 'Test Province',
-                        'country_code' => 'ZA',
-                        'postal_code' => '3000',
-                    ],
-                    'items' => [
-                        [
-                            'sku' => 'test-sku-1',
-                            'quantity' => 1,
-                            'price' => 100.00,
-                            'weight' => 500, // in grams
-                        ]
-                    ],
-                ]
+                'collection_address' => [
+                    'company' => 'Test Store',
+                    'street_address' => '36 Marelu Street',
+                    'local_area' => 'Pretoria',
+                    'city' => 'Pretoria',
+                    'zone' => 'GP',
+                    'country' => 'ZA',
+                    'code' => '0081',
+                ],
+                'delivery_address' => [
+                    'company' => 'Test Company',
+                    'street_address' => '456 Test Ave',
+                    'local_area' => 'Test Suburb',
+                    'city' => 'Durban',
+                    'zone' => 'KZN',
+                    'country' => 'ZA',
+                    'code' => '3000',
+                ],
+                'items' => [
+                    [
+                        'description' => 'Test Product',
+                        'quantity' => 1,
+                        'price' => 100.00,
+                        'length_cm' => 0,
+                        'width_cm' => 0,
+                        'height_cm' => 0,
+                        'weight_kg' => 0.5,
+                    ]
+                ],
+                'declared_value' => 0,
             ];
 
             try {

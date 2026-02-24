@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace BobGroup\BobGo\Model\Config;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Store\Model\ScopeInterface;
 
 /**
@@ -51,11 +52,20 @@ class ApiConfig
     private ScopeConfigInterface $scopeConfig;
 
     /**
-     * @param ScopeConfigInterface $scopeConfig
+     * @var EncryptorInterface
      */
-    public function __construct(ScopeConfigInterface $scopeConfig)
-    {
+    private EncryptorInterface $encryptor;
+
+    /**
+     * @param ScopeConfigInterface $scopeConfig
+     * @param EncryptorInterface $encryptor
+     */
+    public function __construct(
+        ScopeConfigInterface $scopeConfig,
+        EncryptorInterface $encryptor
+    ) {
         $this->scopeConfig = $scopeConfig;
+        $this->encryptor = $encryptor;
     }
 
     /**
@@ -66,7 +76,11 @@ class ApiConfig
     public function getApiKey(): ?string
     {
         $value = $this->scopeConfig->getValue(self::XML_PATH_API_KEY, ScopeInterface::SCOPE_STORE);
-        return is_string($value) && $value !== '' ? $value : null;
+        if (!is_string($value) || $value === '') {
+            return null;
+        }
+        $decrypted = $this->encryptor->decrypt($value);
+        return is_string($decrypted) && $decrypted !== '' ? $decrypted : null;
     }
 
     /**

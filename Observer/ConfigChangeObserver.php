@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace BobGroup\BobGo\Observer;
 
+use Magento\Framework\App\Config\ReinitableConfigInterface;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Message\ManagerInterface;
@@ -47,18 +48,25 @@ class ConfigChangeObserver implements ObserverInterface
      */
     private ManagerInterface $messageManager;
 
+    /**
+     * @var ReinitableConfigInterface
+     */
+    private ReinitableConfigInterface $reinitableConfig;
+
     public function __construct(
         BobGoApiClient $apiClient,
         ApiConfig $apiConfig,
         WebhookSubscriptionService $webhookSubscriptionService,
         LoggerInterface $logger,
-        ManagerInterface $messageManager
+        ManagerInterface $messageManager,
+        ReinitableConfigInterface $reinitableConfig
     ) {
         $this->apiClient = $apiClient;
         $this->apiConfig = $apiConfig;
         $this->webhookSubscriptionService = $webhookSubscriptionService;
         $this->logger = $logger;
         $this->messageManager = $messageManager;
+        $this->reinitableConfig = $reinitableConfig;
     }
 
     /**
@@ -74,6 +82,9 @@ class ConfigChangeObserver implements ObserverInterface
      */
     public function execute(Observer $observer): void
     {
+        // Reinitialize config to pick up freshly saved values (in-memory cache is stale during save)
+        $this->reinitableConfig->reinit();
+
         $changedPaths = $observer->getEvent()->getData('changed_paths');
         if (!is_array($changedPaths)) {
             return;
@@ -119,7 +130,7 @@ class ConfigChangeObserver implements ObserverInterface
         } catch (BobGoApiException $e) {
             $this->logger->error('Bob Go connectivity test failed', ['error' => $e->getMessage()]);
             $this->messageManager->addErrorMessage(
-                __('Failed to connect to Bob Go API. Please check your API key and environment setting.')
+                __('Failed to connect to Bob Go API: %1', $e->getMessage())
             );
         }
     }
@@ -140,34 +151,36 @@ class ConfigChangeObserver implements ObserverInterface
 
         try {
             $payload = [
-                'rate' => [
-                    'origin' => [
-                        'company' => 'Test',
-                        'address1' => '1 Test Street',
-                        'city' => 'Cape Town',
-                        'suburb' => 'Cape Town',
-                        'province' => 'WC',
-                        'country_code' => 'ZA',
-                        'postal_code' => '8001',
-                    ],
-                    'destination' => [
-                        'company' => 'Test',
-                        'address1' => '1 Test Avenue',
-                        'city' => 'Johannesburg',
-                        'suburb' => 'Sandton',
-                        'province' => 'GT',
-                        'country_code' => 'ZA',
-                        'postal_code' => '2196',
-                    ],
-                    'items' => [
-                        [
-                            'sku' => 'test-sku',
-                            'quantity' => 1,
-                            'price' => 100.00,
-                            'weight' => 1000,
-                        ],
+                'collection_address' => [
+                    'company' => 'Test',
+                    'street_address' => '1 Test Street',
+                    'local_area' => 'Cape Town',
+                    'city' => 'Cape Town',
+                    'zone' => 'WC',
+                    'country' => 'ZA',
+                    'code' => '8001',
+                ],
+                'delivery_address' => [
+                    'company' => 'Test',
+                    'street_address' => '1 Test Avenue',
+                    'local_area' => 'Sandton',
+                    'city' => 'Johannesburg',
+                    'zone' => 'GP',
+                    'country' => 'ZA',
+                    'code' => '2196',
+                ],
+                'items' => [
+                    [
+                        'description' => 'Test Product',
+                        'quantity' => 1,
+                        'price' => 100.00,
+                        'length_cm' => 0,
+                        'width_cm' => 0,
+                        'height_cm' => 0,
+                        'weight_kg' => 1.0,
                     ],
                 ],
+                'declared_value' => 0,
             ];
 
             $response = $this->apiClient->post('rates-at-checkout', $payload);
@@ -184,7 +197,7 @@ class ConfigChangeObserver implements ObserverInterface
         } catch (BobGoApiException $e) {
             $this->logger->error('Bob Go RAC test failed', ['error' => $e->getMessage()]);
             $this->messageManager->addErrorMessage(
-                __('Failed to connect to Bob Go rates at checkout. Please check your API key and internet connection.')
+                __('Failed to connect to Bob Go rates at checkout: %1', $e->getMessage())
             );
         }
     }
