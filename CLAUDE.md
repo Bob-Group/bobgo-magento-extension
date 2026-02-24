@@ -52,16 +52,18 @@ GitLab CI (`.gitlab-ci.yml`):
 
 ### Core Carrier (`Model/Carrier/BobGo.php`)
 The main shipping carrier class (~1,120 lines). Extends `AbstractCarrierOnline`, implements `CarrierInterface`. Carrier code: `bobgo`. Handles:
-- `collectRates()` — Builds payload with origin/destination/items, calls Bob Go rates API, returns Magento rate result objects
-- `triggerRatesTest()` / `triggerWebhookTest()` — Admin connectivity tests
-- `encodeWebhookAndPostRequest()` — Sends HMAC-SHA256 signed webhooks
+- `collectRates()` — Builds payload with `collection_address`/`delivery_address`/`items`, calls Bob Go `rates-at-checkout` API, returns Magento rate result objects
+- `triggerRatesTest()` — Admin connectivity test for rates
+- Rate request uses Bob Go API v2 format: `street_address`, `local_area`, `zone`, `country`, `code` (not the old `address1`/`suburb`/`province`/`country_code`/`postal_code` format)
 
-### API Endpoints (`Model/Carrier/UData.php`)
-Static constants for Bob Go API URLs (rates, webhooks, tracking). Currently pointing to **dev** environment (`api.dev.bobgo.co.za`). These must be changed for production releases.
+### API Configuration (`Model/Config/ApiConfig.php`)
+Centralized config: reads environment, API key (decrypted via `EncryptorInterface`), base URL, feature flags. Base URLs:
+- **Sandbox:** `https://api.sandbox.bobgo.co.za/v2/`
+- **Production:** `https://api.bobgo.co.za/v2/`
 
 ### Observers (`Observer/`)
-- **ConfigChangeObserver** — Listens to `admin_system_config_changed_section_carriers`, runs connectivity tests when settings are toggled
-- **OrderCreateWebhook** — Listens to `sales_order_save_after`, sends order data to Bob Go webhook
+- **ConfigChangeObserver** — Listens to `admin_system_config_changed_section_carriers`, runs connectivity tests when settings are toggled. Uses `ReinitableConfigInterface::reinit()` to read freshly saved config values.
+- **OrderSaveObserver** — Listens to `sales_order_save_after`, pushes order data to Bob Go
 - **ModifyShippingDescription** — Listens to `sales_order_place_before`
 
 ### Plugins (`Plugin/`)
@@ -72,7 +74,7 @@ Static constants for Bob Go API URLs (rates, webhooks, tracking). Currently poin
 A custom extension attribute (`suburb`) on `Magento\Quote\Api\Data\AddressInterface` (defined in `etc/extension_attributes.xml`). Required for South African shipping rate accuracy. Added to checkout via `LayoutProcessorPlugin` and included in rate request payloads.
 
 ### Weight Handling
-Items are converted to grams for the API. Supports KGS and LBS store weight units. Max 500kg per item validation.
+Items are converted to kg (`weight_kg`) for the API. Internally converts via grams first, then divides by 1000. Supports KGS and LBS store weight units. Max 500kg per item validation.
 
 ### Webhook Security
 Webhooks use HMAC-SHA256 signatures sent in the `x-m-webhook-signature` header. The key is stored in Magento's encrypted admin config (`carriers/bobgo/webhook_key`).
@@ -122,6 +124,16 @@ echo '<?php opcache_reset(); echo "cleared"; ?>' | sudo tee /opt/bitnami/magento
 # Visit https://<domain>/opcache_reset.php in browser
 sudo rm /opt/bitnami/magento/pub/opcache_reset.php
 ```
+
+## Magento DI Gotchas
+
+These are hard-won lessons from debugging the extension on the test server:
+
+1. **Constructor param naming:** Never use common names like `$request` for custom constructor params in classes extending Magento core. Magento inherits DI argument mappings by **name** from parent classes, causing type mismatches. Use unique names (e.g., `$httpRequest`).
+2. **Encrypted config values:** `scopeConfig->getValue()` returns the **raw encrypted** value for fields with `Backend\Encrypted`. You must use `EncryptorInterface::decrypt()` to get the plaintext.
+3. **Stale config in observers:** During config save, the in-memory ScopeConfig cache is stale. Inject `ReinitableConfigInterface` and call `reinit()` before reading config in save observers.
+4. **PHP opcache:** On the Bitnami server, restarting Apache does NOT reliably clear opcache. Must create a temp PHP script in `pub/` and hit it from the browser to call `opcache_reset()`.
+5. **Permissions:** After `di:compile`, `var/` and `generated/` directories often need `sudo chmod -R 777` on the Bitnami instance.
 
 ## Branches
 

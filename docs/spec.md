@@ -255,6 +255,8 @@ const ENV_SANDBOX    = 'sandbox';
 const ENV_PRODUCTION = 'production';
 ```
 
+**API Key Decryption:** The `getApiKey()` method uses `EncryptorInterface::decrypt()` to decrypt the API key, since Magento's `scopeConfig->getValue()` returns the raw encrypted value for fields with the `Backend\Encrypted` backend model.
+
 ---
 
 ## 5. Architecture
@@ -390,11 +392,11 @@ Extract origin info from store configuration
          │
          ▼
 Build items array via getStoreItems()
-  - For each cart item: { sku, quantity, price, weight (grams) }
+  - For each cart item: { description, quantity, price, weight_kg, length_cm, width_cm, height_cm }
          │
          ▼
 Build payload:
-  { rate: { origin: {...}, destination: {...}, items: [...] } }
+  { collection_address: {...}, delivery_address: {...}, items: [...], declared_value: 0 }
          │
          ▼
 POST to Bob Go API: rates-at-checkout
@@ -410,40 +412,40 @@ Return Result with available shipping methods
 
 ```json
 {
-  "rate": {
-    "origin": {
-      "company": "Store Name",
-      "address1": "123 Main Street",
-      "address2": "Suite 4",
-      "city": "Cape Town",
-      "suburb": "Gardens",
-      "province": "WC",
-      "country_code": "ZA",
-      "postal_code": "8001"
-    },
-    "destination": {
-      "company": "Customer Company",
-      "address1": "456 Oak Avenue",
-      "address2": "",
-      "suburb": "Sandton",
-      "city": "Johannesburg",
-      "province": "GT",
-      "country_code": "ZA",
-      "postal_code": "2196"
-    },
-    "items": [
-      {
-        "sku": "PROD-001",
-        "quantity": 2,
-        "price": 199.99,
-        "weight": 1500
-      }
-    ]
-  }
+  "collection_address": {
+    "company": "Store Name",
+    "street_address": "123 Main Street",
+    "local_area": "Gardens",
+    "city": "Cape Town",
+    "zone": "WC",
+    "country": "ZA",
+    "code": "8001"
+  },
+  "delivery_address": {
+    "company": "Customer Company",
+    "street_address": "456 Oak Avenue",
+    "local_area": "Sandton",
+    "city": "Johannesburg",
+    "zone": "GP",
+    "country": "ZA",
+    "code": "2196"
+  },
+  "items": [
+    {
+      "description": "Product Name",
+      "quantity": 2,
+      "price": 199.99,
+      "length_cm": 0,
+      "width_cm": 0,
+      "height_cm": 0,
+      "weight_kg": 1.5
+    }
+  ],
+  "declared_value": 0
 }
 ```
 
-> **Note:** Item weights are in **grams**. See [Weight Handling](#12-weight-handling).
+> **Note:** Item weights are in **kg** (converted from grams internally). Dimensions default to 0 when not available from Magento.
 
 ### Rate Response Processing
 
@@ -453,14 +455,22 @@ The API returns a response like:
 {
   "rates": [
     {
-      "id": "rate_123",
-      "service_code": "bobgo_standard",
-      "service_name": "Standard Delivery",
-      "total_price": 99.00,
-      "min_delivery_date": "2024-01-15",
-      "max_delivery_date": "2024-01-17"
+      "id": 334,
+      "service_code": "bobgo_334_1_1",
+      "service_name": "Standard shipping",
+      "total_price": 104,
+      "description": "Default standard shipping",
+      "currency": "ZAR",
+      "min_delivery_date": "2026-03-02",
+      "max_delivery_date": "2026-03-03",
+      "base_rate": 103.5,
+      "type": "door",
+      "service_level_priority": 2,
+      "provider_slug": "demo",
+      "service_level_code": "ECO"
     }
-  ]
+  ],
+  "count": 1
 }
 ```
 
@@ -765,16 +775,16 @@ Injected at `checkout > steps > shipping-step > shippingAddress > shipping-addre
 
 ### Rate Requests (Cart Items)
 
-Weights are converted to **grams** for the Bob Go API. Logic in `BobGo::getItemWeight()`:
+Weights are converted to **kg** for the Bob Go API. `BobGo::getItemWeight()` first converts to grams internally, then `getStoreItems()` divides by 1000 for the `weight_kg` field:
 
-| Store Weight Unit | Formula | Example |
-|-------------------|---------|---------|
-| `kgs` | `weight * 1000` | 1.5 kg → 1500 g |
-| `lbs` (or anything else) | `weight * 0.45359237 * 1000` | 3.3 lbs → 1497 g |
+| Store Weight Unit | Internal (grams) | API (`weight_kg`) | Example |
+|-------------------|-------------------|-------------------|---------|
+| `kgs` | `weight * 1000` | `grams / 1000` | 1.5 kg → 1500 g → 1.5 kg |
+| `lbs` (or anything else) | `weight * 0.45359237 * 1000` | `grams / 1000` | 3.3 lbs → 1497 g → 1.5 kg |
 
 The weight unit is read from `general/locale/weight_unit`.
 
-Results are rounded to the nearest gram via `round($mass)`.
+`weight_kg` is rounded to 2 decimal places via `round($massGrams / 1000, 2)`.
 
 ### Order Items (Order Push)
 
@@ -872,7 +882,9 @@ Displays:
 | Active toggle (enabled) | `testRacConnectivity()` - POSTs test payload to `/v2/rates-at-checkout` |
 | Fulfillment sync, environment, or API key | `manageWebhookSubscriptions()` - Subscribe if enabled, unsubscribe if disabled |
 
-Results are communicated to the admin via `$messageManager->addSuccessMessage()` / `addErrorMessage()`.
+**Important:** The observer calls `ReinitableConfigInterface::reinit()` at the start of `execute()` to ensure it reads freshly saved config values. Without this, Magento's in-memory ScopeConfig cache returns stale values during the save process.
+
+Results are communicated to the admin via `$messageManager->addSuccessMessage()` / `addErrorMessage()`. Error messages include the actual API error detail for easier debugging.
 
 ---
 
@@ -1045,6 +1057,20 @@ Defined in `etc/extension_attributes.xml`:
     <arguments>
         <argument name="curlFactory" xsi:type="object">Magento\Framework\HTTP\Client\CurlFactory</argument>
         <argument name="logger" xsi:type="object">Psr\Log\LoggerInterface</argument>
+    </arguments>
+</type>
+```
+
+**BobGo Carrier Arguments:**
+
+> **Important:** The custom constructor params use unique names (e.g., `$httpRequest` not `$request`) to avoid Magento's parent class DI argument name collision. Magento inherits DI argument mappings by name from parent classes, and common names like `request` can cause type mismatches.
+
+```xml
+<type name="BobGroup\BobGo\Model\Carrier\BobGo">
+    <arguments>
+        <argument name="httpRequest" xsi:type="object">Magento\Framework\App\Request\Http</argument>
+        <argument name="apiClient" xsi:type="object">BobGroup\BobGo\Api\BobGoApiClient</argument>
+        <argument name="apiConfig" xsi:type="object">BobGroup\BobGo\Model\Config\ApiConfig</argument>
     </arguments>
 </type>
 ```
