@@ -4,8 +4,12 @@ declare(strict_types=1);
 namespace BobGroup\BobGo\Service;
 
 use BobGroup\BobGo\Api\OrderMapperInterface;
+use Magento\Catalog\Api\ProductRepositoryInterface;
+use Magento\Framework\Exception\NoSuchEntityException;
+use Magento\Framework\UrlInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\Data\OrderItemInterface;
+use Magento\Store\Model\StoreManagerInterface;
 
 /**
  * Transforms Magento orders into Bob Go API payload format.
@@ -16,16 +20,19 @@ use Magento\Sales\Api\Data\OrderItemInterface;
  */
 class OrderMapper implements OrderMapperInterface
 {
-    /**
-     * @var array<string,string>
-     */
-    private const STATUS_MAP = [
-        'canceled' => 'Cancelled',
-        'complete' => 'Completed',
-        'closed'   => 'Closed',
-        'holded'   => 'On Hold',
-    ];
+    /** @var ProductRepositoryInterface */
+    private $productRepository;
 
+    /** @var StoreManagerInterface */
+    private $storeManager;
+
+    public function __construct(
+        ProductRepositoryInterface $productRepository,
+        StoreManagerInterface $storeManager
+    ) {
+        $this->productRepository = $productRepository;
+        $this->storeManager = $storeManager;
+    }
     /**
      * @param OrderInterface $order
      * @return array<string,mixed>
@@ -45,7 +52,7 @@ class OrderMapper implements OrderMapperInterface
 
         $bobgoOrderId = $order->getData('bobgo_order_id');
         if ($bobgoOrderId) {
-            $payload['id'] = $bobgoOrderId;
+            $payload['id'] = (int) $bobgoOrderId;
         }
 
         return $payload;
@@ -57,38 +64,22 @@ class OrderMapper implements OrderMapperInterface
      */
     private function buildPayload(OrderInterface $order): array
     {
-        $payload = [
-            'ChannelRefID'                     => (string) $order->getEntityId(),
-            'ChannelOrderNumber'               => $order->getIncrementId(),
-            'TotalPrice'                       => (float) $order->getGrandTotal(),
-            'TotalTax'                         => (float) $order->getData('tax_amount'),
-            'TotalDiscount'                    => abs((float) $order->getDiscountAmount()),
-            'Currency'                         => $order->getOrderCurrencyCode(),
-            'Status'                           => $this->mapStatus($order->getStatus()),
-            'PaymentStatus'                    => $this->mapPaymentStatus($order),
-            'BuyerSelectedShippingMethodCodes' => [$order->getShippingMethod()],
-            'BuyerSelectedShippingCost'        => (float) $order->getData('shipping_incl_tax'),
-            'BuyerSelectedShippingMethod'      => $order->getShippingDescription(),
-            'DatePlacedOnChannel'              => $order->getCreatedAt(),
-            'LastModifiedOnChannel'            => $order->getUpdatedAt(),
-            'DeliveryAddress'                  => $this->mapShippingAddress($order),
-            'Items'                            => $this->mapItems($order),
+        $billingAddress = $order->getBillingAddress();
+
+        return [
+            'channel_order_number'              => $order->getIncrementId(),
+            'customer_name'                     => $order->getCustomerFirstname() ?: ($billingAddress ? $billingAddress->getFirstname() : ''),
+            'customer_surname'                  => $order->getCustomerLastname() ?: ($billingAddress ? $billingAddress->getLastname() : ''),
+            'customer_email'                    => $order->getCustomerEmail() ?: '',
+            'customer_phone'                    => $billingAddress ? ($billingAddress->getTelephone() ?: '') : '',
+            'currency'                          => $order->getOrderCurrencyCode(),
+            'buyer_selected_service_code'       => $order->getShippingMethod(),
+            'buyer_selected_shipping_cost'      => (float) $order->getData('shipping_incl_tax'),
+            'buyer_selected_shipping_method'    => $order->getShippingDescription(),
+            'payment_status'                    => $this->mapPaymentStatus($order),
+            'delivery_address'                  => $this->mapShippingAddress($order),
+            'order_items'                       => $this->mapItems($order),
         ];
-
-        return $payload;
-    }
-
-    /**
-     * @param string|null $status
-     * @return string
-     */
-    private function mapStatus(?string $status): string
-    {
-        if ($status === null) {
-            return 'Active';
-        }
-
-        return self::STATUS_MAP[$status] ?? 'Active';
     }
 
     /**
@@ -98,17 +89,12 @@ class OrderMapper implements OrderMapperInterface
     private function mapPaymentStatus(OrderInterface $order): string
     {
         $totalDue = (float) $order->getTotalDue();
-        $grandTotal = (float) $order->getGrandTotal();
 
         if ($totalDue <= 0.0) {
-            return 'Paid';
+            return 'paid';
         }
 
-        if (abs($totalDue - $grandTotal) < 0.01) {
-            return 'Unpaid';
-        }
-
-        return 'Partially Paid';
+        return 'unpaid';
     }
 
     /**
@@ -126,13 +112,13 @@ class OrderMapper implements OrderMapperInterface
         $streetAddress = is_array($street) ? implode(', ', $street) : (string) $street;
 
         return [
-            'StreetAddress' => $streetAddress,
-            'LocalArea'     => $address->getCity(),
-            'City'          => $address->getCity(),
-            'Code'          => $address->getPostcode(),
-            'Zone'          => $address->getRegion(),
-            'Country'       => $address->getCountryId(),
-            'Company'       => $address->getCompany(),
+            'company'        => $address->getCompany() ?: '',
+            'street_address' => $streetAddress,
+            'local_area'     => $address->getCity(),
+            'city'           => $address->getCity(),
+            'zone'           => $address->getRegion(),
+            'country'        => $address->getCountryId(),
+            'code'           => $address->getPostcode(),
         ];
     }
 
@@ -162,13 +148,42 @@ class OrderMapper implements OrderMapperInterface
      */
     private function mapItem(OrderItemInterface $item): array
     {
-        return [
-            'ChannelRefID' => (string) $item->getItemId(),
-            'SKU'          => $item->getSku(),
-            'Description'  => $item->getName(),
-            'UnitPrice'    => (float) $item->getPriceInclTax(),
-            'Qty'          => (int) $item->getQtyOrdered(),
-            'UnitWeightKg' => (float) $item->getWeight(),
+        $mapped = [
+            'description'       => $item->getName() ?: '',
+            'sku'               => $item->getSku(),
+            'unit_price'        => (float) $item->getPriceInclTax(),
+            'qty'               => (int) $item->getQtyOrdered(),
+            'unit_weight_kg'    => (float) $item->getWeight(),
+            'channel_image_url' => $this->getProductImageUrl($item),
         ];
+
+        $bobgoItemId = $item->getData('bobgo_order_item_id');
+        if ($bobgoItemId !== null && $bobgoItemId !== '') {
+            $mapped['id'] = (int) $bobgoItemId;
+        }
+
+        return $mapped;
+    }
+
+    /**
+     * @param OrderItemInterface $item
+     * @return string|null
+     */
+    private function getProductImageUrl(OrderItemInterface $item): ?string
+    {
+        try {
+            $product = $this->productRepository->getById((int) $item->getProductId());
+            $imagePath = $product->getImage();
+
+            if (!$imagePath || $imagePath === 'no_selection') {
+                return null;
+            }
+
+            $mediaBaseUrl = $this->storeManager->getStore()->getBaseUrl(UrlInterface::URL_TYPE_MEDIA);
+
+            return rtrim($mediaBaseUrl, '/') . '/catalog/product' . $imagePath;
+        } catch (NoSuchEntityException $e) {
+            return null;
+        }
     }
 }

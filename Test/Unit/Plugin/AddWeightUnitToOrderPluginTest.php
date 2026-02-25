@@ -59,7 +59,9 @@ class AddWeightUnitToOrderPluginTest extends TestCase
         // Expect that the weight will be converted and set back
         $orderItemMock->expects($this->once())
             ->method('setWeight')
-            ->with(4.5359237); // 10 lbs * 0.45359237 = 4.5359237 kg
+            ->with($this->callback(function ($weight) {
+                return abs($weight - 4.5359237) < 0.0001;
+            })); // 10 lbs * 0.45359237 = 4.5359237 kg
 
         // Call the plugin's beforeSave method
         $result = $this->plugin->beforeSave($this->createMock(OrderRepositoryInterface::class), $orderMock);

@@ -100,16 +100,25 @@ class BobGoApiClient
 
     /**
      * @param string $endpoint
+     * @param array<string,mixed> $payload
      * @return array<string,mixed>
      * @throws BobGoApiException
      */
-    public function delete(string $endpoint): array
+    public function delete(string $endpoint, array $payload = []): array
     {
         $url = $this->buildUrl($endpoint);
         $curl = $this->createCurl();
 
         $curl->setOption(CURLOPT_CUSTOMREQUEST, 'DELETE');
-        $curl->get($url);
+        if (!empty($payload)) {
+            $payloadJson = json_encode($payload);
+            if ($payloadJson === false) {
+                throw new BobGoApiException('Failed to encode request payload to JSON', 0, '', $endpoint);
+            }
+            $curl->post($url, $payloadJson);
+        } else {
+            $curl->get($url);
+        }
         return $this->handleResponse($curl, $endpoint);
     }
 

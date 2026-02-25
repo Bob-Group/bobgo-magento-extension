@@ -20,7 +20,13 @@ use Psr\Log\LoggerInterface;
  *   Includes idempotency checks to prevent duplicate shipments.
  * - Tracking updates: Adds new tracking numbers to the latest existing shipment.
  *
- * Called by both the webhook receiver (real-time) and cron service (polling fallback).
+ * Bob Go payload format (fulfillment/created):
+ *   - channel_order_number: Magento increment_id (used for order lookup)
+ *   - method_reference: tracking number (e.g. "UASDJ9LB")
+ *   - order_items[].sku: item SKU (matched to Magento order items)
+ *   - order_items[].fulfilled_qty: quantity fulfilled
+ *
+ * Called by webhook controllers (real-time) and cron service (polling fallback).
  */
 class FulfillmentService
 {
@@ -85,27 +91,27 @@ class FulfillmentService
     }
 
     /**
-     * Process a fulfillment from Bob Go - creates a shipment in Magento
+     * Process a fulfillment from Bob Go - creates a shipment in Magento.
      *
      * @param array<string,mixed> $data Fulfillment data from Bob Go
      */
     public function processFulfillment(array $data): void
     {
-        $channelRefId = $data['channel_ref_id'] ?? null;
-        $fulfillmentId = $data['fulfillment_id'] ?? null;
-        $trackingNumbers = $data['tracking_numbers'] ?? [];
-        $lineItems = $data['line_items'] ?? [];
+        $channelOrderNumber = $data['channel_order_number'] ?? null;
+        $fulfillmentId = $data['id'] ?? null;
+        $trackingNumber = $data['method_reference'] ?? '';
+        $orderItems = $data['order_items'] ?? [];
 
-        if ($channelRefId === null) {
-            $this->logger->error('Bob Go fulfillment missing channel_ref_id', ['data' => $data]);
+        if ($channelOrderNumber === null || $channelOrderNumber === '') {
+            $this->logger->error('Bob Go fulfillment missing channel_order_number', ['data' => $data]);
             return;
         }
 
         try {
-            $order = $this->findOrderByEntityId((int) $channelRefId);
+            $order = $this->findOrderByIncrementId((string) $channelOrderNumber);
         } catch (\Exception $e) {
             $this->logger->error('Bob Go fulfillment: order not found', [
-                'channel_ref_id' => $channelRefId,
+                'channel_order_number' => $channelOrderNumber,
                 'error' => $e->getMessage(),
             ]);
             return;
@@ -121,24 +127,25 @@ class FulfillmentService
         }
 
         // Idempotency check - don't create duplicate shipments
-        if ($this->hasExistingFulfillment($order, $trackingNumbers)) {
-            $this->logger->info('Bob Go fulfillment: shipment already exists', [
+        if ($trackingNumber !== '' && $this->hasExistingTrackingNumber($order, $trackingNumber)) {
+            $this->logger->info('Bob Go fulfillment: shipment already exists for tracking number', [
                 'order_id' => $order->getEntityId(),
                 'fulfillment_id' => $fulfillmentId,
+                'tracking_number' => $trackingNumber,
             ]);
             return;
         }
 
         // Build items array for partial fulfillments
-        $items = $this->buildShipmentItems($order, $lineItems);
+        $items = $this->buildShipmentItems($order, $orderItems);
 
-        // Build tracking entries
+        // Build tracking entry
         $tracks = [];
-        foreach ($trackingNumbers as $tracking) {
+        if ($trackingNumber !== '') {
             $track = $this->trackCreationFactory->create();
-            $track->setTrackNumber($tracking['number'] ?? '');
+            $track->setTrackNumber($trackingNumber);
             $track->setCarrierCode('bobgo');
-            $track->setTitle($tracking['carrier'] ?? 'Bob Go');
+            $track->setTitle('Bob Go');
             $tracks[] = $track;
         }
 
@@ -155,7 +162,9 @@ class FulfillmentService
 
             $this->logger->info('Bob Go fulfillment: shipment created', [
                 'order_id' => $order->getEntityId(),
+                'increment_id' => $channelOrderNumber,
                 'fulfillment_id' => $fulfillmentId,
+                'tracking_number' => $trackingNumber,
             ]);
         } catch (\Exception $e) {
             $this->logger->error('Bob Go fulfillment: failed to create shipment', [
@@ -167,25 +176,39 @@ class FulfillmentService
     }
 
     /**
-     * Process a tracking update - updates tracking info on existing shipments
+     * Process a tracking update from Bob Go.
+     *
+     * The tracking/updated payload contains status changes for an existing shipment.
+     * Key fields: shipment_tracking_reference, channel_order_number, status,
+     * status_friendly, courier_name, shipment.tracking_url.
+     *
+     * This method ensures the tracking number exists on the shipment and adds
+     * an order comment with the latest tracking status.
      *
      * @param array<string,mixed> $data Tracking update data from Bob Go
      */
     public function processTrackingUpdate(array $data): void
     {
-        $channelRefId = $data['channel_ref_id'] ?? null;
-        $trackingNumbers = $data['tracking_numbers'] ?? [];
+        $channelOrderNumber = $data['channel_order_number'] ?? null;
+        $trackingNumber = $data['shipment_tracking_reference'] ?? ($data['id'] ?? '');
+        $statusFriendly = $data['status_friendly'] ?? ($data['status'] ?? '');
+        $courierName = $data['courier_name'] ?? 'Bob Go';
 
-        if ($channelRefId === null) {
-            $this->logger->error('Bob Go tracking update missing channel_ref_id', ['data' => $data]);
+        if ($channelOrderNumber === null || $channelOrderNumber === '') {
+            $this->logger->error('Bob Go tracking update missing channel_order_number', ['data' => $data]);
+            return;
+        }
+
+        if ($trackingNumber === '') {
+            $this->logger->info('Bob Go tracking update: no tracking reference provided');
             return;
         }
 
         try {
-            $order = $this->findOrderByEntityId((int) $channelRefId);
+            $order = $this->findOrderByIncrementId((string) $channelOrderNumber);
         } catch (\Exception $e) {
             $this->logger->error('Bob Go tracking update: order not found', [
-                'channel_ref_id' => $channelRefId,
+                'channel_order_number' => $channelOrderNumber,
                 'error' => $e->getMessage(),
             ]);
             return;
@@ -203,69 +226,85 @@ class FulfillmentService
         /** @var \Magento\Sales\Model\Order\Shipment $shipment */
         $shipment = $shipments->getLastItem();
 
-        // Collect existing tracking numbers to avoid duplicates
-        $existingNumbers = [];
+        // Ensure tracking number exists on shipment
+        $trackExists = false;
         foreach ($shipment->getAllTracks() as $existingTrack) {
-            $existingNumbers[] = $existingTrack->getTrackNumber();
+            if ($existingTrack->getTrackNumber() === (string) $trackingNumber) {
+                $trackExists = true;
+                break;
+            }
         }
 
-        $tracksAdded = false;
-        foreach ($trackingNumbers as $tracking) {
-            $number = $tracking['number'] ?? '';
-            if ($number === '' || in_array($number, $existingNumbers, true)) {
-                continue;
-            }
-
-            try {
+        try {
+            if (!$trackExists) {
                 /** @var \Magento\Sales\Model\Order\Shipment\Track $trackModel */
                 $trackModel = $this->trackFactory->create();
-                $trackModel->setTrackNumber($number);
+                $trackModel->setTrackNumber((string) $trackingNumber);
                 $trackModel->setCarrierCode('bobgo');
-                $trackModel->setTitle($tracking['carrier'] ?? 'Bob Go');
+                $trackModel->setTitle($courierName);
                 $shipment->addTrack($trackModel);
-                $tracksAdded = true;
-            } catch (\Exception $e) {
-                $this->logger->error('Bob Go tracking update: failed to add track', [
-                    'order_id' => $order->getEntityId(),
-                    'tracking_number' => $number,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
-        if ($tracksAdded) {
-            try {
                 $shipment->save();
-                $this->logger->info('Bob Go tracking update: tracks updated', [
+
+                $this->logger->info('Bob Go tracking update: track added', [
                     'order_id' => $order->getEntityId(),
-                ]);
-            } catch (\Exception $e) {
-                $this->logger->error('Bob Go tracking update: failed to save shipment', [
-                    'order_id' => $order->getEntityId(),
-                    'error' => $e->getMessage(),
+                    'tracking_number' => $trackingNumber,
                 ]);
             }
+
+            // Add order comment with tracking status
+            if ($statusFriendly !== '') {
+                $comment = sprintf('Bob Go tracking update: %s (ref: %s)', $statusFriendly, $trackingNumber);
+                $order->addCommentToStatusHistory($comment);
+                $order->save();
+
+                $this->logger->info('Bob Go tracking update processed', [
+                    'order_id' => $order->getEntityId(),
+                    'tracking_number' => $trackingNumber,
+                    'status' => $statusFriendly,
+                ]);
+            }
+        } catch (\Exception $e) {
+            $this->logger->error('Bob Go tracking update: failed to process', [
+                'order_id' => $order->getEntityId(),
+                'tracking_number' => $trackingNumber,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
     /**
-     * @param int $entityId
+     * Find a Magento order by its increment_id (the channel_order_number in Bob Go).
+     *
+     * @param string $incrementId
      * @return \Magento\Sales\Api\Data\OrderInterface|\Magento\Sales\Model\Order
      * @throws \Magento\Framework\Exception\NoSuchEntityException
      */
-    private function findOrderByEntityId(int $entityId): \Magento\Sales\Api\Data\OrderInterface
+    private function findOrderByIncrementId(string $incrementId): \Magento\Sales\Api\Data\OrderInterface
     {
-        return $this->orderRepository->get($entityId);
+        $searchCriteria = $this->searchCriteriaBuilder
+            ->addFilter('increment_id', $incrementId)
+            ->create();
+
+        $orderList = $this->orderRepository->getList($searchCriteria);
+        $orders = $orderList->getItems();
+
+        if (empty($orders)) {
+            throw new \Magento\Framework\Exception\NoSuchEntityException(
+                __('No order found with increment_id: %1', $incrementId)
+            );
+        }
+
+        return reset($orders);
     }
 
     /**
-     * Check if a shipment with the given tracking numbers already exists on the order
+     * Check if a shipment with the given tracking number already exists on the order.
      *
      * @param \Magento\Sales\Api\Data\OrderInterface $order
-     * @param array<int,array<string,string>> $trackingNumbers
+     * @param string $trackingNumber
      * @return bool
      */
-    private function hasExistingFulfillment(\Magento\Sales\Api\Data\OrderInterface $order, array $trackingNumbers): bool
+    private function hasExistingTrackingNumber(\Magento\Sales\Api\Data\OrderInterface $order, string $trackingNumber): bool
     {
         /** @var \Magento\Sales\Model\Order $order */
         $shipments = $order->getShipmentsCollection();
@@ -273,21 +312,10 @@ class FulfillmentService
             return false;
         }
 
-        $incomingNumbers = [];
-        foreach ($trackingNumbers as $tracking) {
-            if (!empty($tracking['number'])) {
-                $incomingNumbers[] = $tracking['number'];
-            }
-        }
-
-        if (empty($incomingNumbers)) {
-            return false;
-        }
-
         foreach ($shipments as $shipment) {
             /** @var \Magento\Sales\Model\Order\Shipment $shipment */
             foreach ($shipment->getAllTracks() as $track) {
-                if (in_array($track->getTrackNumber(), $incomingNumbers, true)) {
+                if ($track->getTrackNumber() === $trackingNumber) {
                     return true;
                 }
             }
@@ -297,26 +325,27 @@ class FulfillmentService
     }
 
     /**
-     * Build shipment items array from fulfillment line items.
-     * Returns empty array for full fulfillment (ShipOrderInterface ships all when items is empty).
+     * Build shipment items array from Bob Go fulfillment order_items.
+     * Matches items by SKU. Returns empty array for full fulfillment
+     * (ShipOrderInterface ships all when items is empty).
      *
      * @param \Magento\Sales\Api\Data\OrderInterface $order
-     * @param array<int,array<string,mixed>> $lineItems
+     * @param array<int,array<string,mixed>> $orderItems Bob Go order_items with sku/fulfilled_qty
      * @return array<\Magento\Sales\Api\Data\ShipmentItemCreationInterface>
      */
-    private function buildShipmentItems(\Magento\Sales\Api\Data\OrderInterface $order, array $lineItems): array
+    private function buildShipmentItems(\Magento\Sales\Api\Data\OrderInterface $order, array $orderItems): array
     {
-        if (empty($lineItems)) {
+        if (empty($orderItems)) {
             return [];
         }
 
-        // Build a map of channel_ref_id => quantity from fulfillment data
+        // Build a map of SKU => fulfilled_qty from Bob Go data
         $fulfillmentQtyMap = [];
-        foreach ($lineItems as $lineItem) {
-            $itemRefId = $lineItem['channel_ref_id'] ?? null;
-            $qty = $lineItem['quantity'] ?? 0;
-            if ($itemRefId !== null) {
-                $fulfillmentQtyMap[(string) $itemRefId] = (int) $qty;
+        foreach ($orderItems as $item) {
+            $sku = $item['sku'] ?? '';
+            $qty = $item['fulfilled_qty'] ?? $item['qty'] ?? 0;
+            if ($sku !== '') {
+                $fulfillmentQtyMap[$sku] = (int) $qty;
             }
         }
 
@@ -324,11 +353,11 @@ class FulfillmentService
         /** @var \Magento\Sales\Model\Order $order */
         foreach ($order->getAllItems() as $orderItem) {
             /** @var \Magento\Sales\Model\Order\Item $orderItem */
-            $itemId = (string) $orderItem->getItemId();
-            if (isset($fulfillmentQtyMap[$itemId])) {
+            $sku = $orderItem->getSku();
+            if (isset($fulfillmentQtyMap[$sku])) {
                 $shipmentItem = $this->itemCreationFactory->create();
                 $shipmentItem->setOrderItemId((int) $orderItem->getItemId());
-                $shipmentItem->setQty((float) $fulfillmentQtyMap[$itemId]);
+                $shipmentItem->setQty((float) $fulfillmentQtyMap[$sku]);
                 $items[] = $shipmentItem;
             }
         }

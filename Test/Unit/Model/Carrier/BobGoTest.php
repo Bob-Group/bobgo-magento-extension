@@ -256,12 +256,15 @@ class BobGoTest extends TestCase
         $resultMock = $this->createMock(\Magento\Shipping\Model\Rate\Result::class);
         $this->resultFactoryMock->method('create')->willReturn($resultMock);
 
+        $methodMock = $this->createMock(\Magento\Quote\Model\Quote\Address\RateResult\Method::class);
+        $this->methodFactoryMock->method('create')->willReturn($methodMock);
+
         // Capture the payload sent to apiClient
         $capturedPayload = null;
         $this->apiClientMock->method('post')
             ->willReturnCallback(function ($endpoint, $payload) use (&$capturedPayload) {
                 $capturedPayload = $payload;
-                return ['rates' => []];
+                return ['rates' => [['service_name' => 'Standard', 'service_code' => 'STD', 'total_price' => 100.00, 'min_delivery_date' => '', 'max_delivery_date' => '']]];
             });
 
         $rateRequest = new RateRequest();
@@ -274,10 +277,11 @@ class BobGoTest extends TestCase
 
         $this->bobGo->collectRates($rateRequest);
 
-        // Verify the payload does NOT contain 'identifier'
-        if ($capturedPayload !== null) {
-            $this->assertArrayNotHasKey('identifier', $capturedPayload);
-            $this->assertArrayHasKey('rate', $capturedPayload);
-        }
+        // Verify the v2 payload structure does NOT contain 'identifier'
+        $this->assertNotNull($capturedPayload, 'API should have been called with a payload');
+        $this->assertArrayNotHasKey('identifier', $capturedPayload);
+        $this->assertArrayHasKey('collection_address', $capturedPayload);
+        $this->assertArrayHasKey('delivery_address', $capturedPayload);
+        $this->assertArrayHasKey('items', $capturedPayload);
     }
 }

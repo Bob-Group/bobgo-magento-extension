@@ -117,7 +117,7 @@ class ApiConfig
     }
 
     /**
-     * Check whether fulfillment sync (webhooks + cron polling) is enabled.
+     * Check whether fulfillment sync (webhooks) is enabled.
      *
      * @return bool
      */

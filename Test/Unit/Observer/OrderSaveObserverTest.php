@@ -122,6 +122,34 @@ class OrderSaveObserverTest extends TestCase
         $this->observer->execute($eventObserver);
     }
 
+    public function testExecuteSkipsReentrantCall(): void
+    {
+        $order = $this->createMock(OrderInterface::class);
+        $order->method('getData')
+            ->with('bobgo_order_id')
+            ->willReturn(null);
+
+        $eventObserver = $this->createObserverWithOrder($order);
+
+        $this->apiConfigMock->method('isOrderPushEnabled')->willReturn(true);
+        $this->apiConfigMock->method('isConfigured')->willReturn(true);
+
+        // Simulate pushOrder() saving the order, which re-triggers the observer.
+        // The re-entrant call should be skipped entirely.
+        $this->orderPushServiceMock->expects($this->once())
+            ->method('pushOrder')
+            ->with($order)
+            ->willReturnCallback(function () use ($eventObserver) {
+                // This simulates the nested sales_order_save_after event
+                $this->observer->execute($eventObserver);
+            });
+
+        $this->orderPushServiceMock->expects($this->never())
+            ->method('updateOrder');
+
+        $this->observer->execute($eventObserver);
+    }
+
     public function testExecuteHandlesException(): void
     {
         $eventObserver = $this->createMock(Observer::class);

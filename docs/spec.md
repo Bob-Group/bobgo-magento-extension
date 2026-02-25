@@ -27,18 +27,17 @@
 15. [Plugins](#15-plugins)
 16. [Frontend JavaScript](#16-frontend-javascript)
 17. [Database Schema](#17-database-schema)
-18. [Cron Jobs](#18-cron-jobs)
-19. [Dependency Injection](#19-dependency-injection)
-20. [Admin Configuration UI](#20-admin-configuration-ui)
-21. [Data Flow Diagrams](#21-data-flow-diagrams)
-22. [Error Handling and Logging](#22-error-handling-and-logging)
-23. [Security](#23-security)
-24. [Testing](#24-testing)
-25. [Build and CI/CD](#25-build-and-cicd)
-26. [Version Management](#26-version-management)
-27. [Known Limitations](#27-known-limitations)
-28. [Troubleshooting](#28-troubleshooting)
-29. [File Reference](#29-file-reference)
+18. [Dependency Injection](#18-dependency-injection)
+19. [Admin Configuration UI](#19-admin-configuration-ui)
+20. [Data Flow Diagrams](#20-data-flow-diagrams)
+21. [Error Handling and Logging](#21-error-handling-and-logging)
+22. [Security](#22-security)
+23. [Testing](#23-testing)
+24. [Build and CI/CD](#24-build-and-cicd)
+25. [Version Management](#25-version-management)
+26. [Known Limitations](#26-known-limitations)
+27. [Troubleshooting](#27-troubleshooting)
+28. [File Reference](#28-file-reference)
 
 ---
 
@@ -48,7 +47,7 @@ The Bob Go Shipping Extension integrates Magento 2 stores with the [Bob Go](http
 
 - **Rates at Checkout** - Real-time shipping rate calculation from the Bob Go API displayed during checkout
 - **Order Push** - Automatic synchronization of Magento orders to Bob Go for fulfillment
-- **Fulfillment Sync** - Automatic creation of Magento shipments when orders are fulfilled in Bob Go (via webhooks and cron polling)
+- **Fulfillment Sync** - Automatic creation of Magento shipments when orders are fulfilled in Bob Go (via webhooks)
 - **Tracking Updates** - Shipment tracking number synchronization from Bob Go back to Magento
 - **Suburb Field** - Custom checkout field required for South African shipping address accuracy
 - **Order Tracking Page** - Customer-facing tracking page (currently hidden/disabled)
@@ -158,7 +157,6 @@ BobGroup/BobGo/
 │   │   └── LayoutProcessorPlugin.php  # Injects suburb field into checkout form
 │   └── OrderRepositoryPlugin.php      # Loads/saves bobgo_order_id extension attribute
 ├── Service/
-│   ├── FulfillmentCronService.php     # Cron: polls Bob Go for new fulfillments
 │   ├── FulfillmentService.php         # Creates Magento shipments from Bob Go fulfillments
 │   ├── OrderMapper.php                # Maps Magento orders to Bob Go API payload format
 │   ├── OrderPushService.php           # POST/PATCH orders to Bob Go API
@@ -171,7 +169,6 @@ BobGroup/BobGo/
 │   │   ├── events.xml                 # Admin event: config change observer
 │   │   └── system.xml                 # Admin configuration UI fields
 │   ├── config.xml                     # Default configuration values
-│   ├── crontab.xml                    # Cron job: fulfillment sync every 15 min
 │   ├── db_schema.xml                  # Database: adds bobgo_order_id to sales_order
 │   ├── db_schema_whitelist.json       # Schema whitelist for declarative schema
 │   ├── di.xml                         # Dependency injection: preferences, plugins, arguments
@@ -284,7 +281,6 @@ const ENV_PRODUCTION = 'production';
 │  OrderPushService            → POST/PATCH orders to Bob Go       │
 │  OrderMapper                 → Order → API payload transformation│
 │  FulfillmentService          → Bob Go fulfillment → Magento ship │
-│  FulfillmentCronService      → Polling fallback for fulfillments │
 │  WebhookSubscriptionService  → Subscribe/unsubscribe webhooks    │
 ├──────────────────────────────────────────────────────────────────┤
 │                       Model Layer                                │
@@ -306,7 +302,7 @@ const ENV_PRODUCTION = 'production';
 ### Key Design Decisions
 
 1. **Bearer Token Auth** - API key stored encrypted in Magento config, sent as `Authorization: Bearer {key}` header
-2. **Dual Fulfillment Sync** - Webhooks for real-time + cron polling every 15 minutes as fallback
+2. **Webhook Fulfillment Sync** - Real-time webhooks from Bob Go (Bob Go retries failed deliveries)
 3. **Idempotent Fulfillments** - Duplicate detection via tracking number matching prevents duplicate shipments
 4. **South Africa Only** - `processAdditionalValidation()` restricts rates to `ZA` country code
 5. **Suburb as Extension Attribute** - Custom field on `Magento\Quote\Api\Data\AddressInterface` because Magento doesn't have a native suburb field
@@ -354,7 +350,6 @@ Extends `Magento\Framework\Exception\LocalizedException`. Adds:
 | `rates-at-checkout` | POST | Get shipping rates for cart | `BobGo::uRates()`, `ConfigChangeObserver::testRacConnectivity()` |
 | `orders` | POST | Create new order in Bob Go | `OrderPushService::pushOrder()` |
 | `orders` | PATCH | Update existing order in Bob Go | `OrderPushService::updateOrder()` |
-| `order-fulfillments` | GET | Fetch fulfillments for an order | `FulfillmentCronService::syncFulfillmentsForOrder()` |
 | `webhooks` | GET | List webhook subscriptions | `ConfigChangeObserver::testConnectivity()`, `WebhookSubscriptionService` |
 | `webhooks` | POST | Create webhook subscriptions | `WebhookSubscriptionService::subscribe()` |
 | `webhooks/{id}` | DELETE | Delete a webhook subscription | `WebhookSubscriptionService::unsubscribe()` |
@@ -592,33 +587,7 @@ Store bobgo_order_id on order
 
 ## 9. Fulfillment Sync
 
-Fulfillment sync creates Magento shipments when orders are fulfilled in Bob Go. It works via two mechanisms:
-
-### Mechanism 1: Webhooks (Real-time)
-
-Bob Go sends a POST to `/rest/V1/bobgo/webhook` with the topic `fulfillment/created`. See [Webhook System](#10-webhook-system).
-
-### Mechanism 2: Cron Polling (Fallback)
-
-`FulfillmentCronService` runs every 15 minutes as a safety net.
-
-```
-Cron fires (*/15 * * * *)
-         │
-         ▼
-Check: isFulfillmentSyncEnabled() && isConfigured()
-         │ yes
-         ▼
-Query: orders WHERE state = 'processing' AND bobgo_order_id IS NOT NULL
-         │
-         ▼
-For each order:
-  GET /v2/order-fulfillments?order_id={bobgo_order_id}
-         │
-         ▼
-For each fulfillment:
-  FulfillmentService::processFulfillment($data)
-```
+Fulfillment sync creates Magento shipments when orders are fulfilled in Bob Go. It works via webhooks: Bob Go sends a POST to `/rest/V1/bobgo/webhook` with the topic `fulfillment/created`. See [Webhook System](#10-webhook-system). Bob Go retries failed webhook deliveries, so no cron fallback is needed.
 
 ### FulfillmentService::processFulfillment() (`Service/FulfillmentService.php`)
 
@@ -1002,31 +971,7 @@ Defined in `etc/extension_attributes.xml`:
 
 ---
 
-## 18. Cron Jobs
-
-### bobgo_fulfillment_sync
-
-| | |
-|---|---|
-| **Schedule** | `*/15 * * * *` (every 15 minutes) |
-| **Group** | `default` |
-| **Class** | `BobGroup\BobGo\Service\FulfillmentCronService` |
-| **Method** | `execute()` |
-| **Config file** | `etc/crontab.xml` |
-
-**Prerequisites:**
-- `enable_fulfillment_sync` must be enabled
-- `api_key` must be configured
-
-**Logic:**
-1. Finds all orders in `processing` state with a non-null `bobgo_order_id`
-2. For each order, calls `GET /v2/order-fulfillments?order_id={bobgo_order_id}`
-3. Processes each fulfillment through `FulfillmentService::processFulfillment()`
-4. Sets `channel_ref_id` to the Magento order's `entity_id` if not present in the response
-
----
-
-## 19. Dependency Injection
+## 18. Dependency Injection
 
 ### `etc/di.xml` (Global)
 
@@ -1088,7 +1033,7 @@ Defined in `etc/extension_attributes.xml`:
 
 ---
 
-## 20. Admin Configuration UI
+## 19. Admin Configuration UI
 
 ### Location
 
@@ -1114,7 +1059,7 @@ The module adds a **Suburb** field to **Stores > Configuration > General > Store
 
 ---
 
-## 21. Data Flow Diagrams
+## 20. Data Flow Diagrams
 
 ### Complete Checkout Rate Flow
 
@@ -1165,13 +1110,9 @@ The module adds a **Suburb** field to **Stores > Configuration > General > Store
    → PATCH /v2/orders
 
 3. FULFILLMENT
-   Option A: Webhook POST /rest/V1/bobgo/webhook
+   Webhook POST /rest/V1/bobgo/webhook
    → WebhookReceiver → FulfillmentService::processFulfillment()
    → Creates Magento shipment
-
-   Option B: Cron (every 15 min)
-   → FulfillmentCronService → GET /v2/order-fulfillments
-   → FulfillmentService::processFulfillment()
 
 4. TRACKING UPDATE
    Webhook POST /rest/V1/bobgo/webhook (tracking/updated)
@@ -1181,7 +1122,7 @@ The module adds a **Suburb** field to **Stores > Configuration > General > Store
 
 ---
 
-## 22. Error Handling and Logging
+## 21. Error Handling and Logging
 
 ### Logging Strategy
 
@@ -1192,7 +1133,6 @@ All components log to Magento's standard logger (`Psr\Log\LoggerInterface`), whi
 | BobGoApiClient | `Bob Go API error` | ERROR | endpoint, status_code, response, masked api_key |
 | OrderPushService | `Bob Go: Order pushed/failed` | INFO/ERROR | order_id, increment_id, bobgo_order_id |
 | FulfillmentService | `Bob Go fulfillment:` | INFO/ERROR | order_id, fulfillment_id, error |
-| FulfillmentCronService | `Bob Go fulfillment cron:` | INFO/ERROR/WARNING | order_count, order_id, bobgo_order_id |
 | ConfigChangeObserver | `Bob Go connectivity/RAC/webhook` | ERROR | error message |
 | WebhookReceiver | `Bob Go webhook` | INFO/ERROR/WARNING | topic, error |
 | OrderSaveObserver | `Bob Go: OrderSaveObserver` | ERROR | error message |
@@ -1201,13 +1141,13 @@ All components log to Magento's standard logger (`Psr\Log\LoggerInterface`), whi
 ### Error Recovery Patterns
 
 1. **Non-blocking observers** - `OrderSaveObserver` wraps everything in try/catch. A Bob Go API failure will never prevent an order from being saved.
-2. **Idempotent fulfillments** - `hasExistingFulfillment()` checks tracking numbers to prevent duplicate shipments if the same webhook fires twice or cron processes an already-handled fulfillment.
+2. **Idempotent fulfillments** - `hasExistingFulfillment()` checks tracking numbers to prevent duplicate shipments if the same webhook fires twice.
 3. **Graceful API failures** - `BobGo::uRates()` returns `null` on API error; `_getRates()` logs and returns empty result. The customer sees no rates rather than an error page.
 4. **Webhook resilience** - Unknown topics are logged as warnings and return `'unknown topic'`. Processing failures return `'error processing webhook'` but don't throw.
 
 ---
 
-## 23. Security
+## 22. Security
 
 ### API Key Storage
 
@@ -1245,7 +1185,7 @@ The webhook endpoint at `/rest/V1/bobgo/webhook` is configured with **anonymous 
 
 ---
 
-## 24. Testing
+## 23. Testing
 
 ### Test Framework
 
@@ -1292,7 +1232,6 @@ vendor/bin/phpunit --prepend Test/stubs/autoload-prepend.php \
 | `Observer/ConfigChangeObserverTest.php` | Config change reactions, connectivity tests |
 | `Observer/OrderSaveObserverTest.php` | Order push/update triggering |
 | `Plugin/AddWeightUnitToOrderPluginTest.php` | LBS to KG conversion |
-| `Service/FulfillmentCronServiceTest.php` | Cron polling logic |
 | `Service/FulfillmentServiceTest.php` | Shipment creation, tracking updates, idempotency |
 | `Service/OrderMapperTest.php` | Order-to-payload mapping, status mapping |
 | `Service/OrderPushServiceTest.php` | Order POST/PATCH, bobgo_order_id storage |
@@ -1306,7 +1245,7 @@ vendor/bin/phpunit --prepend Test/stubs/autoload-prepend.php \
 
 ---
 
-## 25. Build and CI/CD
+## 24. Build and CI/CD
 
 ### Build Script: `make-zip.sh`
 
@@ -1360,7 +1299,7 @@ Triggered on git tag creation:
 
 ---
 
-## 26. Version Management
+## 25. Version Management
 
 ### Source of Truth
 
@@ -1387,7 +1326,7 @@ This means **every commit automatically bumps the patch version**.
 
 ---
 
-## 27. Known Limitations
+## 26. Known Limitations
 
 1. **South Africa Only** - The `processAdditionalValidation()` method rejects all non-ZA countries. To support other countries, this validation must be modified.
 
@@ -1411,7 +1350,7 @@ This means **every commit automatically bumps the patch version**.
 
 ---
 
-## 28. Troubleshooting
+## 27. Troubleshooting
 
 ### Rates Not Showing at Checkout
 
@@ -1436,15 +1375,12 @@ This means **every commit automatically bumps the patch version**.
 1. **Check `enable_fulfillment_sync`** is enabled
 2. **Verify webhooks:** Save config and check for "webhook subscriptions activated" message
 3. **Check webhook URL:** Ensure your store's base URL is publicly accessible (Bob Go needs to POST to it)
-4. **Check cron:** Verify Magento cron is running (`crontab -l` should show Magento cron entries)
-5. **Check order state:** Only `processing` orders with `bobgo_order_id` are polled by cron
-6. **Check logs** for `Bob Go fulfillment:` and `Bob Go fulfillment cron:` entries
+4. **Check logs** for `Bob Go fulfillment:` entries
 
 ### Duplicate Shipments
 
 The extension has idempotency checks (tracking number matching). If duplicates still occur:
-1. Check if the same fulfillment is being sent via both webhook AND cron
-2. Check if fulfillments have different tracking numbers for the same logical shipment
+1. Check if fulfillments have different tracking numbers for the same logical shipment
 
 ### Weight Issues
 
@@ -1454,7 +1390,7 @@ The extension has idempotency checks (tracking number matching). If duplicates s
 
 ---
 
-## 29. File Reference
+## 28. File Reference
 
 ### PHP Classes - Quick Reference
 
@@ -1481,7 +1417,6 @@ The extension has idempotency checks (tracking number matching). If duplicates s
 | `Plugin\AddWeightUnitToOrderPlugin` | LBS→KG weight conversion |
 | `Plugin\Checkout\Block\LayoutProcessorPlugin` | Adds suburb to checkout |
 | `Plugin\OrderRepositoryPlugin` | Manages bobgo_order_id ext attr |
-| `Service\FulfillmentCronService` | Cron: polls for fulfillments |
 | `Service\FulfillmentService` | Creates shipments from fulfillments |
 | `Service\OrderMapper` | Order→API payload transformation |
 | `Service\OrderPushService` | POST/PATCH orders to Bob Go |
@@ -1499,7 +1434,6 @@ The extension has idempotency checks (tracking number matching). If duplicates s
 | `etc/adminhtml/system.xml` | Admin configuration UI |
 | `etc/extension_attributes.xml` | suburb + bobgo_order_id attributes |
 | `etc/db_schema.xml` | Database column: bobgo_order_id |
-| `etc/crontab.xml` | Fulfillment sync cron job |
 | `etc/webapi.xml` | REST webhook endpoint |
 | `etc/acl.xml` | Access control list |
 | `etc/frontend/di.xml` | Frontend checkout plugin |

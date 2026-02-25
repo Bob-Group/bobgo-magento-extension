@@ -4,9 +4,15 @@ declare(strict_types=1);
 namespace BobGroup\BobGo\Test\Unit\Service;
 
 use BobGroup\BobGo\Service\OrderMapper;
+use Magento\Catalog\Api\Data\ProductInterface;
+use Magento\Catalog\Api\ProductRepositoryInterface;
+use Magento\Framework\Exception\NoSuchEntityException;
+use Magento\Framework\UrlInterface;
 use Magento\Sales\Api\Data\OrderAddressInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\Data\OrderItemInterface;
+use Magento\Store\Api\Data\StoreInterface;
+use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
 
 class OrderMapperTest extends TestCase
@@ -16,9 +22,32 @@ class OrderMapperTest extends TestCase
      */
     private $mapper;
 
+    /**
+     * @var ProductRepositoryInterface&\PHPUnit\Framework\MockObject\MockObject
+     */
+    private $productRepository;
+
+    /**
+     * @var StoreManagerInterface&\PHPUnit\Framework\MockObject\MockObject
+     */
+    private $storeManager;
+
     protected function setUp(): void
     {
-        $this->mapper = new OrderMapper();
+        $this->productRepository = $this->createMock(ProductRepositoryInterface::class);
+        $this->storeManager = $this->createMock(StoreManagerInterface::class);
+
+        $store = $this->createMock(StoreInterface::class);
+        $store->method('getBaseUrl')
+            ->with(UrlInterface::URL_TYPE_MEDIA)
+            ->willReturn('https://example.com/media/');
+        $this->storeManager->method('getStore')->willReturn($store);
+
+        // Default: product not found (tests that don't care about images)
+        $this->productRepository->method('getById')
+            ->willThrowException(new NoSuchEntityException());
+
+        $this->mapper = new OrderMapper($this->productRepository, $this->storeManager);
     }
 
     public function testMapOrderToPayload(): void
@@ -53,67 +82,42 @@ class OrderMapperTest extends TestCase
         $order->method('getCreatedAt')->willReturn('2026-01-15 10:00:00');
         $order->method('getUpdatedAt')->willReturn('2026-01-15 10:05:00');
         $order->method('getShippingAddress')->willReturn($address);
+        $order->method('getBillingAddress')->willReturn(null);
+        $order->method('getCustomerFirstname')->willReturn('Test');
+        $order->method('getCustomerLastname')->willReturn('Customer');
+        $order->method('getCustomerEmail')->willReturn('test@example.com');
         $order->method('getItems')->willReturn([$item]);
         $order->method('getData')->willReturnMap([
-            ['tax_amount', 59.99],
             ['shipping_incl_tax', 75.00],
             ['bobgo_order_id', null],
         ]);
 
         $payload = $this->mapper->mapOrderToPayload($order);
 
-        $this->assertSame('100', $payload['ChannelRefID']);
-        $this->assertSame('000000100', $payload['ChannelOrderNumber']);
-        $this->assertSame(399.98, $payload['TotalPrice']);
-        $this->assertSame(59.99, $payload['TotalTax']);
-        $this->assertSame(50.00, $payload['TotalDiscount']);
-        $this->assertSame('ZAR', $payload['Currency']);
-        $this->assertSame('Active', $payload['Status']);
-        $this->assertSame('Paid', $payload['PaymentStatus']);
-        $this->assertSame(['bobgo_standard'], $payload['BuyerSelectedShippingMethodCodes']);
-        $this->assertSame(75.00, $payload['BuyerSelectedShippingCost']);
-        $this->assertSame('Standard Delivery', $payload['BuyerSelectedShippingMethod']);
-        $this->assertSame('2026-01-15 10:00:00', $payload['DatePlacedOnChannel']);
-        $this->assertSame('2026-01-15 10:05:00', $payload['LastModifiedOnChannel']);
+        $this->assertSame('000000100', $payload['channel_order_number']);
+        $this->assertSame('Test', $payload['customer_name']);
+        $this->assertSame('Customer', $payload['customer_surname']);
+        $this->assertSame('test@example.com', $payload['customer_email']);
+        $this->assertSame('ZAR', $payload['currency']);
+        $this->assertSame('paid', $payload['payment_status']);
+        $this->assertSame(75.00, $payload['buyer_selected_shipping_cost']);
+        $this->assertSame('Standard Delivery', $payload['buyer_selected_shipping_method']);
+        $this->assertSame('bobgo_standard', $payload['buyer_selected_service_code']);
 
-        $this->assertSame('123 Test St, Apt 4', $payload['DeliveryAddress']['StreetAddress']);
-        $this->assertSame('Cape Town', $payload['DeliveryAddress']['City']);
-        $this->assertSame('8001', $payload['DeliveryAddress']['Code']);
-        $this->assertSame('Western Cape', $payload['DeliveryAddress']['Zone']);
-        $this->assertSame('ZA', $payload['DeliveryAddress']['Country']);
-        $this->assertSame('Test Co', $payload['DeliveryAddress']['Company']);
+        $this->assertSame('123 Test St, Apt 4', $payload['delivery_address']['street_address']);
+        $this->assertSame('Cape Town', $payload['delivery_address']['city']);
+        $this->assertSame('Cape Town', $payload['delivery_address']['local_area']);
+        $this->assertSame('8001', $payload['delivery_address']['code']);
+        $this->assertSame('Western Cape', $payload['delivery_address']['zone']);
+        $this->assertSame('ZA', $payload['delivery_address']['country']);
+        $this->assertSame('Test Co', $payload['delivery_address']['company']);
 
-        $this->assertCount(1, $payload['Items']);
-        $this->assertSame('42', $payload['Items'][0]['ChannelRefID']);
-        $this->assertSame('TEST-SKU', $payload['Items'][0]['SKU']);
-        $this->assertSame('Test Product', $payload['Items'][0]['Description']);
-        $this->assertSame(199.99, $payload['Items'][0]['UnitPrice']);
-        $this->assertSame(2, $payload['Items'][0]['Qty']);
-        $this->assertSame(1.5, $payload['Items'][0]['UnitWeightKg']);
-    }
-
-    public function testStatusMappingCanceled(): void
-    {
-        $order = $this->createOrderMock(['status' => 'canceled']);
-        $payload = $this->mapper->mapOrderToPayload($order);
-
-        $this->assertSame('Cancelled', $payload['Status']);
-    }
-
-    public function testStatusMappingComplete(): void
-    {
-        $order = $this->createOrderMock(['status' => 'complete']);
-        $payload = $this->mapper->mapOrderToPayload($order);
-
-        $this->assertSame('Completed', $payload['Status']);
-    }
-
-    public function testStatusMappingDefault(): void
-    {
-        $order = $this->createOrderMock(['status' => 'some_unknown_status']);
-        $payload = $this->mapper->mapOrderToPayload($order);
-
-        $this->assertSame('Active', $payload['Status']);
+        $this->assertCount(1, $payload['order_items']);
+        $this->assertSame('TEST-SKU', $payload['order_items'][0]['sku']);
+        $this->assertSame('Test Product', $payload['order_items'][0]['description']);
+        $this->assertSame(199.99, $payload['order_items'][0]['unit_price']);
+        $this->assertSame(2, $payload['order_items'][0]['qty']);
+        $this->assertSame(1.5, $payload['order_items'][0]['unit_weight_kg']);
     }
 
     public function testPaymentStatusPaid(): void
@@ -121,7 +125,7 @@ class OrderMapperTest extends TestCase
         $order = $this->createOrderMock(['totalDue' => 0.0, 'grandTotal' => 100.00]);
         $payload = $this->mapper->mapOrderToPayload($order);
 
-        $this->assertSame('Paid', $payload['PaymentStatus']);
+        $this->assertSame('paid', $payload['payment_status']);
     }
 
     public function testPaymentStatusUnpaid(): void
@@ -129,15 +133,15 @@ class OrderMapperTest extends TestCase
         $order = $this->createOrderMock(['totalDue' => 100.00, 'grandTotal' => 100.00]);
         $payload = $this->mapper->mapOrderToPayload($order);
 
-        $this->assertSame('Unpaid', $payload['PaymentStatus']);
+        $this->assertSame('unpaid', $payload['payment_status']);
     }
 
-    public function testPaymentStatusPartiallyPaid(): void
+    public function testPaymentStatusPartialDueIsUnpaid(): void
     {
         $order = $this->createOrderMock(['totalDue' => 50.00, 'grandTotal' => 100.00]);
         $payload = $this->mapper->mapOrderToPayload($order);
 
-        $this->assertSame('Partially Paid', $payload['PaymentStatus']);
+        $this->assertSame('unpaid', $payload['payment_status']);
     }
 
     public function testChildItemsFiltered(): void
@@ -157,24 +161,135 @@ class OrderMapperTest extends TestCase
         $order = $this->createOrderMock(['items' => [$parentItem, $childItem]]);
         $payload = $this->mapper->mapOrderToPayload($order);
 
-        $this->assertCount(1, $payload['Items']);
-        $this->assertSame('PARENT-SKU', $payload['Items'][0]['SKU']);
-    }
-
-    public function testDiscountAbsoluteValue(): void
-    {
-        $order = $this->createOrderMock(['discountAmount' => -25.50]);
-        $payload = $this->mapper->mapOrderToPayload($order);
-
-        $this->assertSame(25.50, $payload['TotalDiscount']);
+        $this->assertCount(1, $payload['order_items']);
+        $this->assertSame('PARENT-SKU', $payload['order_items'][0]['sku']);
     }
 
     public function testMapOrderToUpdatePayloadIncludesId(): void
     {
-        $order = $this->createOrderMock(['bobgo_order_id' => 'bg-order-abc-123']);
+        $order = $this->createOrderMock(['bobgo_order_id' => '12345']);
         $payload = $this->mapper->mapOrderToUpdatePayload($order);
 
-        $this->assertSame('bg-order-abc-123', $payload['id']);
+        $this->assertSame(12345, $payload['id']);
+    }
+
+    public function testPayloadIncludesBuyerSelectedServiceCode(): void
+    {
+        $order = $this->createOrderMock(['shippingMethod' => 'bobgo_334_1_1']);
+        $payload = $this->mapper->mapOrderToPayload($order);
+
+        $this->assertSame('bobgo_334_1_1', $payload['buyer_selected_service_code']);
+    }
+
+    public function testItemIncludesChannelImageUrl(): void
+    {
+        $productRepo = $this->createMock(ProductRepositoryInterface::class);
+        $product = $this->createMock(ProductInterface::class);
+        $product->method('getImage')->willReturn('/t/e/test-product.jpg');
+        $productRepo->method('getById')->willReturn($product);
+
+        $mapper = new OrderMapper($productRepo, $this->storeManager);
+
+        $item = $this->createMock(OrderItemInterface::class);
+        $item->method('getParentItemId')->willReturn(null);
+        $item->method('getProductId')->willReturn(42);
+        $item->method('getSku')->willReturn('TEST-SKU');
+        $item->method('getName')->willReturn('Test Product');
+        $item->method('getPriceInclTax')->willReturn(99.99);
+        $item->method('getQtyOrdered')->willReturn(1.0);
+        $item->method('getWeight')->willReturn(1.0);
+
+        $order = $this->createOrderMock(['items' => [$item]]);
+        $payload = $mapper->mapOrderToPayload($order);
+
+        $this->assertSame(
+            'https://example.com/media/catalog/product/t/e/test-product.jpg',
+            $payload['order_items'][0]['channel_image_url']
+        );
+    }
+
+    public function testItemImageUrlNullWhenProductNotFound(): void
+    {
+        $order = $this->createOrderMock();
+        $payload = $this->mapper->mapOrderToPayload($order);
+
+        $this->assertNull($payload['order_items'][0]['channel_image_url']);
+    }
+
+    public function testItemImageUrlNullWhenNoSelection(): void
+    {
+        $productRepo = $this->createMock(ProductRepositoryInterface::class);
+        $product = $this->createMock(ProductInterface::class);
+        $product->method('getImage')->willReturn('no_selection');
+        $productRepo->method('getById')->willReturn($product);
+
+        $mapper = new OrderMapper($productRepo, $this->storeManager);
+
+        $order = $this->createOrderMock();
+        $payload = $mapper->mapOrderToPayload($order);
+
+        $this->assertNull($payload['order_items'][0]['channel_image_url']);
+    }
+
+    public function testMapItemIncludesBobGoItemIdWhenSet(): void
+    {
+        $item = $this->createMock(OrderItemInterface::class);
+        $item->method('getParentItemId')->willReturn(null);
+        $item->method('getItemId')->willReturn(1);
+        $item->method('getSku')->willReturn('SKU-001');
+        $item->method('getName')->willReturn('Product');
+        $item->method('getPriceInclTax')->willReturn(100.00);
+        $item->method('getQtyOrdered')->willReturn(1.0);
+        $item->method('getWeight')->willReturn(1.0);
+        $item->method('getData')
+            ->with('bobgo_order_item_id')
+            ->willReturn('456');
+
+        $order = $this->createOrderMock(['items' => [$item]]);
+        $payload = $this->mapper->mapOrderToPayload($order);
+
+        $this->assertArrayHasKey('id', $payload['order_items'][0]);
+        $this->assertSame(456, $payload['order_items'][0]['id']);
+    }
+
+    public function testMapItemOmitsIdWhenNotSet(): void
+    {
+        $item = $this->createMock(OrderItemInterface::class);
+        $item->method('getParentItemId')->willReturn(null);
+        $item->method('getItemId')->willReturn(1);
+        $item->method('getSku')->willReturn('SKU-001');
+        $item->method('getName')->willReturn('Product');
+        $item->method('getPriceInclTax')->willReturn(100.00);
+        $item->method('getQtyOrdered')->willReturn(1.0);
+        $item->method('getWeight')->willReturn(1.0);
+        $item->method('getData')
+            ->with('bobgo_order_item_id')
+            ->willReturn(null);
+
+        $order = $this->createOrderMock(['items' => [$item]]);
+        $payload = $this->mapper->mapOrderToPayload($order);
+
+        $this->assertArrayNotHasKey('id', $payload['order_items'][0]);
+    }
+
+    public function testMapItemOmitsIdWhenEmptyString(): void
+    {
+        $item = $this->createMock(OrderItemInterface::class);
+        $item->method('getParentItemId')->willReturn(null);
+        $item->method('getItemId')->willReturn(1);
+        $item->method('getSku')->willReturn('SKU-001');
+        $item->method('getName')->willReturn('Product');
+        $item->method('getPriceInclTax')->willReturn(100.00);
+        $item->method('getQtyOrdered')->willReturn(1.0);
+        $item->method('getWeight')->willReturn(1.0);
+        $item->method('getData')
+            ->with('bobgo_order_item_id')
+            ->willReturn('');
+
+        $order = $this->createOrderMock(['items' => [$item]]);
+        $payload = $this->mapper->mapOrderToPayload($order);
+
+        $this->assertArrayNotHasKey('id', $payload['order_items'][0]);
     }
 
     /**
@@ -190,14 +305,12 @@ class OrderMapperTest extends TestCase
             'incrementId' => '000000001',
             'grandTotal' => 100.00,
             'totalDue' => 0.0,
-            'discountAmount' => 0.0,
             'currencyCode' => 'ZAR',
             'status' => 'processing',
             'shippingMethod' => 'bobgo_standard',
             'shippingDescription' => 'Standard',
             'createdAt' => '2026-01-01 00:00:00',
             'updatedAt' => '2026-01-01 00:00:00',
-            'taxAmount' => 0.0,
             'shippingInclTax' => 0.0,
             'bobgo_order_id' => null,
         ];
@@ -222,7 +335,6 @@ class OrderMapperTest extends TestCase
         $order->method('getIncrementId')->willReturn($config['incrementId']);
         $order->method('getGrandTotal')->willReturn($config['grandTotal']);
         $order->method('getTotalDue')->willReturn($config['totalDue']);
-        $order->method('getDiscountAmount')->willReturn($config['discountAmount']);
         $order->method('getOrderCurrencyCode')->willReturn($config['currencyCode']);
         $order->method('getStatus')->willReturn($config['status']);
         $order->method('getShippingMethod')->willReturn($config['shippingMethod']);
@@ -230,9 +342,12 @@ class OrderMapperTest extends TestCase
         $order->method('getCreatedAt')->willReturn($config['createdAt']);
         $order->method('getUpdatedAt')->willReturn($config['updatedAt']);
         $order->method('getShippingAddress')->willReturn(null);
+        $order->method('getBillingAddress')->willReturn(null);
+        $order->method('getCustomerFirstname')->willReturn('Test');
+        $order->method('getCustomerLastname')->willReturn('Customer');
+        $order->method('getCustomerEmail')->willReturn('test@example.com');
         $order->method('getItems')->willReturn($config['items']);
         $order->method('getData')->willReturnMap([
-            ['tax_amount', $config['taxAmount']],
             ['shipping_incl_tax', $config['shippingInclTax']],
             ['bobgo_order_id', $config['bobgo_order_id']],
         ]);

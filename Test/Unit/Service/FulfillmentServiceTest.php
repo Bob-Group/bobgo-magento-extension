@@ -5,8 +5,10 @@ namespace BobGroup\BobGo\Test\Unit\Service;
 
 use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Service\FulfillmentService;
+use Magento\Framework\Api\SearchCriteria;
 use Magento\Framework\Api\SearchCriteriaBuilder;
 use Magento\Sales\Api\Data\OrderInterface;
+use Magento\Sales\Api\Data\OrderSearchResultInterface;
 use Magento\Sales\Api\Data\ShipmentItemCreationInterface;
 use Magento\Sales\Api\Data\ShipmentItemCreationInterfaceFactory;
 use Magento\Sales\Api\Data\ShipmentTrackCreationInterface;
@@ -90,34 +92,49 @@ class FulfillmentServiceTest extends TestCase
         );
     }
 
+    /**
+     * Helper to mock order lookup via findOrderByIncrementId (SearchCriteriaBuilder + getList).
+     *
+     * @param \PHPUnit\Framework\MockObject\MockObject $orderMock
+     */
+    private function mockOrderLookupByIncrementId($orderMock): void
+    {
+        $searchCriteriaMock = $this->createMock(SearchCriteria::class);
+        $this->searchCriteriaBuilderMock->method('addFilter')->willReturnSelf();
+        $this->searchCriteriaBuilderMock->method('create')->willReturn($searchCriteriaMock);
+
+        $searchResultMock = $this->createMock(OrderSearchResultInterface::class);
+        $searchResultMock->method('getItems')->willReturn([$orderMock]);
+        $this->orderRepositoryMock->method('getList')->willReturn($searchResultMock);
+    }
+
     public function testProcessFulfillmentCreatesShipment(): void
     {
         $orderId = 42;
+        $incrementId = '000000042';
         $data = [
-            'channel_ref_id' => (string) $orderId,
-            'fulfillment_id' => 'ful_123',
-            'tracking_numbers' => [
-                ['number' => 'TRACK001', 'carrier' => 'CourierCo'],
-            ],
-            'line_items' => [],
+            'channel_order_number' => $incrementId,
+            'id' => 'ful_123',
+            'method_reference' => 'TRACK001',
+            'order_items' => [],
         ];
 
         $orderMock = $this->createMock(\Magento\Sales\Model\Order::class);
         $orderMock->method('getEntityId')->willReturn($orderId);
         $orderMock->method('canShip')->willReturn(true);
 
-        // No existing shipments
+        // No existing shipments (for idempotency check)
         $shipmentCollectionMock = $this->createMock(ShipmentCollection::class);
         $shipmentCollectionMock->method('getSize')->willReturn(0);
         $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
 
-        $this->orderRepositoryMock->method('get')->with($orderId)->willReturn($orderMock);
+        $this->mockOrderLookupByIncrementId($orderMock);
 
         // Track creation
         $trackMock = $this->createMock(ShipmentTrackCreationInterface::class);
         $trackMock->expects($this->once())->method('setTrackNumber')->with('TRACK001');
         $trackMock->expects($this->once())->method('setCarrierCode')->with('bobgo');
-        $trackMock->expects($this->once())->method('setTitle')->with('CourierCo');
+        $trackMock->expects($this->once())->method('setTitle')->with('Bob Go');
         $this->trackCreationFactoryMock->method('create')->willReturn($trackMock);
 
         $this->apiConfigMock->method('shouldNotifyCustomer')->willReturn(false);
@@ -133,11 +150,12 @@ class FulfillmentServiceTest extends TestCase
     public function testProcessFulfillmentSkipsWhenOrderNotShippable(): void
     {
         $orderId = 42;
+        $incrementId = '000000042';
         $data = [
-            'channel_ref_id' => (string) $orderId,
-            'fulfillment_id' => 'ful_123',
-            'tracking_numbers' => [],
-            'line_items' => [],
+            'channel_order_number' => $incrementId,
+            'id' => 'ful_123',
+            'method_reference' => '',
+            'order_items' => [],
         ];
 
         $orderMock = $this->createMock(\Magento\Sales\Model\Order::class);
@@ -145,7 +163,7 @@ class FulfillmentServiceTest extends TestCase
         $orderMock->method('getState')->willReturn('complete');
         $orderMock->method('canShip')->willReturn(false);
 
-        $this->orderRepositoryMock->method('get')->with($orderId)->willReturn($orderMock);
+        $this->mockOrderLookupByIncrementId($orderMock);
 
         $this->loggerMock->expects($this->once())
             ->method('info')
@@ -165,13 +183,12 @@ class FulfillmentServiceTest extends TestCase
     public function testProcessFulfillmentIdempotency(): void
     {
         $orderId = 42;
+        $incrementId = '000000042';
         $data = [
-            'channel_ref_id' => (string) $orderId,
-            'fulfillment_id' => 'ful_123',
-            'tracking_numbers' => [
-                ['number' => 'TRACK001', 'carrier' => 'CourierCo'],
-            ],
-            'line_items' => [],
+            'channel_order_number' => $incrementId,
+            'id' => 'ful_123',
+            'method_reference' => 'TRACK001',
+            'order_items' => [],
         ];
 
         $orderMock = $this->createMock(\Magento\Sales\Model\Order::class);
@@ -191,7 +208,7 @@ class FulfillmentServiceTest extends TestCase
 
         $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
 
-        $this->orderRepositoryMock->method('get')->with($orderId)->willReturn($orderMock);
+        $this->mockOrderLookupByIncrementId($orderMock);
 
         // shipOrder should never be called (duplicate)
         $this->shipOrderMock->expects($this->never())->method('execute');
@@ -199,7 +216,7 @@ class FulfillmentServiceTest extends TestCase
         $this->loggerMock->expects($this->once())
             ->method('info')
             ->with(
-                'Bob Go fulfillment: shipment already exists',
+                'Bob Go fulfillment: shipment already exists for tracking number',
                 $this->callback(function ($context) use ($orderId) {
                     return $context['order_id'] === $orderId;
                 })
@@ -208,19 +225,19 @@ class FulfillmentServiceTest extends TestCase
         $this->service->processFulfillment($data);
     }
 
-    public function testProcessFulfillmentMissingChannelRefId(): void
+    public function testProcessFulfillmentMissingChannelOrderNumber(): void
     {
         $data = [
-            'fulfillment_id' => 'ful_123',
-            'tracking_numbers' => [],
+            'id' => 'ful_123',
+            'method_reference' => '',
         ];
 
         $this->loggerMock->expects($this->once())
             ->method('error')
-            ->with('Bob Go fulfillment missing channel_ref_id', ['data' => $data]);
+            ->with('Bob Go fulfillment missing channel_order_number', ['data' => $data]);
 
         // Should not attempt to find order
-        $this->orderRepositoryMock->expects($this->never())->method('get');
+        $this->orderRepositoryMock->expects($this->never())->method('getList');
         $this->shipOrderMock->expects($this->never())->method('execute');
 
         $this->service->processFulfillment($data);
@@ -229,11 +246,12 @@ class FulfillmentServiceTest extends TestCase
     public function testProcessTrackingUpdateAddsTrack(): void
     {
         $orderId = 42;
+        $incrementId = '000000042';
         $data = [
-            'channel_ref_id' => (string) $orderId,
-            'tracking_numbers' => [
-                ['number' => 'TRACK002', 'carrier' => 'FastShip'],
-            ],
+            'channel_order_number' => $incrementId,
+            'shipment_tracking_reference' => 'TRACK002',
+            'status_friendly' => 'In Transit',
+            'courier_name' => 'FastShip',
         ];
 
         $orderMock = $this->createMock(\Magento\Sales\Model\Order::class);
@@ -249,7 +267,7 @@ class FulfillmentServiceTest extends TestCase
 
         $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
 
-        $this->orderRepositoryMock->method('get')->with($orderId)->willReturn($orderMock);
+        $this->mockOrderLookupByIncrementId($orderMock);
 
         // Track model creation
         $trackModelMock = $this->createMock(Track::class);
@@ -261,17 +279,24 @@ class FulfillmentServiceTest extends TestCase
         $shipmentMock->expects($this->once())->method('addTrack')->with($trackModelMock);
         $shipmentMock->expects($this->once())->method('save');
 
+        // Expect order comment with status
+        $orderMock->expects($this->once())
+            ->method('addCommentToStatusHistory')
+            ->with('Bob Go tracking update: In Transit (ref: TRACK002)');
+        $orderMock->expects($this->once())->method('save');
+
         $this->service->processTrackingUpdate($data);
     }
 
     public function testProcessTrackingUpdateSkipsDuplicates(): void
     {
         $orderId = 42;
+        $incrementId = '000000042';
         $data = [
-            'channel_ref_id' => (string) $orderId,
-            'tracking_numbers' => [
-                ['number' => 'EXISTING001', 'carrier' => 'CourierCo'],
-            ],
+            'channel_order_number' => $incrementId,
+            'shipment_tracking_reference' => 'EXISTING001',
+            'status_friendly' => 'Delivered',
+            'courier_name' => 'CourierCo',
         ];
 
         $orderMock = $this->createMock(\Magento\Sales\Model\Order::class);
@@ -290,11 +315,17 @@ class FulfillmentServiceTest extends TestCase
 
         $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
 
-        $this->orderRepositoryMock->method('get')->with($orderId)->willReturn($orderMock);
+        $this->mockOrderLookupByIncrementId($orderMock);
 
-        // addTrack and save should never be called (duplicate skipped)
+        // addTrack and save on shipment should never be called (duplicate skipped)
         $shipmentMock->expects($this->never())->method('addTrack');
         $shipmentMock->expects($this->never())->method('save');
+
+        // But order comment with status should still be added
+        $orderMock->expects($this->once())
+            ->method('addCommentToStatusHistory')
+            ->with('Bob Go tracking update: Delivered (ref: EXISTING001)');
+        $orderMock->expects($this->once())->method('save');
 
         $this->service->processTrackingUpdate($data);
     }

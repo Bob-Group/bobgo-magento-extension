@@ -33,6 +33,15 @@ class OrderSaveObserver implements ObserverInterface
      */
     private LoggerInterface $logger;
 
+    /**
+     * Re-entrancy guard. When pushOrder() saves the bobgo_order_id back to the
+     * order, it re-triggers sales_order_save_after. This flag prevents the
+     * observer from firing again during that nested save.
+     *
+     * @var bool
+     */
+    private bool $processing = false;
+
     public function __construct(
         OrderPushService $orderPushService,
         ApiConfig $apiConfig,
@@ -51,6 +60,10 @@ class OrderSaveObserver implements ObserverInterface
      */
     public function execute(Observer $observer): void
     {
+        if ($this->processing) {
+            return;
+        }
+
         try {
             $order = $observer->getEvent()->getOrder();
             if (!$order) {
@@ -63,10 +76,15 @@ class OrderSaveObserver implements ObserverInterface
 
             $bobgoOrderId = $order->getData('bobgo_order_id');
 
-            if (empty($bobgoOrderId)) {
-                $this->orderPushService->pushOrder($order);
-            } else {
-                $this->orderPushService->updateOrder($order);
+            $this->processing = true;
+            try {
+                if (empty($bobgoOrderId)) {
+                    $this->orderPushService->pushOrder($order);
+                } else {
+                    $this->orderPushService->updateOrder($order);
+                }
+            } finally {
+                $this->processing = false;
             }
         } catch (\Exception $e) {
             $this->logger->error('Bob Go: OrderSaveObserver failed', [

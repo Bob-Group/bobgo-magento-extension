@@ -3,5 +3,10 @@
         "column": {
             "bobgo_order_id": true
         }
+    },
+    "sales_order_item": {
+        "column": {
+            "bobgo_order_item_id": true
+        }
     }
 }

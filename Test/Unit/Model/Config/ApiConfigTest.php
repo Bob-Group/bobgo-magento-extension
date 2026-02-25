@@ -5,6 +5,7 @@ namespace BobGroup\BobGo\Test\Unit\Model\Config;
 
 use BobGroup\BobGo\Model\Config\ApiConfig;
 use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Store\Model\ScopeInterface;
 use PHPUnit\Framework\TestCase;
 
@@ -20,16 +21,26 @@ class ApiConfigTest extends TestCase
      */
     private $scopeConfigMock;
 
+    /**
+     * @var \PHPUnit\Framework\MockObject\MockObject
+     */
+    private $encryptorMock;
+
     protected function setUp(): void
     {
         $this->scopeConfigMock = $this->createMock(ScopeConfigInterface::class);
-        $this->apiConfig = new ApiConfig($this->scopeConfigMock);
+        $this->encryptorMock = $this->createMock(EncryptorInterface::class);
+        $this->apiConfig = new ApiConfig($this->scopeConfigMock, $this->encryptorMock);
     }
 
     public function testGetApiKey(): void
     {
         $this->scopeConfigMock->method('getValue')
             ->with(ApiConfig::XML_PATH_API_KEY, ScopeInterface::SCOPE_STORE)
+            ->willReturn('encrypted-api-key-123');
+
+        $this->encryptorMock->method('decrypt')
+            ->with('encrypted-api-key-123')
             ->willReturn('test-api-key-123');
 
         $this->assertSame('test-api-key-123', $this->apiConfig->getApiKey());
@@ -86,6 +97,10 @@ class ApiConfigTest extends TestCase
     {
         $this->scopeConfigMock->method('getValue')
             ->with(ApiConfig::XML_PATH_API_KEY, ScopeInterface::SCOPE_STORE)
+            ->willReturn('encrypted-some-key');
+
+        $this->encryptorMock->method('decrypt')
+            ->with('encrypted-some-key')
             ->willReturn('some-key');
 
         $this->assertTrue($this->apiConfig->isConfigured());

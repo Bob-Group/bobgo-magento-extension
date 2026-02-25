@@ -45,8 +45,13 @@ class WebhookSubscriptionServiceTest extends TestCase
         );
     }
 
-    public function testSubscribePostsWebhookSubscriptions(): void
+    public function testSubscribeCreatesAllMissingSubscriptions(): void
     {
+        // No existing subscriptions
+        $this->apiClientMock->method('get')
+            ->with('webhooks')
+            ->willReturn(['webhook_subscriptions' => []]);
+
         $this->apiClientMock->expects($this->once())
             ->method('post')
             ->with(
@@ -57,7 +62,8 @@ class WebhookSubscriptionServiceTest extends TestCase
                     $this->assertCount(2, $subs);
                     $this->assertEquals('fulfillment/created', $subs[0]['topic']);
                     $this->assertEquals('tracking/updated', $subs[1]['topic']);
-                    $this->assertEquals('https://example.com/rest/V1/bobgo/webhook', $subs[0]['delivery_url']);
+                    $this->assertEquals('https://example.com/bobgo/webhook/receive', $subs[0]['delivery_url']);
+                    $this->assertEquals('https://example.com/bobgo/webhook/receive', $subs[1]['delivery_url']);
                     $this->assertEquals('active', $subs[0]['status']);
                     return true;
                 })
@@ -67,8 +73,62 @@ class WebhookSubscriptionServiceTest extends TestCase
         $this->service->subscribe();
     }
 
+    public function testSubscribeSkipsExistingSubscriptions(): void
+    {
+        $this->apiClientMock->method('get')
+            ->with('webhooks')
+            ->willReturn(['webhook_subscriptions' => [
+                [
+                    'id' => 1,
+                    'topic' => 'fulfillment/created',
+                    'delivery_url' => 'https://example.com/bobgo/webhook/receive',
+                ],
+            ]]);
+
+        $this->apiClientMock->expects($this->once())
+            ->method('post')
+            ->with(
+                'webhooks',
+                $this->callback(function ($payload) {
+                    $subs = $payload['webhook_subscriptions'];
+                    $this->assertCount(1, $subs);
+                    $this->assertEquals('tracking/updated', $subs[0]['topic']);
+                    return true;
+                })
+            )
+            ->willReturn([]);
+
+        $this->service->subscribe();
+    }
+
+    public function testSubscribeSkipsWhenAllExist(): void
+    {
+        $this->apiClientMock->method('get')
+            ->with('webhooks')
+            ->willReturn(['webhook_subscriptions' => [
+                [
+                    'id' => 1,
+                    'topic' => 'fulfillment/created',
+                    'delivery_url' => 'https://example.com/bobgo/webhook/receive',
+                ],
+                [
+                    'id' => 2,
+                    'topic' => 'tracking/updated',
+                    'delivery_url' => 'https://example.com/bobgo/webhook/receive',
+                ],
+            ]]);
+
+        $this->apiClientMock->expects($this->never())->method('post');
+
+        $this->service->subscribe();
+    }
+
     public function testSubscribeThrowsOnApiError(): void
     {
+        $this->apiClientMock->method('get')
+            ->with('webhooks')
+            ->willReturn(['webhook_subscriptions' => []]);
+
         $this->apiClientMock->method('post')
             ->willThrowException(new BobGoApiException('Failed', 500));
 
@@ -76,21 +136,32 @@ class WebhookSubscriptionServiceTest extends TestCase
         $this->service->subscribe();
     }
 
-    public function testUnsubscribeDeletesEachSubscription(): void
+    public function testUnsubscribeBatchDeletesStoreSubscriptions(): void
     {
         $this->apiClientMock->method('get')
             ->with('webhooks')
-            ->willReturn([
-                ['id' => 'sub-1'],
-                ['id' => 'sub-2'],
-            ]);
+            ->willReturn(['webhook_subscriptions' => [
+                [
+                    'id' => 10,
+                    'delivery_url' => 'https://example.com/bobgo/webhook/receive',
+                    'topic' => 'fulfillment/created',
+                ],
+                [
+                    'id' => 11,
+                    'delivery_url' => 'https://example.com/bobgo/webhook/receive',
+                    'topic' => 'tracking/updated',
+                ],
+                [
+                    'id' => 99,
+                    'delivery_url' => 'https://other-store.com/bobgo/webhook/receive',
+                    'topic' => 'fulfillment/created',
+                ],
+            ]]);
 
-        $this->apiClientMock->expects($this->exactly(2))
+        $this->apiClientMock->expects($this->once())
             ->method('delete')
-            ->willReturnCallback(function ($endpoint) {
-                $this->assertContains($endpoint, ['webhooks/sub-1', 'webhooks/sub-2']);
-                return [];
-            });
+            ->with('webhooks', ['ids' => [10, 11]])
+            ->willReturn([]);
 
         $this->service->unsubscribe();
     }
@@ -99,26 +170,9 @@ class WebhookSubscriptionServiceTest extends TestCase
     {
         $this->apiClientMock->method('get')
             ->with('webhooks')
-            ->willReturn([]);
+            ->willReturn(['webhook_subscriptions' => []]);
 
         $this->apiClientMock->expects($this->never())->method('delete');
-
-        $this->service->unsubscribe();
-    }
-
-    public function testUnsubscribeSkipsSubscriptionsWithoutId(): void
-    {
-        $this->apiClientMock->method('get')
-            ->with('webhooks')
-            ->willReturn([
-                ['topic' => 'fulfillment/created'],
-                ['id' => 'sub-1'],
-            ]);
-
-        $this->apiClientMock->expects($this->once())
-            ->method('delete')
-            ->with('webhooks/sub-1')
-            ->willReturn([]);
 
         $this->service->unsubscribe();
     }
@@ -127,37 +181,48 @@ class WebhookSubscriptionServiceTest extends TestCase
     {
         $this->apiClientMock->method('get')
             ->with('webhooks')
-            ->willReturn([
-                ['id' => 'sub-1'],
-                ['id' => 'sub-2'],
-            ]);
+            ->willReturn(['webhook_subscriptions' => [
+                [
+                    'id' => 10,
+                    'delivery_url' => 'https://example.com/bobgo/webhook/receive',
+                    'topic' => 'fulfillment/created',
+                ],
+            ]]);
 
-        $callCount = 0;
         $this->apiClientMock->method('delete')
-            ->willReturnCallback(function () use (&$callCount) {
-                $callCount++;
-                if ($callCount === 1) {
-                    throw new BobGoApiException('Delete failed', 500);
-                }
-                return [];
-            });
+            ->willThrowException(new BobGoApiException('Delete failed', 500));
 
-        // Should not throw, should log error and continue
+        // Should not throw, should log error
+        $this->loggerMock->expects($this->once())
+            ->method('error')
+            ->with($this->stringContains('failed to remove webhook subscriptions'), $this->anything());
+
         $this->service->unsubscribe();
     }
 
-    public function testGetSubscriptionsReturnsApiResponse(): void
+    public function testGetSubscriptionsReturnsParsedResponse(): void
     {
         $expected = [
-            ['id' => 'sub-1', 'topic' => 'fulfillment/created'],
+            ['id' => 1, 'topic' => 'fulfillment/created'],
         ];
 
         $this->apiClientMock->method('get')
             ->with('webhooks')
-            ->willReturn($expected);
+            ->willReturn(['webhook_subscriptions' => $expected]);
 
         $result = $this->service->getSubscriptions();
 
         $this->assertEquals($expected, $result);
+    }
+
+    public function testGetSubscriptionsReturnsEmptyOnMissingKey(): void
+    {
+        $this->apiClientMock->method('get')
+            ->with('webhooks')
+            ->willReturn([]);
+
+        $result = $this->service->getSubscriptions();
+
+        $this->assertEquals([], $result);
     }
 }

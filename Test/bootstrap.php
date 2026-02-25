@@ -10,9 +10,26 @@
  * This file defines additional stubs needed for test mocking.
  */
 
+// --- Core Framework Stubs (order matters - base classes first) ---
+
 // Stub Magento DataObject if not already available
 if (!class_exists(\Magento\Framework\DataObject::class, false)) {
-    eval('namespace Magento\Framework; class DataObject { protected $_data = []; public function __call($m, $a) { return null; } public function getData($k = null) { return $this->_data[$k] ?? null; } public function setData($k, $v = null) { $this->_data[$k] = $v; return $this; } }');
+    eval('namespace Magento\Framework; class DataObject { protected $_data = []; public function __call($m, $a) { $key = strtolower(preg_replace("/(.)([A-Z])/", "$1_$2", substr($m, 3))); switch (substr($m, 0, 3)) { case "get": return $this->getData($key); case "set": return $this->setData($key, $a[0] ?? null); case "has": return isset($this->_data[$key]); case "uns": unset($this->_data[$key]); return $this; } return null; } public function getData($k = null) { if ($k === null) { return $this->_data; } return $this->_data[$k] ?? null; } public function setData($k, $v = null) { $this->_data[$k] = $v; return $this; } public function hasData($k = null) { if ($k === null) { return !empty($this->_data); } return array_key_exists($k, $this->_data); } public function toArray() { return $this->_data; } }');
+}
+
+// Stub Magento Phrase (used by __() function and LocalizedException)
+if (!class_exists(\Magento\Framework\Phrase::class, false)) {
+    eval('namespace Magento\Framework; class Phrase { private $text; private $arguments; public function __construct(string $text, array $arguments = []) { $this->text = $text; $this->arguments = $arguments; } public function __toString(): string { return $this->text; } public function getText(): string { return $this->text; } public function getArguments(): array { return $this->arguments; } public function render(): string { return $this->text; } }');
+}
+
+// Stub __() translation function
+if (!function_exists('__')) {
+    function __(): \Magento\Framework\Phrase
+    {
+        $args = func_get_args();
+        $text = array_shift($args);
+        return new \Magento\Framework\Phrase((string) $text, $args);
+    }
 }
 
 // Stub Magento Event class if not already available (used in observer tests via addMethods)
@@ -35,32 +52,136 @@ if (!interface_exists(\Magento\Framework\Event\ObserverInterface::class, false))
     eval('namespace Magento\Framework\Event; interface ObserverInterface { public function execute(Observer $observer): void; }');
 }
 
-// Stub common Magento interfaces needed for mocking
+// Stub UrlInterface with constants (must be defined before generic stubs)
+if (!interface_exists(\Magento\Framework\UrlInterface::class, false)) {
+    eval('namespace Magento\Framework; interface UrlInterface { const URL_TYPE_LINK = "link"; const URL_TYPE_DIRECT_LINK = "direct_link"; const URL_TYPE_WEB = "web"; const URL_TYPE_MEDIA = "media"; const URL_TYPE_STATIC = "static"; const URL_TYPE_JS = "js"; public function getUrl(); public function getBaseUrl(); }');
+}
+
+// --- Exception Stubs ---
+
+// Stub LocalizedException (parent of BobGoApiException)
+if (!class_exists(\Magento\Framework\Exception\LocalizedException::class, false)) {
+    eval('namespace Magento\Framework\Exception; class LocalizedException extends \Exception { protected $phrase; public function __construct(?\Magento\Framework\Phrase $phrase = null, ?\Exception $cause = null, int $code = 0) { $this->phrase = $phrase; parent::__construct($phrase ? $phrase->getText() : "", $code, $cause); } public function getRawMessage(): string { return $this->phrase ? $this->phrase->getText() : $this->getMessage(); } }');
+}
+
+// Stub NoSuchEntityException
+if (!class_exists(\Magento\Framework\Exception\NoSuchEntityException::class, false)) {
+    eval('namespace Magento\Framework\Exception; class NoSuchEntityException extends LocalizedException {}');
+}
+
+// --- Config Stubs ---
+
+// Stub ScopeConfigInterface (must be defined before ReinitableConfigInterface which extends it)
+if (!interface_exists(\Magento\Framework\App\Config\ScopeConfigInterface::class, false)) {
+    eval('namespace Magento\Framework\App\Config; interface ScopeConfigInterface { public function getValue($path, $scopeType = "default", $scopeCode = null); public function isSetFlag($path, $scopeType = "default", $scopeCode = null); }');
+}
+
+// Stub ReinitableConfigInterface (extends ScopeConfigInterface)
+if (!interface_exists(\Magento\Framework\App\Config\ReinitableConfigInterface::class, false)) {
+    eval('namespace Magento\Framework\App\Config; interface ReinitableConfigInterface extends ScopeConfigInterface { public function reinit(); }');
+}
+
+// Stub EncryptorInterface
+if (!interface_exists(\Magento\Framework\Encryption\EncryptorInterface::class, false)) {
+    eval('namespace Magento\Framework\Encryption; interface EncryptorInterface { public function encrypt($data); public function decrypt($data); }');
+}
+
+// --- Carrier Stubs (needed by BobGo carrier class) ---
+
+// Stub CarrierInterface
+if (!interface_exists(\Magento\Shipping\Model\Carrier\CarrierInterface::class, false)) {
+    eval('namespace Magento\Shipping\Model\Carrier; interface CarrierInterface { public function collectRates(\Magento\Quote\Model\Quote\Address\RateRequest $request); public function getAllowedMethods(); }');
+}
+
+// Stub AbstractCarrier
+if (!class_exists(\Magento\Shipping\Model\Carrier\AbstractCarrier::class, false)) {
+    eval('namespace Magento\Shipping\Model\Carrier; abstract class AbstractCarrier extends \Magento\Framework\DataObject { protected $_code; protected $_scopeConfig; protected $_rateErrorFactory; protected $_logger; public function __construct(...$args) { $this->_scopeConfig = $args[0] ?? null; $this->_rateErrorFactory = $args[1] ?? null; $this->_logger = $args[2] ?? null; } public function getConfigData($field) { if ($this->_scopeConfig) { return $this->_scopeConfig->getValue("carriers/" . $this->_code . "/" . $field, \Magento\Store\Model\ScopeInterface::SCOPE_STORE); } return null; } public function getConfigFlag($field) { return (bool) $this->getConfigData($field); } public function isActive() { return $this->getConfigFlag("active"); } }');
+}
+
+// Stub AbstractCarrierOnline
+if (!class_exists(\Magento\Shipping\Model\Carrier\AbstractCarrierOnline::class, false)) {
+    eval('namespace Magento\Shipping\Model\Carrier; abstract class AbstractCarrierOnline extends AbstractCarrier { protected $_rateFactory; protected $_rateMethodFactory; protected $stockRegistry; public function __construct(...$args) { parent::__construct(...$args); $this->_rateFactory = $args[5] ?? null; $this->_rateMethodFactory = $args[6] ?? null; $this->stockRegistry = $args[14] ?? null; } public function getContainerTypes(?\Magento\Framework\DataObject $params = null) { return []; } public function getDeliveryConfirmationTypes(?\Magento\Framework\DataObject $params = null) { return []; } public function processAdditionalValidation(\Magento\Framework\DataObject $request) { return $this; } public function getAllItems(\Magento\Framework\DataObject $request) { $items = $request->getData("all_items"); return is_array($items) ? $items : []; } }');
+}
+
+// --- Helper/Block Stubs ---
+
+// Stub AbstractHelper
+if (!class_exists(\Magento\Framework\App\Helper\AbstractHelper::class, false)) {
+    eval('namespace Magento\Framework\App\Helper; abstract class AbstractHelper { protected $scopeConfig; protected $_logger; public function __construct(?Context $context = null) { if ($context) { $this->scopeConfig = $context->getScopeConfig(); $this->_logger = $context->getLogger(); } } }');
+}
+
+// Stub Helper\Context
+if (!class_exists(\Magento\Framework\App\Helper\Context::class, false)) {
+    eval('namespace Magento\Framework\App\Helper; class Context { protected $scopeConfig; protected $logger; public function __construct($scopeConfig = null, $logger = null) {} public function getScopeConfig() { return $this->scopeConfig; } public function getLogger() { return $this->logger; } }');
+}
+
+// Stub Backend Block Context
+if (!class_exists(\Magento\Backend\Block\Template\Context::class, false)) {
+    eval('namespace Magento\Backend\Block\Template; class Context { public function __construct() {} }');
+}
+
+// Stub Config Form Field (parent of Version block)
+if (!class_exists(\Magento\Config\Block\System\Config\Form\Field::class, false)) {
+    eval('namespace Magento\Config\Block\System\Config\Form; class Field { public function __construct(...$args) {} protected function _getElementHtml(\Magento\Framework\Data\Form\Element\AbstractElement $element): string { return ""; } }');
+}
+
+// Stub AbstractElement for form fields
+if (!class_exists(\Magento\Framework\Data\Form\Element\AbstractElement::class, false)) {
+    eval('namespace Magento\Framework\Data\Form\Element; abstract class AbstractElement extends \Magento\Framework\DataObject { public function setData($k, $v = null) { $this->_data[$k] = $v; return $this; } public function getData($k = null) { return $this->_data[$k] ?? null; } }');
+}
+
+// --- Stub common Magento interfaces needed for mocking ---
 $stubs = [
     'interface' => [
-        'Magento\Sales\Api\Data\OrderInterface' => ['getEntityId', 'getIncrementId', 'getGrandTotal', 'getTotalDue', 'getDiscountAmount', 'getOrderCurrencyCode', 'getStatus', 'getShippingMethod', 'getShippingDescription', 'getCreatedAt', 'getUpdatedAt', 'getShippingAddress', 'getItems', 'getData', 'setData'],
-        'Magento\Sales\Api\Data\OrderItemInterface' => ['getItemId', 'getParentItemId', 'getSku', 'getName', 'getPriceInclTax', 'getQtyOrdered', 'getWeight', 'setWeight'],
-        'Magento\Sales\Api\Data\OrderAddressInterface' => ['getStreet', 'getCity', 'getPostcode', 'getRegion', 'getCountryId', 'getCompany'],
+        'Magento\Sales\Api\Data\OrderInterface' => ['getEntityId', 'getIncrementId', 'getGrandTotal', 'getTotalDue', 'getDiscountAmount', 'getOrderCurrencyCode', 'getStatus', 'getShippingMethod', 'getShippingDescription', 'getCreatedAt', 'getUpdatedAt', 'getShippingAddress', 'getBillingAddress', 'getItems', 'getData', 'setData', 'getCustomerFirstname', 'getCustomerLastname', 'getCustomerEmail'],
+        'Magento\Sales\Api\Data\OrderItemInterface' => ['getItemId', 'getParentItemId', 'getProductId', 'getSku', 'getName', 'getPriceInclTax', 'getQtyOrdered', 'getWeight', 'setWeight', 'getData', 'setData'],
+        'Magento\Sales\Api\Data\OrderAddressInterface' => ['getStreet', 'getCity', 'getPostcode', 'getRegion', 'getCountryId', 'getCompany', 'getFirstname', 'getLastname', 'getTelephone'],
         'Magento\Sales\Api\OrderRepositoryInterface' => ['save', 'get', 'getList', 'delete'],
+        'Magento\Sales\Api\OrderItemRepositoryInterface' => ['save', 'get', 'getList', 'delete'],
         'Magento\Framework\App\Config\ScopeConfigInterface' => ['getValue', 'isSetFlag'],
         'Magento\Framework\Message\ManagerInterface' => ['addSuccessMessage', 'addErrorMessage', 'addWarningMessage', 'addNoticeMessage'],
-        'Magento\Framework\UrlInterface' => ['getUrl', 'getBaseUrl'],
+        'Magento\Catalog\Api\ProductRepositoryInterface' => ['getById', 'get', 'save', 'delete'],
+        'Magento\Catalog\Api\Data\ProductInterface' => ['getImage', 'getSku', 'getName', 'getId'],
+        'Magento\Store\Api\Data\StoreInterface' => ['getBaseUrl', 'getId', 'getCode'],
         'Magento\Sales\Api\Data\OrderSearchResultInterface' => ['getItems', 'getTotalCount'],
         'Magento\Sales\Api\ShipOrderInterface' => ['execute'],
         'Magento\Sales\Api\Data\ShipmentItemCreationInterface' => ['setOrderItemId', 'setQty'],
         'Magento\Sales\Api\Data\ShipmentTrackCreationInterface' => ['setCarrierCode', 'setTitle', 'setTrackNumber'],
+        'Magento\CatalogInventory\Api\StockRegistryInterface' => ['getStockItem'],
+        'Magento\Framework\Module\ModuleListInterface' => ['getOne', 'getAll', 'getNames', 'has'],
     ],
     'class' => [
-        'Magento\Framework\HTTP\Client\Curl' => [],
+        'Magento\Framework\HTTP\Client\Curl' => ['addHeader', 'get', 'post', 'getStatus', 'getBody', 'setOption'],
         'Magento\Framework\HTTP\Client\CurlFactory' => ['create'],
         'Magento\Framework\Api\SearchCriteriaBuilder' => ['addFilter', 'create'],
         'Magento\Framework\Api\SearchCriteria' => [],
-        'Magento\Sales\Model\Order\Shipment' => ['getTracks', 'getEntityId'],
-        'Magento\Sales\Model\Order\Shipment\Track' => ['getTrackNumber'],
+        // Note: Magento\Sales\Model\Order is defined separately below (implements OrderInterface)
+
+        'Magento\Sales\Model\Order\Shipment' => ['getTracks', 'getAllTracks', 'getEntityId', 'addTrack', 'save', 'getLastItem'],
+        'Magento\Sales\Model\Order\Shipment\Track' => ['getTrackNumber', 'setTrackNumber', 'setCarrierCode', 'setTitle'],
         'Magento\Sales\Model\Order\Shipment\TrackFactory' => ['create'],
-        'Magento\Sales\Model\ResourceModel\Order\Shipment\Collection' => ['getItems'],
+        // Note: ShipmentCollection is defined separately below (implements IteratorAggregate)
         'Magento\Store\Model\Store' => ['getBaseUrl'],
-        'Magento\Store\Model\StoreManagerInterface' => [],
+        'Magento\Store\Model\StoreManagerInterface' => ['getStore'],
+        'Magento\Framework\Xml\Security' => [],
+        'Magento\Shipping\Model\Simplexml\ElementFactory' => ['create'],
+        'Magento\Shipping\Model\Rate\ResultFactory' => ['create'],
+        'Magento\Shipping\Model\Rate\Result' => ['append', 'getError', 'getAllRates'],
+        'Magento\Shipping\Model\Tracking\ResultFactory' => ['create'],
+        'Magento\Shipping\Model\Tracking\Result\StatusFactory' => ['create'],
+        'Magento\Shipping\Model\Tracking\Result\ErrorFactory' => ['create'],
+        'Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory' => ['create'],
+        'Magento\Quote\Model\Quote\Address\RateResult\MethodFactory' => ['create'],
+        'Magento\Quote\Model\Quote\Address\RateResult\Method' => ['setCarrier', 'setCarrierTitle', 'setMethod', 'setMethodTitle', 'setPrice', 'setCost'],
+        'Magento\Directory\Model\RegionFactory' => ['create'],
+        'Magento\Directory\Model\CountryFactory' => ['create'],
+        'Magento\Directory\Model\Country' => ['loadByCode', 'getName'],
+        'Magento\Directory\Model\CurrencyFactory' => ['create'],
+        'Magento\Directory\Helper\Data' => [],
+        'Magento\Catalog\Model\ResourceModel\Product\CollectionFactory' => ['create'],
+        'Magento\Framework\App\Request\Http' => ['getContent', 'getParam'],
+        'Magento\Catalog\Model\Product' => ['isVirtual', 'getWeight', 'getImage', 'getId'],
+        'Magento\Quote\Model\Quote\Item' => ['getProduct'],
     ],
 ];
 
@@ -90,6 +211,26 @@ foreach ($stubs['class'] as $fqcn => $methods) {
     }
 }
 
+// Magento\Sales\Model\Order must implement OrderInterface so mocks satisfy return type hints
+if (!class_exists(\Magento\Sales\Model\Order::class, false)) {
+    eval('namespace Magento\Sales\Model; class Order implements \Magento\Sales\Api\Data\OrderInterface { public function getEntityId() { return null; } public function getIncrementId() { return null; } public function getGrandTotal() { return null; } public function getTotalDue() { return null; } public function getDiscountAmount() { return null; } public function getOrderCurrencyCode() { return null; } public function getStatus() { return null; } public function getShippingMethod() { return null; } public function getShippingDescription() { return null; } public function getCreatedAt() { return null; } public function getUpdatedAt() { return null; } public function getShippingAddress() { return null; } public function getBillingAddress() { return null; } public function getItems() { return null; } public function getData($k = null) { return null; } public function setData($k = null, $v = null) { return null; } public function getCustomerFirstname() { return null; } public function getCustomerLastname() { return null; } public function getCustomerEmail() { return null; } public function getState() { return null; } public function canShip() { return null; } public function getShipmentsCollection() { return null; } public function getAllItems() { return null; } public function addCommentToStatusHistory($comment = null) { return null; } public function save() { return null; } }');
+}
+
+// ShipmentCollection must implement IteratorAggregate so foreach works on mocks
+if (!class_exists(\Magento\Sales\Model\ResourceModel\Order\Shipment\Collection::class, false)) {
+    eval('namespace Magento\Sales\Model\ResourceModel\Order\Shipment; class Collection implements \IteratorAggregate { public function getItems() { return []; } public function getSize() { return 0; } public function getLastItem() { return null; } public function getIterator(): \Traversable { return new \ArrayIterator([]); } }');
+}
+
+// RateRequest is special: it extends DataObject and needs setters/getters to work via __call
+if (!class_exists(\Magento\Quote\Model\Quote\Address\RateRequest::class, false)) {
+    eval('namespace Magento\Quote\Model\Quote\Address; class RateRequest extends \Magento\Framework\DataObject {}');
+}
+
+// OptionSourceInterface (implemented by source model classes)
+if (!interface_exists(\Magento\Framework\Data\OptionSourceInterface::class, false)) {
+    eval('namespace Magento\Framework\Data; interface OptionSourceInterface { public function toOptionArray(); }');
+}
+
 // Factory stubs for Magento DI factories
 $factories = [
     'Magento\Sales\Api\Data\ShipmentItemCreationInterfaceFactory' => 'Magento\Sales\Api\Data\ShipmentItemCreationInterface',
@@ -103,4 +244,12 @@ foreach ($factories as $factoryClass => $targetInterface) {
         $namespace = implode('\\', $parts);
         eval("namespace {$namespace}; class {$factoryName} { public function create() { return null; } }");
     }
+}
+
+// CURLOPT constants needed by BobGoApiClient
+if (!defined('CURLOPT_TIMEOUT')) {
+    define('CURLOPT_TIMEOUT', 13);
+}
+if (!defined('CURLOPT_CUSTOMREQUEST')) {
+    define('CURLOPT_CUSTOMREQUEST', 10036);
 }

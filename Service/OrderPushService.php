@@ -65,6 +65,7 @@ class OrderPushService
             $bobgoOrderId = $response['id'] ?? null;
             if ($bobgoOrderId) {
                 $order->setData('bobgo_order_id', $bobgoOrderId);
+                $this->saveOrderItemIds($order, $response['order_items'] ?? []);
                 $this->orderRepository->save($order);
             }
 
@@ -79,6 +80,51 @@ class OrderPushService
                 'increment_id' => $order->getIncrementId(),
                 'error' => $e->getMessage(),
             ]);
+        }
+    }
+
+    /**
+     * Save Bob Go order item IDs from the POST response onto Magento order items.
+     *
+     * Matches response items to Magento items by SKU. When duplicate SKUs exist,
+     * positional order is used as a tie-breaker.
+     *
+     * @param OrderInterface $order
+     * @param array<int,array<string,mixed>> $responseItems
+     * @return void
+     */
+    private function saveOrderItemIds(OrderInterface $order, array $responseItems): void
+    {
+        if (empty($responseItems)) {
+            return;
+        }
+
+        // Group response items by SKU, preserving order for positional tie-breaking
+        $responseBySku = [];
+        foreach ($responseItems as $responseItem) {
+            $sku = $responseItem['sku'] ?? null;
+            $id = $responseItem['id'] ?? null;
+            if ($sku !== null && $id !== null) {
+                $responseBySku[$sku][] = $id;
+            }
+        }
+
+        // Track how many items of each SKU we've matched (for duplicate SKU tie-breaking)
+        $skuIndex = [];
+
+        foreach ($order->getItems() as $item) {
+            if ($item->getParentItemId()) {
+                continue;
+            }
+
+            $sku = $item->getSku();
+            $position = $skuIndex[$sku] ?? 0;
+
+            if (isset($responseBySku[$sku][$position])) {
+                $item->setData('bobgo_order_item_id', (string) $responseBySku[$sku][$position]);
+            }
+
+            $skuIndex[$sku] = $position + 1;
         }
     }
 

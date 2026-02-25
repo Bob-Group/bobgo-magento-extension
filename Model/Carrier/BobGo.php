@@ -545,6 +545,108 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
+     * Check if carrier has tracking functionality.
+     *
+     * @return bool
+     */
+    public function isTrackingAvailable(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Get tracking info for a shipment tracking number.
+     *
+     * Fetches live tracking events from the Bob Go API and returns a Status
+     * object with progress details. Falls back to just the tracking URL
+     * if the API call fails.
+     *
+     * @param string $tracking The tracking number
+     * @return \Magento\Shipping\Model\Tracking\Result\Status
+     */
+    public function getTrackingInfo($tracking)
+    {
+        $status = $this->_trackStatusFactory->create();
+        $status->setCarrier(self::CODE);
+        $status->setCarrierTitle($this->getConfigData('title') ?: 'Bob Go');
+        $status->setTracking($tracking);
+        $status->setUrl($this->getTrackingUrl((string) $tracking));
+
+        try {
+            $response = $this->apiClient->get('tracking', [
+                'tracking_reference' => (string) $tracking,
+            ]);
+
+            // API returns an array of shipments; use the first one
+            $shipment = isset($response[0]) ? $response[0] : $response;
+
+            if (!empty($shipment['status_friendly'])) {
+                $status->setStatus($shipment['status_friendly']);
+            } elseif (!empty($shipment['status'])) {
+                $status->setStatus($this->formatTrackingStatus($shipment['status']));
+            }
+
+            if (!empty($shipment['checkpoints']) && is_array($shipment['checkpoints'])) {
+                $progressDetails = [];
+                foreach ($shipment['checkpoints'] as $checkpoint) {
+                    $dateTime = $checkpoint['time'] ?? '';
+                    $detail = [
+                        'activity' => $checkpoint['status_friendly'] ?? $this->formatTrackingStatus($checkpoint['status'] ?? ''),
+                        'deliverylocation' => $checkpoint['message'] ?? '',
+                    ];
+
+                    if ($dateTime !== '') {
+                        try {
+                            $dt = new \DateTime($dateTime);
+                            $detail['deliverydate'] = $dt->format('Y-m-d');
+                            $detail['deliverytime'] = $dt->format('H:i:s');
+                        } catch (\Exception $e) {
+                            // skip date parsing errors
+                        }
+                    }
+
+                    $progressDetails[] = $detail;
+                }
+
+                $status->setProgressdetail($progressDetails);
+            }
+        } catch (BobGoApiException $e) {
+            $this->_logger->debug('Bob Go tracking API call failed, falling back to URL only', [
+                'tracking' => $tracking,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $status;
+    }
+
+    /**
+     * Format a Bob Go tracking status slug into a human-readable string.
+     * e.g. "collection-assigned" → "Collection Assigned"
+     *
+     * @param string $status
+     * @return string
+     */
+    private function formatTrackingStatus(string $status): string
+    {
+        return ucwords(str_replace('-', ' ', $status));
+    }
+
+    /**
+     * Build the Bob Go tracking page URL for a tracking reference.
+     *
+     * @param string $trackingNumber
+     * @return string
+     */
+    private function getTrackingUrl(string $trackingNumber): string
+    {
+        $baseUrl = $this->apiConfig->getEnvironment() === ApiConfig::ENV_PRODUCTION
+            ? 'https://track.bobgo.co.za/'
+            : 'https://track.sandbox.bobgo.co.za/';
+        return $baseUrl . urlencode($trackingNumber);
+    }
+
+    /**
      * Do shipment request to carrier web service, obtain Print Shipping Labels, and process errors in response.
      *
      * Also another magic function that is required to be implemented by the carrier model.
