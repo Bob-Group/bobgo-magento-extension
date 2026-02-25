@@ -42,12 +42,6 @@ vendor/bin/phpunit --filter testCollectRates Test/Unit/Model/Carrier/BobGoTest.p
 
 Note: Tests require Magento framework dependencies. They are mock-based and do not need a running Magento instance.
 
-## CI/CD
-
-GitLab CI (`.gitlab-ci.yml`):
-- **`dev` branch push:** Runs `make-zip.sh`, uploads to S3 (`magento-plugin.dev.bobgo.co.za`)
-- **Git tag (from `prod` branch only):** Downloads archive, uploads to S3 production bucket with tagged and latest versions
-
 ## Architecture
 
 ### Core Carrier (`Model/Carrier/BobGo.php`)
@@ -137,5 +131,5 @@ These are hard-won lessons from debugging the extension on the test server:
 
 ## Branches
 
-- **`dev`** — Main development branch (CI deploys to dev S3)
-- **`prod`** — Production branch (tagged releases deploy to prod S3)
+- **`main`** — Stable/production branch
+- **`dev`** — Main development branch (default working branch)
