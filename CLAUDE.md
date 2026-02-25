@@ -8,22 +8,17 @@ Bob Go Shipping Extension for Magento 2 (`BobGroup_BobGo`). Provides shipping ra
 
 - **Namespace:** `BobGroup\BobGo`
 - **PHP:** ^7.4 || ^8.0 || ^8.2
-- **Version source of truth:** `package.json` (synced to `composer.json` and `etc/module.xml`)
+- **Version source of truth:** `composer.json` (synced to `etc/module.xml` via `bump-version.sh`)
 
 ## Build & Version Commands
 
 ```bash
-# Build distribution zip (requires jq, perl)
-./make-zip.sh
+# Bump version (defaults to patch; also accepts major, minor, or explicit x.y.z)
+./bump-version.sh patch
 
-# Install node dependencies
-npm install
-
-# Sync version from package.json to composer.json and etc/module.xml
-npm run update-version-files
+# Build distribution zip using git archive (.gitattributes export-ignore rules apply)
+git archive --format=zip HEAD -o bobgo-magento-extension.zip
 ```
-
-Version is auto-incremented on commit via Husky pre-commit hook (`.husky/pre-commit`), which runs `npm version patch`, syncs version files, and stages them.
 
 ## Testing
 
@@ -97,7 +92,7 @@ Webhooks use HMAC-SHA256 signatures sent in the `x-m-webhook-signature` header. 
 
 ```bash
 # Rsync extension to server (from local Mac)
-rsync -avz --exclude='node_modules' --exclude='.git' --exclude='vendor' --exclude='Test' \
+rsync -avz --exclude='.git' --exclude='vendor' --exclude='Test' \
   /Users/jacoroux/Documents/Projects/bobgo-magento-extension/ \
   bitnami@ip-10-107-3-85:/opt/bitnami/magento/app/code/BobGroup/BobGo/
 

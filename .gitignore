@@ -1,18 +1,20 @@
-# packages, not needed in final build
-node_modules/
+# Dependencies
 vendor/
 
-#general
+# OS files
 .DS_Store
-phpcs.xml
-phpunit.xml
-.phpunit.result.cache
 Thumbs.db
-wp-cli.local.yml
-*.sql
+
+# IDE
+.idea/
+
+# Test artifacts
+.phpunit.result.cache
+
+# Build artifacts
 *.tar.gz
 *.zip
-package-lock.json
+*.sql
 
-#PhpStorm
-.idea/
+# Binary documents
+*.pdf
