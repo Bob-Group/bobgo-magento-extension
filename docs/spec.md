@@ -3,7 +3,7 @@
 > **Module:** `BobGroup_BobGo`
 > **Namespace:** `BobGroup\BobGo`
 > **PHP Compatibility:** ^7.4 || ^8.0 || ^8.2
-> **Current Version:** 1.0.62 (source of truth: `package.json`)
+> **Current Version:** 1.0.62 (source of truth: `composer.json`)
 > **Carrier Code:** `bobgo`
 
 ---
@@ -201,11 +201,7 @@ BobGroup/BobGo/
 │               └── shipping-rates-validation.js        # Registers validators with Magento
 ├── registration.php                   # Magento module registration
 ├── composer.json                      # Composer package definition
-├── package.json                       # NPM config (version source of truth)
-├── make-zip.sh                        # Build script: creates distribution zip
-├── update-version.js                  # Syncs version to composer.json & module.xml
-├── .distignore                        # Files excluded from distribution zip
-├── .gitlab-ci.yml                     # CI/CD pipeline definition
+├── bump-version.sh                    # Version bump script (patch|minor|major|x.y.z)
 └── CLAUDE.md                          # AI assistant guidance
 ```
 
@@ -1245,57 +1241,13 @@ vendor/bin/phpunit --prepend Test/stubs/autoload-prepend.php \
 
 ---
 
-## 24. Build and CI/CD
+## 24. Build and Distribution
 
-### Build Script: `make-zip.sh`
-
-Creates a distribution zip (`bobgo-magento-plugin.zip`) for deployment.
-
-**Steps:**
-1. Installs `jq` if missing (macOS via Homebrew, Linux via apt-get)
-2. Verifies Perl is installed
-3. Extracts version from `package.json`
-4. Runs `npm install`
-5. Updates version in `composer.json` (Perl regex replacement)
-6. Updates `setup_version` in `etc/module.xml` (Perl regex replacement)
-7. Creates zip using rsync (excludes files listed in `.distignore`) then zip
-
-**Excluded from distribution** (`.distignore`):
-```
-*.pdf, node_modules, .git, package.json, .husky, package-lock.json,
-.distignore, make-zip.sh, update-version.js, .gitlab-ci.yml,
-.gitignore, .gitattributes, package, scripts/
-```
-
-### GitLab CI/CD (`.gitlab-ci.yml`)
-
-**Image:** `shiplogic/ci-wp-plugin:node18`
-
-#### Stage: `deploy` (dev branch)
-
-Triggered on push to `dev` branch:
+Distribution zips are created with `git archive`. The `.gitattributes` file defines export-ignore rules to exclude dev-only files (tests, docs, build scripts).
 
 ```bash
-./make-zip.sh
-aws s3 cp bobgo-magento-plugin.zip s3://magento-plugin.dev.bobgo.co.za/ --region=af-south-1
+git archive --format=zip HEAD -o bobgo-magento-extension.zip
 ```
-
-#### Stage: `tag_deploy` (production)
-
-Triggered on git tag creation:
-
-1. Verifies the tag was created from the `prod` branch
-2. Downloads the tagged archive from GitLab
-3. Uploads to S3:
-   - `s3://magento-plugin.bobgo.co.za/tags/bobgo-magento-extension-{tag}.zip`
-   - `s3://magento-plugin.bobgo.co.za/latest/latest.zip`
-
-### S3 Buckets
-
-| Bucket | Purpose |
-|--------|---------|
-| `magento-plugin.dev.bobgo.co.za` | Development builds from `dev` branch |
-| `magento-plugin.bobgo.co.za` | Production releases (tagged from `prod`) |
 
 ---
 
@@ -1303,26 +1255,27 @@ Triggered on git tag creation:
 
 ### Source of Truth
 
-`package.json` version field (currently `1.0.62`).
+`composer.json` `"version"` field.
 
 ### Version Sync
 
-The version is synced to two other locations:
+The version is maintained in two locations:
 
 1. **`composer.json`** - `"version"` field
 2. **`etc/module.xml`** - `setup_version` attribute
 
-Sync is handled by `update-version.js` (run via `npm run update-version-files`).
+### Bumping
 
-### Auto-Increment
+Run `./bump-version.sh` manually when preparing a release:
 
-The Husky pre-commit hook (`.husky/pre-commit`) automatically:
+```bash
+./bump-version.sh patch   # 1.0.62 -> 1.0.63
+./bump-version.sh minor   # 1.0.62 -> 1.1.0
+./bump-version.sh major   # 1.0.62 -> 2.0.0
+./bump-version.sh 2.0.0   # explicit version
+```
 
-1. Runs `npm version patch` (increments patch version in `package.json`)
-2. Runs `npm run update-version-files` (syncs to `composer.json` and `module.xml`)
-3. Stages the changed files
-
-This means **every commit automatically bumps the patch version**.
+The script updates both `composer.json` and `etc/module.xml`.
 
 ---
 
