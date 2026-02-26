@@ -1,5 +1,4 @@
-/*required for adding the mixing that is supposed to add the suburb to the shipping address
-set-shipping-information-mixin.js*/
+/* Mixin to add suburb to the shipping address extension attributes */
 var config = {
     config: {
         mixins: {

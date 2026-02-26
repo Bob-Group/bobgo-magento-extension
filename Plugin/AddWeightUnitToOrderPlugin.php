@@ -1,12 +1,12 @@
 <?php
+declare(strict_types=1);
 
 namespace BobGroup\BobGo\Plugin;
 
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
-use Psr\Log\LoggerInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
-use Magento\Sales\Api\Data\OrderItemInterface;
+use Magento\Store\Model\ScopeInterface;
 
 /**
  * Converts order item weights from pounds (LBS) to kilograms (KG) before saving.
@@ -17,32 +17,21 @@ use Magento\Sales\Api\Data\OrderItemInterface;
  */
 class AddWeightUnitToOrderPlugin
 {
-    /**
-     * @var LoggerInterface
-     */
-    protected $logger;
+    private const LBS_TO_KG = 0.45359237;
 
     /**
      * @var ScopeConfigInterface
      */
-    protected $scopeConfig;
+    private ScopeConfigInterface $scopeConfig;
 
-    /**
-     * Constructor
-     *
-     * @param LoggerInterface $logger
-     * @param ScopeConfigInterface $scopeConfig
-     */
     public function __construct(
-        LoggerInterface $logger,
         ScopeConfigInterface $scopeConfig
     ) {
-        $this->logger = $logger;
         $this->scopeConfig = $scopeConfig;
     }
 
     /**
-     * Before save plugin to modify order items' weight based on the configured weight unit.
+     * Before save plugin to convert order item weights from lbs to kg when applicable.
      *
      * @param OrderRepositoryInterface $subject
      * @param OrderInterface $order
@@ -54,23 +43,15 @@ class AddWeightUnitToOrderPlugin
     ): array {
         $weightUnit = $this->scopeConfig->getValue(
             'general/locale/weight_unit',
-            \Magento\Store\Model\ScopeInterface::SCOPE_STORE
+            ScopeInterface::SCOPE_STORE
         );
 
-        if ($weightUnit === 'lbs') {
+        if ($weightUnit === 'lbs' && $order->getItems()) {
             foreach ($order->getItems() as $orderItem) {
-                // Get the current weight of the item
                 $weight = $orderItem->getWeight();
-
-                // Convert weight from lbs to kg
-                $convertedWeight = $weight * 0.45359237;
-
-                // Set the converted weight back to the item using the correct setter method
-                $orderItem->setWeight($convertedWeight);
-
-                // Assuming you want to store this in a custom field, you should add a custom attribute
-                // If you are using a custom attribute, ensure that it’s correctly added to the OrderItemInterface
-                // $orderItem->setData('custom_weight_attribute', $convertedWeight);
+                if ($weight !== null) {
+                    $orderItem->setWeight($weight * self::LBS_TO_KG);
+                }
             }
         }
 

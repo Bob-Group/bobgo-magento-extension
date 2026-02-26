@@ -1,5 +1,3 @@
-/*jshint browser:true jquery:true*/
-/*global alert*/
 define([
     'jquery',
     'mage/utils/wrapper',
@@ -15,14 +13,18 @@ define([
                 shippingAddress['extension_attributes'] = {};
             }
 
-            var attribute = shippingAddress.customAttributes.find(
-                function (element) {
-                    return element.attribute_code === 'suburb';
-                }
-            );
+            if (shippingAddress.customAttributes && Array.isArray(shippingAddress.customAttributes)) {
+                var attribute = shippingAddress.customAttributes.find(
+                    function (element) {
+                        return element.attribute_code === 'suburb';
+                    }
+                );
 
-            shippingAddress['extension_attributes']['suburb'] = attribute.value;
-            // pass execution to original action ('Magento_Checkout/js/action/set-shipping-information')
+                if (attribute && attribute.value) {
+                    shippingAddress['extension_attributes']['suburb'] = attribute.value;
+                }
+            }
+
             return originalAction();
         });
     };

@@ -34,6 +34,9 @@ class ApiConfig
     /** @var string Config path for the carrier active toggle (rates at checkout) */
     const XML_PATH_ACTIVE = 'carriers/bobgo/active';
 
+    /** @var string Config path for the track order feature toggle */
+    const XML_PATH_ENABLE_TRACK_ORDER = 'carriers/bobgo/enable_track_order';
+
     /** @var string Bob Go API v2 base URL for sandbox environment */
     const BASE_URL_SANDBOX = 'https://api.sandbox.bobgo.co.za/v2/';
 

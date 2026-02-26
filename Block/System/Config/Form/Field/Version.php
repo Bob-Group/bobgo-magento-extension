@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 
 namespace BobGroup\BobGo\Block\System\Config\Form\Field;
 
@@ -6,60 +7,42 @@ use Magento\Framework\Data\Form\Element\AbstractElement;
 use BobGroup\BobGo\Helper\Data;
 
 /**
- * Displays Version number in System Configuration
- *
- * This block is responsible for displaying the version number of the BobGo extension
- * in the system configuration settings.
- *
- * @website https://www.bobgo.co.za
+ * Displays the Bob Go extension version number in System Configuration.
  */
 class Version extends \Magento\Config\Block\System\Config\Form\Field
 {
-    /**
-     * @var string
-     */
     public const EXTENSION_URL = 'https://www.bobgo.co.za';
+    private const EXTENSION_TITLE = 'BobGo';
 
     /**
      * @var Data
      */
-    protected Data $_helper;
+    private Data $helper;
 
-    /**
-     * Constructor
-     *
-     * @param \Magento\Backend\Block\Template\Context $context
-     * @param Data $helper
-     */
     public function __construct(
         \Magento\Backend\Block\Template\Context $context,
         Data $helper
     ) {
-        $this->_helper = $helper;
+        $this->helper = $helper;
         parent::__construct($context);
     }
 
     /**
-     * Get HTML for the element
-     *
      * @param AbstractElement $element
      * @return string
      */
     protected function _getElementHtml(AbstractElement $element): string
     {
-        $extensionVersion = $this->_helper->getExtensionVersion();
-        $extensionTitle = 'BobGo';
+        $extensionVersion = htmlspecialchars($this->helper->getExtensionVersion(), ENT_QUOTES, 'UTF-8');
         $versionLabel = sprintf(
             '<a href="%s" title="%s" target="_blank">%s</a>',
             self::EXTENSION_URL,
-            $extensionTitle,
+            self::EXTENSION_TITLE,
             $extensionVersion
         );
 
-        // Set the value using setData
         $element->setData('value', $versionLabel);
 
-        // Ensure the return value is a string or provide a fallback
         $value = $element->getData('value');
         return is_string($value) ? $value : '';
     }

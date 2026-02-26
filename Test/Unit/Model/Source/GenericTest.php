@@ -29,7 +29,6 @@ class GenericTest extends TestCase
         // Set the carrier code for the test
         $reflection = new \ReflectionClass($this->generic);
         $codeProperty = $reflection->getProperty('_code');
-        $codeProperty->setAccessible(true);
         $codeProperty->setValue($this->generic, 'test_code');
     }
 

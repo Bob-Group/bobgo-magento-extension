@@ -1,10 +1,10 @@
 <?php
+declare(strict_types=1);
 
 namespace BobGroup\BobGo\Observer;
 
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Event\Observer;
-use Psr\Log\LoggerInterface;
 
 /**
  * Simplifies the shipping description before an order is placed.
@@ -17,61 +17,30 @@ class ModifyShippingDescription implements ObserverInterface
 {
     public const CODE = 'bobgo';
 
-    /**
-     * @var LoggerInterface
-     */
-    protected $logger;
+    private const DESCRIPTION_SEPARATOR = ' - ';
 
     /**
-     * @param LoggerInterface $logger
-     */
-    public function __construct(LoggerInterface $logger)
-    {
-        $this->logger = $logger;
-    }
-
-    /**
-     * Extract the method title from the shipping description before order placement.
-     *
      * @param Observer $observer
      * @return void
      */
-    public function execute(Observer $observer)
+    public function execute(Observer $observer): void
     {
-        // Get the order object from the event
         $order = $observer->getEvent()->getOrder();
-
-        // Get the current shipping description
         $shippingDescription = $order->getShippingDescription();
-
-        // Get the method title from the shipping description
-        $methodTitle = $this->extractMethodTitle($shippingDescription);
-
-        // Set the new shipping description based only on MethodTitle
-        $newDescription = $methodTitle;
-
-        // Update the shipping description in the order
-        $order->setShippingDescription($newDescription);
+        $order->setShippingDescription($this->extractMethodTitle($shippingDescription));
     }
 
     /**
-     * Helper function to extract the method title from the original shipping description
-     *
-     * @param string $shippingDescription
-     * @return string
+     * Extract the method title after the last " - " separator, or return the full description as fallback.
      */
-    private function extractMethodTitle($shippingDescription)
+    private function extractMethodTitle(string $shippingDescription): string
     {
-        // Find the position of the last dash in the string
-        $lastDashPosition = strrpos($shippingDescription, ' - ');
+        $lastSeparatorPos = strrpos($shippingDescription, self::DESCRIPTION_SEPARATOR);
 
-        // If a dash is found, extract the part after the last dash
-        if ($lastDashPosition !== false) {
-            return trim(substr($shippingDescription, $lastDashPosition + 3)); // +3 to skip the ' - ' part
+        if ($lastSeparatorPos !== false) {
+            return trim(substr($shippingDescription, $lastSeparatorPos + strlen(self::DESCRIPTION_SEPARATOR)));
         }
 
-        // If no dash is found, return the full description (fallback)
         return $shippingDescription;
     }
-
 }

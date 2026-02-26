@@ -46,10 +46,15 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     public const CODE = 'bobgo';
 
     /**
-     * Units constant
+     * Units constant (for percentage handling fee calculation)
      * @var int
      */
     public const UNITS = 100;
+
+    private const MAX_WEIGHT_KG = 500;
+    private const SECONDS_PER_DAY = 86400;
+    private const LBS_TO_KG = 0.45359237;
+    private const GRAMS_PER_KG = 1000;
 
     /**
      * Code of the carrier
@@ -88,11 +93,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @var CollectionFactory
      */
     protected CollectionFactory $_productCollectionFactory;
-
-    /**
-     * @var DataObject
-     */
-    private DataObject $_rawTrackingRequest;
 
     /**
      * @var ScopeConfigInterface
@@ -234,8 +234,12 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     {
         $rates = $this->uRates($payload);
 
-        // Ensure the return value is always an array, even if uRates returns null
-        return $rates ?? [];
+        if ($rates === null) {
+            $this->_logger->warning('Bob Go: getRates returned no data from API');
+            return [];
+        }
+
+        return $rates;
     }
 
     /**
@@ -253,7 +257,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             return false;
         }
 
-        $maxAllowedWeight = 500;
+        $maxAllowedWeight = self::MAX_WEIGHT_KG;
         $errorMsg = '';
         $configErrorMsg = $this->getConfigData('specificerrmsg');
         $defaultErrorMsg = __('The shipping module is not available.');
@@ -293,7 +297,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
         // Bob Go shipping is only available for South Africa (ZA).
         // Clear any previous error for ZA; set error for all other countries.
-        if ($rateRequest->getDestCountryId() == 'ZA') {
+        if ($rateRequest->getDestCountryId() === 'ZA') {
             $errorMsg = '';
         } else {
             $errorMsg = $configErrorMsg ? $configErrorMsg : $defaultErrorMsg;
@@ -601,7 +605,10 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                             $detail['deliverydate'] = $dt->format('Y-m-d');
                             $detail['deliverytime'] = $dt->format('H:i:s');
                         } catch (\Exception $e) {
-                            // skip date parsing errors
+                            $this->_logger->debug('Bob Go: failed to parse tracking date', [
+                                'date_time' => $dateTime,
+                                'error' => $e->getMessage(),
+                            ]);
                         }
                     }
 
@@ -682,7 +689,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @return array<string, mixed>|false
      * @SuppressWarnings(PHPMD.CyclomaticComplexity)
      */
-    public function getContainerTypes(\Magento\Framework\DataObject $params = null)
+    public function getContainerTypes(?\Magento\Framework\DataObject $params = null)
     {
         $result = [];
         $allowedContainers = $this->getConfigData('containers');
@@ -705,7 +712,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @return array<int|string, mixed>
      * @SuppressWarnings(PHPMD.UnusedFormalParameter)
      */
-    public function getDeliveryConfirmationTypes(\Magento\Framework\DataObject $params = null): array
+    public function getDeliveryConfirmationTypes(?\Magento\Framework\DataObject $params = null): array
     {
         $types = $this->getCode('delivery_confirmation_types');
 
@@ -878,19 +885,19 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             return 0; // or throw an exception if preferred
         }
 
-        $no_days = 0;
+        $dayCount = 0;
         $weekends = 0;
 
         while ($begin <= $end) {
-            $no_days++; // number of days in the given interval
-            $what_day = date("N", $begin);
-            if ($what_day > 5) { // 6 and 7 are weekend days
+            $dayCount++;
+            $dayOfWeek = date("N", $begin);
+            if ($dayOfWeek > 5) {
                 $weekends++;
             }
-            $begin += 86400; // +1 day
+            $begin += self::SECONDS_PER_DAY;
         }
 
-        return $no_days - $weekends;
+        return $dayCount - $weekends;
     }
 
     /**
@@ -991,12 +998,10 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     {
         $weightUnit = strtolower($weightUnit); // 'kgs' or 'lbs'
 
-        // 1 lb = 453.59237 g exact. 1 kg = 1000 g. 1 lb = 0.45359237 kg
         if ($weightUnit === 'kgs') {
-            $mass = $item->getWeight() ? $item->getWeight() * 1000 : 0;
+            $mass = $item->getWeight() ? $item->getWeight() * self::GRAMS_PER_KG : 0;
         } else {
-            // Pound to Kilogram Conversion Formula
-            $mass = $item->getWeight() ? $item->getWeight() * 0.45359237 * 1000 : 0;
+            $mass = $item->getWeight() ? $item->getWeight() * self::LBS_TO_KG * self::GRAMS_PER_KG : 0;
         }
         return $mass;
     }

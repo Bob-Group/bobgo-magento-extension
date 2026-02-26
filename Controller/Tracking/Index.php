@@ -101,7 +101,7 @@ class Index extends \Magento\Framework\App\Action\Action
     public function execute()
     {
         $isEnabled = $this->scopeConfig->isSetFlag(
-            'carriers/bobgo/enable_track_order',
+            ApiConfig::XML_PATH_ENABLE_TRACK_ORDER,
             \Magento\Store\Model\ScopeInterface::SCOPE_STORE
         );
 

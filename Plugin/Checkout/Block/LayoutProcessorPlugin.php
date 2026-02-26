@@ -1,67 +1,50 @@
 <?php
+declare(strict_types=1);
 
 namespace BobGroup\BobGo\Plugin\Checkout\Block;
 
 use Magento\Checkout\Block\Checkout\LayoutProcessor;
 
 /**
- * Class LayoutProcessorPlugin
- * Adds a new field to the checkout page for the suburb.
+ * Adds a suburb field to the checkout shipping address form.
  *
- * This class is used in conjunction with the SaveOrderBeforeSalesModelQuote observer.
- * It overrides the 2 Address fields and adds a new 3rd Address field to accommodate the suburb
- * on the checkout page (including placeholders).
- * Note: This implementation, though functional, may not be the most optimal way.
+ * Navigates the deeply nested jsLayout structure to inject a custom text input
+ * into the shipping-address-fieldset.
  */
 class LayoutProcessorPlugin
 {
     /**
+     * Path segments from jsLayout root to the shipping address fieldset children.
+     */
+    private const FIELDSET_PATH = [
+        'components',
+        'checkout',
+        'children',
+        'steps',
+        'children',
+        'shipping-step',
+        'children',
+        'shippingAddress',
+        'children',
+        'shipping-address-fieldset',
+        'children',
+    ];
+
+    /**
      * Modify checkout layout to add suburb field.
      *
-     * @param LayoutProcessor $subject The subject being processed.
-     * @param array<string,mixed> $jsLayout The JS layout array to be modified.
-     * @return array<string, mixed> The modified JS layout array.
+     * @param LayoutProcessor $subject
+     * @param array<string,mixed> $jsLayout
+     * @return array<string,mixed>
      */
     public function afterProcess(
         LayoutProcessor $subject,
         array $jsLayout
     ): array {
-        $suburbAttribute = 'suburb';
+        $fieldsetChildren = &$this->resolveNestedPath($jsLayout, self::FIELDSET_PATH);
 
-        if (isset($jsLayout['components'])
-            && is_array($jsLayout['components'])
-            && isset($jsLayout['components']['checkout'])
-            && is_array($jsLayout['components']['checkout'])
-            && isset($jsLayout['components']['checkout']['children'])
-            && is_array($jsLayout['components']['checkout']['children'])
-            && isset($jsLayout['components']['checkout']['children']['steps'])
-            && is_array($jsLayout['components']['checkout']['children']['steps'])
-            && isset($jsLayout['components']['checkout']['children']['steps']['children'])
-            && is_array($jsLayout['components']['checkout']['children']['steps']['children'])
-            && isset($jsLayout['components']['checkout']['children']['steps']['children']['shipping-step'])
-            && is_array($jsLayout['components']['checkout']['children']['steps']['children']['shipping-step'])
-            && isset($jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']['children'])
-            && is_array($jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']
-            ['children'])
-            && isset($jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']['children']
-                ['shippingAddress'])
-            && is_array($jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']
-            ['children']['shippingAddress'])
-            && isset($jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']['children']
-                ['shippingAddress']['children'])
-            && is_array($jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']
-            ['children']['shippingAddress']['children'])
-            && isset($jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']['children']
-                ['shippingAddress']['children']['shipping-address-fieldset'])
-            && is_array($jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']
-            ['children']['shippingAddress']['children']['shipping-address-fieldset'])
-            && isset($jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']['children']
-                ['shippingAddress']['children']['shipping-address-fieldset']['children'])
-            && is_array($jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']
-            ['children']['shippingAddress']['children']['shipping-address-fieldset']['children'])) {
-
-            $jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']['children']
-            ['shippingAddress']['children']['shipping-address-fieldset']['children'][$suburbAttribute] = [
+        if ($fieldsetChildren !== null) {
+            $fieldsetChildren['suburb'] = [
                 'component' => 'Magento_Ui/js/form/element/abstract',
                 'config' => [
                     'customScope' => 'shippingAddress.custom_attributes',
@@ -72,7 +55,7 @@ class LayoutProcessorPlugin
                         'description' => 'Required for shipping accuracy',
                     ],
                 ],
-                'dataScope' => 'shippingAddress.custom_attributes' . '.' . $suburbAttribute,
+                'dataScope' => 'shippingAddress.custom_attributes.suburb',
                 'label' => 'Suburb',
                 'provider' => 'checkoutProvider',
                 'sortOrder' => 80,
@@ -83,10 +66,32 @@ class LayoutProcessorPlugin
                 'filterBy' => null,
                 'customEntry' => null,
                 'visible' => true,
-                'value' => '' // Default value for the attribute
+                'value' => '',
             ];
         }
 
         return $jsLayout;
+    }
+
+    /**
+     * Walk into a nested array following the given path segments.
+     *
+     * Returns a reference to the target node, or null if any segment is missing.
+     *
+     * @param array<string,mixed> $data
+     * @param string[] $path
+     * @return array<string,mixed>|null
+     */
+    private function &resolveNestedPath(array &$data, array $path): ?array
+    {
+        $current = &$data;
+        foreach ($path as $segment) {
+            if (!isset($current[$segment]) || !is_array($current[$segment])) {
+                $null = null;
+                return $null;
+            }
+            $current = &$current[$segment];
+        }
+        return $current;
     }
 }

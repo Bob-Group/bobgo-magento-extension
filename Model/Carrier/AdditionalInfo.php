@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 
 namespace BobGroup\BobGo\Model\Carrier;
 
@@ -13,19 +14,13 @@ class AdditionalInfo
     /**
      * @var CountryFactory
      */
-    public $countryFactory;
+    private CountryFactory $countryFactory;
 
     /**
      * @var Http
      */
-    protected $request;
+    private Http $request;
 
-    /**
-     * Constructor
-     *
-     * @param CountryFactory $countryFactory
-     * @param Http $request
-     */
     public function __construct(CountryFactory $countryFactory, Http $request)
     {
         $this->countryFactory = $countryFactory;
@@ -33,9 +28,7 @@ class AdditionalInfo
     }
 
     /**
-     * Retrieve the destination company from the request body
-     *
-     * @return string
+     * Retrieve the destination company from the request body.
      */
     public function getDestComp(): string
     {
@@ -49,9 +42,7 @@ class AdditionalInfo
     }
 
     /**
-     * Retrieve the suburb from the request body
-     *
-     * @return string
+     * Retrieve the suburb from the request body.
      */
     public function getSuburb(): string
     {
@@ -68,9 +59,7 @@ class AdditionalInfo
     }
 
     /**
-     * Retrieve the destination telephone number from the request body
-     *
-     * @return string
+     * Retrieve the destination telephone number from the request body.
      */
     public function getDestTelephone(): string
     {
@@ -84,10 +73,7 @@ class AdditionalInfo
     }
 
     /**
-     * Get the full country name by country ID
-     *
-     * @param string $countryId
-     * @return string
+     * Get the full country name by country ID.
      */
     public function getCountryName(string $countryId): string
     {
@@ -96,8 +82,6 @@ class AdditionalInfo
     }
 
     /**
-     * Retrieve the request body as an array
-     *
      * @return array<string, mixed>
      */
     private function getRequestBody(): array

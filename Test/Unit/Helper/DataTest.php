@@ -47,57 +47,47 @@ class DataTest extends TestCase
         $this->contextMock->method('getLogger')->willReturn($this->loggerMock);
         $this->contextMock->method('getScopeConfig')->willReturn($this->scopeConfigMock);
 
-        // Instantiate the Data helper
         $this->helper = new Data($this->contextMock, $this->moduleListMock);
     }
 
     public function testIsEnabled(): void
     {
-        // Mock the scopeConfig to return '1' when checking if the module is enabled
-        $this->scopeConfigMock->method('getValue')
+        $this->scopeConfigMock->method('isSetFlag')
             ->with(Data::XML_PATH_ENABLED, ScopeInterface::SCOPE_STORE)
-            ->willReturn('1');
+            ->willReturn(true);
 
-        $result = $this->helper->isEnabled();
-        $this->assertEquals('1', $result);
+        $this->assertTrue($this->helper->isEnabled());
     }
 
-    public function testIsEnabledReturnsNullWhenDisabled(): void
+    public function testIsEnabledReturnsFalseWhenDisabled(): void
     {
-        // Mock the scopeConfig to return null when the module is disabled
-        $this->scopeConfigMock->method('getValue')
+        $this->scopeConfigMock->method('isSetFlag')
             ->with(Data::XML_PATH_ENABLED, ScopeInterface::SCOPE_STORE)
-            ->willReturn(null);
+            ->willReturn(false);
 
-        $result = $this->helper->isEnabled();
-        $this->assertNull($result);
+        $this->assertFalse($this->helper->isEnabled());
     }
 
     public function testGetDebugStatus(): void
     {
-        // Mock the scopeConfig to return '1' when checking if debug is enabled
-        $this->scopeConfigMock->method('getValue')
+        $this->scopeConfigMock->method('isSetFlag')
             ->with(Data::XML_PATH_DEBUG, ScopeInterface::SCOPE_STORE)
-            ->willReturn('1');
+            ->willReturn(true);
 
-        $result = $this->helper->getDebugStatus();
-        $this->assertEquals('1', $result);
+        $this->assertTrue($this->helper->getDebugStatus());
     }
 
-    public function testGetDebugStatusReturnsNullWhenDisabled(): void
+    public function testGetDebugStatusReturnsFalseWhenDisabled(): void
     {
-        // Mock the scopeConfig to return null when debug is disabled
-        $this->scopeConfigMock->method('getValue')
+        $this->scopeConfigMock->method('isSetFlag')
             ->with(Data::XML_PATH_DEBUG, ScopeInterface::SCOPE_STORE)
-            ->willReturn(null);
+            ->willReturn(false);
 
-        $result = $this->helper->getDebugStatus();
-        $this->assertNull($result);
+        $this->assertFalse($this->helper->getDebugStatus());
     }
 
     public function testGetExtensionVersion(): void
     {
-        // Mock the moduleList to return a specific version
         $this->moduleListMock->method('getOne')
             ->with('BobGroup_BobGo')
             ->willReturn(['setup_version' => '1.2.3']);
@@ -108,7 +98,6 @@ class DataTest extends TestCase
 
     public function testGetExtensionVersionReturnsNAWhenModuleNotFound(): void
     {
-        // Mock the moduleList to return null (module not found)
         $this->moduleListMock->method('getOne')
             ->with('BobGroup_BobGo')
             ->willReturn(null);
@@ -119,12 +108,10 @@ class DataTest extends TestCase
 
     public function testLogWithDebugEnabled(): void
     {
-        // Mock the scopeConfig to return '1' when checking if debug is enabled
-        $this->scopeConfigMock->method('getValue')
+        $this->scopeConfigMock->method('isSetFlag')
             ->with(Data::XML_PATH_DEBUG, ScopeInterface::SCOPE_STORE)
-            ->willReturn('1');
+            ->willReturn(true);
 
-        // Expect the logger to be called with a specific message
         $this->loggerMock->expects($this->once())
             ->method('debug')
             ->with('Test message');
@@ -134,12 +121,10 @@ class DataTest extends TestCase
 
     public function testLogWithDebugDisabled(): void
     {
-        // Mock the scopeConfig to return null when debug is disabled
-        $this->scopeConfigMock->method('getValue')
+        $this->scopeConfigMock->method('isSetFlag')
             ->with(Data::XML_PATH_DEBUG, ScopeInterface::SCOPE_STORE)
-            ->willReturn(null);
+            ->willReturn(false);
 
-        // Expect the logger not to be called
         $this->loggerMock->expects($this->never())
             ->method('debug');
 
@@ -148,12 +133,10 @@ class DataTest extends TestCase
 
     public function testLogWithSeparator(): void
     {
-        // Mock the scopeConfig to return '1' when checking if debug is enabled
-        $this->scopeConfigMock->method('getValue')
+        $this->scopeConfigMock->method('isSetFlag')
             ->with(Data::XML_PATH_DEBUG, ScopeInterface::SCOPE_STORE)
-            ->willReturn('1');
+            ->willReturn(true);
 
-        // Expect the logger to be called with a separator and the message
         $this->loggerMock->expects($this->exactly(2))
             ->method('debug')
             ->withConsecutive(

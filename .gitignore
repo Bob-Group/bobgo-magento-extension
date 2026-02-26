@@ -18,3 +18,6 @@ Thumbs.db
 
 # Binary documents
 *.pdf
+
+# Company standards (not part of extension)
+BOB.md

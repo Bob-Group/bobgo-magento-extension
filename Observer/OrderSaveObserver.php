@@ -67,6 +67,7 @@ class OrderSaveObserver implements ObserverInterface
         try {
             $order = $observer->getEvent()->getOrder();
             if (!$order) {
+                $this->logger->warning('Bob Go: OrderSaveObserver received event without order');
                 return;
             }
 

@@ -12,12 +12,16 @@ use Psr\Log\LoggerInterface;
  *
  * Provides GET, POST, PATCH, and DELETE methods with automatic Bearer token
  * authentication, JSON encoding/decoding, and structured error handling.
- * Uses Magento's CurlFactory for HTTP transport with a 30-second timeout.
+ * Uses Magento's CurlFactory for HTTP transport.
  *
  * API keys are read from ApiConfig and masked in error logs for security.
  */
 class BobGoApiClient
 {
+    private const REQUEST_TIMEOUT_SECONDS = 30;
+    private const MIN_KEY_DISPLAY_LENGTH = 4;
+    private const KEY_MASK = '****';
+
     /**
      * @var ApiConfig
      */
@@ -67,13 +71,7 @@ class BobGoApiClient
     {
         $url = $this->buildUrl($endpoint);
         $curl = $this->createCurl();
-
-        $payloadJson = json_encode($payload);
-        if ($payloadJson === false) {
-            throw new BobGoApiException('Failed to encode request payload to JSON', 0, '', $endpoint);
-        }
-
-        $curl->post($url, $payloadJson);
+        $curl->post($url, $this->encodePayload($payload, $endpoint));
         return $this->handleResponse($curl, $endpoint);
     }
 
@@ -87,14 +85,8 @@ class BobGoApiClient
     {
         $url = $this->buildUrl($endpoint);
         $curl = $this->createCurl();
-
-        $payloadJson = json_encode($payload);
-        if ($payloadJson === false) {
-            throw new BobGoApiException('Failed to encode request payload to JSON', 0, '', $endpoint);
-        }
-
         $curl->setOption(CURLOPT_CUSTOMREQUEST, 'PATCH');
-        $curl->post($url, $payloadJson);
+        $curl->post($url, $this->encodePayload($payload, $endpoint));
         return $this->handleResponse($curl, $endpoint);
     }
 
@@ -111,15 +103,26 @@ class BobGoApiClient
 
         $curl->setOption(CURLOPT_CUSTOMREQUEST, 'DELETE');
         if (!empty($payload)) {
-            $payloadJson = json_encode($payload);
-            if ($payloadJson === false) {
-                throw new BobGoApiException('Failed to encode request payload to JSON', 0, '', $endpoint);
-            }
-            $curl->post($url, $payloadJson);
+            $curl->post($url, $this->encodePayload($payload, $endpoint));
         } else {
             $curl->get($url);
         }
         return $this->handleResponse($curl, $endpoint);
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     * @param string $endpoint
+     * @return string
+     * @throws BobGoApiException
+     */
+    private function encodePayload(array $payload, string $endpoint): string
+    {
+        $json = json_encode($payload);
+        if ($json === false) {
+            throw new BobGoApiException('Failed to encode request payload to JSON', 0, '', $endpoint);
+        }
+        return $json;
     }
 
     /**
@@ -136,7 +139,7 @@ class BobGoApiClient
         $curl = $this->curlFactory->create();
         $curl->addHeader('Content-Type', 'application/json');
         $curl->addHeader('Authorization', 'Bearer ' . $apiKey);
-        $curl->setOption(CURLOPT_TIMEOUT, 30);
+        $curl->setOption(CURLOPT_TIMEOUT, self::REQUEST_TIMEOUT_SECONDS);
         return $curl;
     }
 
@@ -190,6 +193,10 @@ class BobGoApiClient
 
         $decoded = json_decode($responseBody, true);
         if (!is_array($decoded)) {
+            $this->logger->warning('Bob Go API returned non-JSON response', [
+                'endpoint' => $endpoint,
+                'response' => substr($responseBody, 0, 500),
+            ]);
             return [];
         }
 
@@ -199,9 +206,9 @@ class BobGoApiClient
     private function getMaskedApiKey(): string
     {
         $apiKey = $this->apiConfig->getApiKey();
-        if ($apiKey === null || strlen($apiKey) < 4) {
-            return '****';
+        if ($apiKey === null || strlen($apiKey) < self::MIN_KEY_DISPLAY_LENGTH) {
+            return self::KEY_MASK;
         }
-        return '****' . substr($apiKey, -4);
+        return self::KEY_MASK . substr($apiKey, -4);
     }
 }

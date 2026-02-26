@@ -52,7 +52,7 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <comment>When enabled, customers will receive an email notification when a shipment is created.</comment>
                 </field>
-<!--                Hiding the `Enable Track My Order` setting for now-->
+<!-- Hidden: Track My Order feature not yet available -->
                 <field id="enable_track_order" translate="label" type="select" sortOrder="10" showInDefault="0" showInWebsite="0" showInStore="0">
                     <label>Enable Track my order</label>
                     <comment>When this setting is enabled, your customers will be presented with a page to track orders.</comment>
