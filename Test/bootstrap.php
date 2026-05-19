@@ -153,7 +153,7 @@ $stubs = [
     'class' => [
         'Magento\Framework\HTTP\Client\Curl' => ['addHeader', 'get', 'post', 'getStatus', 'getBody', 'setOption'],
         'Magento\Framework\HTTP\Client\CurlFactory' => ['create'],
-        'Magento\Framework\Api\SearchCriteriaBuilder' => ['addFilter', 'create'],
+        'Magento\Framework\Api\SearchCriteriaBuilder' => ['addFilter', 'setPageSize', 'create'],
         'Magento\Framework\Api\SearchCriteria' => [],
         // Note: Magento\Sales\Model\Order is defined separately below (implements OrderInterface)
 
@@ -213,7 +213,7 @@ foreach ($stubs['class'] as $fqcn => $methods) {
 
 // Magento\Sales\Model\Order must implement OrderInterface so mocks satisfy return type hints
 if (!class_exists(\Magento\Sales\Model\Order::class, false)) {
-    eval('namespace Magento\Sales\Model; class Order implements \Magento\Sales\Api\Data\OrderInterface { public function getEntityId() { return null; } public function getIncrementId() { return null; } public function getGrandTotal() { return null; } public function getTotalDue() { return null; } public function getDiscountAmount() { return null; } public function getOrderCurrencyCode() { return null; } public function getStatus() { return null; } public function getShippingMethod() { return null; } public function getShippingDescription() { return null; } public function getCreatedAt() { return null; } public function getUpdatedAt() { return null; } public function getShippingAddress() { return null; } public function getBillingAddress() { return null; } public function getItems() { return null; } public function getData($k = null) { return null; } public function setData($k = null, $v = null) { return null; } public function getCustomerFirstname() { return null; } public function getCustomerLastname() { return null; } public function getCustomerEmail() { return null; } public function getState() { return null; } public function canShip() { return null; } public function getShipmentsCollection() { return null; } public function getAllItems() { return null; } public function addCommentToStatusHistory($comment = null) { return null; } public function save() { return null; } }');
+    eval('namespace Magento\Sales\Model; class Order implements \Magento\Sales\Api\Data\OrderInterface { const STATE_NEW = "new"; const STATE_PROCESSING = "processing"; const STATE_HOLDED = "holded"; const STATE_COMPLETE = "complete"; const STATE_CLOSED = "closed"; const STATE_CANCELED = "canceled"; public function getEntityId() { return null; } public function getIncrementId() { return null; } public function getGrandTotal() { return null; } public function getTotalDue() { return null; } public function getDiscountAmount() { return null; } public function getOrderCurrencyCode() { return null; } public function getStatus() { return null; } public function getShippingMethod() { return null; } public function getShippingDescription() { return null; } public function getCreatedAt() { return null; } public function getUpdatedAt() { return null; } public function getShippingAddress() { return null; } public function getBillingAddress() { return null; } public function getItems() { return null; } public function getData($k = null) { return null; } public function setData($k = null, $v = null) { return null; } public function getCustomerFirstname() { return null; } public function getCustomerLastname() { return null; } public function getCustomerEmail() { return null; } public function getState() { return null; } public function canShip() { return null; } public function getShipmentsCollection() { return null; } public function getAllItems() { return null; } public function addCommentToStatusHistory($comment = null) { return null; } public function save() { return null; } }');
 }
 
 // ShipmentCollection must implement IteratorAggregate so foreach works on mocks
@@ -252,4 +252,64 @@ if (!defined('CURLOPT_TIMEOUT')) {
 }
 if (!defined('CURLOPT_CUSTOMREQUEST')) {
     define('CURLOPT_CUSTOMREQUEST', 10036);
+}
+
+// Stub Magento DateTime helper (used by OrderPushService / FulfillmentService for timestamps)
+if (!class_exists(\Magento\Framework\Stdlib\DateTime\DateTime::class, false)) {
+    eval('namespace Magento\Framework\Stdlib\DateTime; class DateTime { public function gmtDate($format = null, $input = null) { return gmdate("Y-m-d H:i:s"); } }');
+}
+
+// Stub Magento Model\AbstractModel (parent of SyncLog) — minimal DataObject behaviour is enough
+if (!class_exists(\Magento\Framework\Model\AbstractModel::class, false)) {
+    eval('namespace Magento\Framework\Model; abstract class AbstractModel extends \Magento\Framework\DataObject { protected function _construct(): void {} protected function _init($resourceModel) {} }');
+}
+
+// Stub Magento ResourceModel AbstractDb (parent of SyncLog resource model)
+if (!class_exists(\Magento\Framework\Model\ResourceModel\Db\AbstractDb::class, false)) {
+    eval('namespace Magento\Framework\Model\ResourceModel\Db; abstract class AbstractDb { protected function _construct(): void {} protected function _init($table, $idField) {} public function save($object) { return $this; } }');
+}
+
+// Stub Magento controller/block parent classes used by our concrete classes — minimum
+// shape needed for PHPStan / PHPUnit autoloading. None of these are exercised at runtime
+// in unit tests; they only need to be loadable.
+if (!class_exists(\Magento\Framework\App\Action\Action::class, false)) {
+    eval('namespace Magento\Framework\App\Action; class Action { protected $_request; protected $messageManager; protected $_redirect; public function __construct($context = null) {} public function execute() {} protected function _redirect(...$args) {} public function getRequest() { return $this->_request; } public function getUrl(...$args) {} }');
+}
+if (!interface_exists(\Magento\Framework\App\CsrfAwareActionInterface::class, false)) {
+    eval('namespace Magento\Framework\App; interface CsrfAwareActionInterface { public function createCsrfValidationException(\Magento\Framework\App\RequestInterface $request): ?\Magento\Framework\App\Request\InvalidRequestException; public function validateForCsrf(\Magento\Framework\App\RequestInterface $request): ?bool; }');
+}
+if (!interface_exists(\Magento\Framework\App\RequestInterface::class, false)) {
+    eval('namespace Magento\Framework\App; interface RequestInterface { public function getContent(); public function getHeader($name); public function getParam($name); }');
+}
+if (!class_exists(\Magento\Framework\App\Request\InvalidRequestException::class, false)) {
+    eval('namespace Magento\Framework\App\Request; class InvalidRequestException extends \Exception {}');
+}
+if (!class_exists(\Magento\Framework\App\Action\Context::class, false)) {
+    eval('namespace Magento\Framework\App\Action; class Context { public function __construct() {} }');
+}
+if (!class_exists(\Magento\Framework\Controller\Result\JsonFactory::class, false)) {
+    eval('namespace Magento\Framework\Controller\Result; class JsonFactory { public function create() {} }');
+}
+if (!class_exists(\Magento\Backend\App\Action::class, false)) {
+    eval('namespace Magento\Backend\App; class Action extends \Magento\Framework\App\Action\Action { protected $messageManager; protected function _redirect(...$args) {} }');
+}
+if (!class_exists(\Magento\Backend\App\Action\Context::class, false)) {
+    eval('namespace Magento\Backend\App\Action; class Context extends \Magento\Framework\App\Action\Context {}');
+}
+if (!class_exists(\Magento\Framework\View\Element\Template::class, false)) {
+    eval('namespace Magento\Framework\View\Element; class Template { protected $_data = []; public function __construct(...$args) {} public function getUrl(...$args) {} public function getData($k = null) { return $this->_data[$k] ?? null; } public function setData($k, $v = null) { $this->_data[$k] = $v; return $this; } }');
+}
+if (!class_exists(\Magento\Backend\Block\Template::class, false)) {
+    eval('namespace Magento\Backend\Block; class Template extends \Magento\Framework\View\Element\Template { public function __construct(...$args) {} }');
+}
+if (!class_exists(\Magento\Framework\View\Element\Html\Link\Current::class, false)) {
+    eval('namespace Magento\Framework\View\Element\Html\Link; class Current extends \Magento\Framework\View\Element\Template { public function __construct(...$args) {} public function getMca() { return ""; } }');
+}
+if (!class_exists(\Magento\Framework\Registry::class, false)) {
+    eval('namespace Magento\Framework; class Registry { public function registry($key) { return null; } public function register($key, $value, $overwrite = false) {} public function unregister($key) {} }');
+}
+
+// Stub Magento ResourceModel AbstractCollection (parent of SyncLog collection)
+if (!class_exists(\Magento\Framework\Model\ResourceModel\Db\Collection\AbstractCollection::class, false)) {
+    eval('namespace Magento\Framework\Model\ResourceModel\Db\Collection; abstract class AbstractCollection { protected function _construct(): void {} protected function _init($model, $resourceModel) {} public function addFieldToFilter($field, $condition = null) { return $this; } public function setPageSize($size) { return $this; } public function getSize() { return 0; } }');
 }

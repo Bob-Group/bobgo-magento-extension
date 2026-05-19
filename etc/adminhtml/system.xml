@@ -27,6 +27,11 @@
                     <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
                     <comment>Enter your Bob Go API key.</comment>
                 </field>
+                <field id="webhook_secret" translate="label comment" type="obscure" sortOrder="8" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Webhook Signing Secret</label>
+                    <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
+                    <comment>Merchant-issued HMAC secret used to verify inbound Bob Go webhooks. Required for fulfillment sync.</comment>
+                </field>
                 <field id="active" translate="label" type="select" sortOrder="3" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Enable Bob Go rates at checkout</label>
                     <comment>When enabled, your customers will be presented with shipping rates at checkout, as configured on the Bob Go platform under Rates at checkout.</comment>

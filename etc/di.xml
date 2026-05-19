@@ -16,6 +16,7 @@
         <arguments>
             <argument name="curlFactory" xsi:type="object">Magento\Framework\HTTP\Client\CurlFactory</argument>
             <argument name="logger" xsi:type="object">Psr\Log\LoggerInterface</argument>
+            <argument name="storeManager" xsi:type="object">Magento\Store\Model\StoreManagerInterface</argument>
         </arguments>
     </type>
 

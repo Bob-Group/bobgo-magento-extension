@@ -3,7 +3,10 @@ declare(strict_types=1);
 
 namespace BobGroup\BobGo\Controller\Webhook;
 
+use BobGroup\BobGo\Model\SyncLog;
 use BobGroup\BobGo\Service\FulfillmentService;
+use BobGroup\BobGo\Service\SyncLogger;
+use BobGroup\BobGo\Service\WebhookSignatureVerifier;
 use Magento\Framework\App\Action\Action;
 use Magento\Framework\App\Action\Context;
 use Magento\Framework\App\CsrfAwareActionInterface;
@@ -15,103 +18,133 @@ use Psr\Log\LoggerInterface;
 /**
  * Unified webhook controller for all Bob Go webhook events.
  *
- * Bob Go sends all webhook topics to the same delivery URL and includes
- * the topic in an HTTP header. This controller reads the topic header,
- * parses the flat JSON body, and routes to the appropriate handler.
- *
- * Supported topic headers (checked in order):
- *   - X-BobGo-Topic
- *   - X-Webhook-Topic
+ * Inbound flow:
+ *   1. Read raw body (signature is computed over this exact byte sequence).
+ *   2. Verify HMAC-SHA256 of the body against the Bobgo-Webhook-Signature header
+ *      using the merchant-issued webhook secret. Constant-time compare. 403 on any
+ *      mismatch or when the secret isn't configured — we never process unverified bodies.
+ *   3. Decode JSON, resolve topic (header → payload-shape fallback).
+ *   4. Dedup by event_id via SyncLogger so retried deliveries are 200'd, not reprocessed.
+ *   5. Route to the appropriate handler. Every outcome is recorded in bobgo_sync_log.
  *
  * Route: POST /bobgo/webhook/receive
  */
 class Receive extends Action implements CsrfAwareActionInterface
 {
-    /**
-     * Topic header names to check, in priority order.
-     */
     private const TOPIC_HEADERS = [
         'X-BobGo-Topic',
         'X-Webhook-Topic',
         'X-Topic',
     ];
 
-    /**
-     * @var FulfillmentService
-     */
+    private const SIGNATURE_HEADER = 'Bobgo-Webhook-Signature';
+    private const EVENT_ID_HEADER  = 'Bobgo-Webhook-Event-Id';
+
     private FulfillmentService $fulfillmentService;
-
-    /**
-     * @var JsonFactory
-     */
     private JsonFactory $jsonFactory;
-
-    /**
-     * @var LoggerInterface
-     */
     private LoggerInterface $logger;
+    private WebhookSignatureVerifier $signatureVerifier;
+    private SyncLogger $syncLogger;
 
     public function __construct(
         Context $context,
         FulfillmentService $fulfillmentService,
         JsonFactory $jsonFactory,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        WebhookSignatureVerifier $signatureVerifier,
+        SyncLogger $syncLogger
     ) {
         parent::__construct($context);
         $this->fulfillmentService = $fulfillmentService;
         $this->jsonFactory = $jsonFactory;
         $this->logger = $logger;
+        $this->signatureVerifier = $signatureVerifier;
+        $this->syncLogger = $syncLogger;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function execute()
     {
         $result = $this->jsonFactory->create();
         $request = $this->getRequest();
+        $rawBody = (string) $request->getContent();
 
-        $body = $request->getContent();
-        $data = json_decode($body, true);
+        // 1. Signature verification — first gate. Never inspect the body before this.
+        $providedSignature = $request->getHeader(self::SIGNATURE_HEADER);
+        if (!$this->signatureVerifier->verify($rawBody, is_string($providedSignature) ? $providedSignature : null)) {
+            $this->syncLogger->logInbound(
+                SyncLog::EVENT_WEBHOOK_REJECTED,
+                $rawBody,
+                null,
+                $this->getEventId($request),
+                403,
+                false
+            );
+            return $result->setHttpResponseCode(403)->setData(['error' => 'Invalid signature']);
+        }
 
+        // 2. Parse body
+        $data = json_decode($rawBody, true);
         if (!is_array($data)) {
-            $this->logger->error('Bob Go webhook: invalid JSON body');
+            $this->syncLogger->logInbound(
+                SyncLog::EVENT_WEBHOOK_REJECTED,
+                $rawBody,
+                null,
+                $this->getEventId($request),
+                400,
+                false
+            );
             return $result->setHttpResponseCode(400)->setData(['error' => 'Invalid JSON']);
         }
 
-        // Determine topic from headers
-        $topic = $this->resolveTopicFromHeaders($request);
-
-        // If no header found, try to infer from payload structure
-        if ($topic === null) {
-            $topic = $this->inferTopicFromPayload($data);
+        $topic = $this->resolveTopicFromHeaders($request) ?? $this->inferTopicFromPayload($data);
+        $eventId = $this->getEventId($request) ?? ($data['event_id'] ?? null);
+        if ($eventId !== null) {
+            $eventId = (string) $eventId;
         }
 
         $this->logger->info('Bob Go webhook received', [
             'topic' => $topic ?? 'unknown',
-            'channel_order_number' => $data['channel_order_number'] ?? 'unknown',
+            'event_id' => $eventId,
+            'channel_order_number' => $data['channel_order_number'] ?? null,
         ]);
 
         if ($topic === null) {
-            $this->logger->warning('Bob Go webhook: could not determine topic', [
-                'headers' => $this->getAllTopicHeaders($request),
-                'payload_keys' => array_keys($data),
-            ]);
+            $this->syncLogger->logInbound(
+                SyncLog::EVENT_WEBHOOK_REJECTED,
+                $data,
+                null,
+                $eventId,
+                400,
+                false
+            );
             return $result->setHttpResponseCode(400)->setData(['error' => 'Could not determine webhook topic']);
         }
 
+        // 3. Idempotency — already processed?
+        if ($this->syncLogger->wasEventIdProcessed($eventId)) {
+            $this->logger->info('Bob Go webhook: duplicate event_id, acknowledging', [
+                'event_id' => $eventId,
+                'topic' => $topic,
+            ]);
+            return $result->setHttpResponseCode(200)->setData(['message' => 'duplicate, ignored']);
+        }
+
+        // 4. Route
         try {
             switch ($topic) {
                 case 'fulfillment/created':
                     $this->fulfillmentService->processFulfillment($data);
+                    $this->syncLogger->logInbound(SyncLog::EVENT_FULFILLMENT_RECEIVED, $data, null, $eventId, 200, true);
                     return $result->setData(['message' => 'fulfillment processed']);
 
                 case 'tracking/updated':
                     $this->fulfillmentService->processTrackingUpdate($data);
+                    $this->syncLogger->logInbound(SyncLog::EVENT_TRACKING_UPDATED, $data, null, $eventId, 200, true);
                     return $result->setData(['message' => 'tracking update processed']);
 
                 default:
                     $this->logger->warning('Bob Go webhook: unknown topic', ['topic' => $topic]);
+                    $this->syncLogger->logInbound(SyncLog::EVENT_WEBHOOK_RECEIVED, $data, null, $eventId, 200, true);
                     return $result->setData(['message' => 'unknown topic, ignored']);
             }
         } catch (\Exception $e) {
@@ -119,16 +152,17 @@ class Receive extends Action implements CsrfAwareActionInterface
                 'topic' => $topic,
                 'error' => $e->getMessage(),
             ]);
+            $this->syncLogger->logInbound(SyncLog::EVENT_WEBHOOK_RECEIVED, $data, null, $eventId, 500, false);
             return $result->setHttpResponseCode(500)->setData(['error' => 'Processing failed']);
         }
     }
 
-    /**
-     * Check known topic header names and return the first match.
-     *
-     * @param RequestInterface $request
-     * @return string|null
-     */
+    private function getEventId(RequestInterface $request): ?string
+    {
+        $value = $request->getHeader(self::EVENT_ID_HEADER);
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
     private function resolveTopicFromHeaders(RequestInterface $request): ?string
     {
         foreach (self::TOPIC_HEADERS as $headerName) {
@@ -137,63 +171,30 @@ class Receive extends Action implements CsrfAwareActionInterface
                 return $value;
             }
         }
-
         return null;
     }
 
     /**
-     * Infer the webhook topic from payload structure when no header is present.
-     *
-     * Fulfillment payloads have: method, method_reference, order_items
-     * Tracking payloads have: shipment_tracking_reference, checkpoints, tracking_steps
+     * Fallback topic resolution when no header is present.
      *
      * @param array<string,mixed> $data
-     * @return string|null
      */
     private function inferTopicFromPayload(array $data): ?string
     {
-        // Tracking update: has shipment_tracking_reference or checkpoints
         if (isset($data['shipment_tracking_reference']) || isset($data['checkpoints'])) {
             return 'tracking/updated';
         }
-
-        // Fulfillment: has method_reference and order_items
         if (isset($data['method_reference']) && isset($data['order_items'])) {
             return 'fulfillment/created';
         }
-
         return null;
     }
 
-    /**
-     * Get all topic-related headers for debug logging.
-     *
-     * @param RequestInterface $request
-     * @return array<string,string>
-     */
-    private function getAllTopicHeaders(RequestInterface $request): array
-    {
-        $headers = [];
-        foreach (self::TOPIC_HEADERS as $headerName) {
-            $value = $request->getHeader($headerName);
-            if (is_string($value) && $value !== '') {
-                $headers[$headerName] = $value;
-            }
-        }
-        return $headers;
-    }
-
-    /**
-     * @inheritdoc
-     */
     public function createCsrfValidationException(RequestInterface $request): ?InvalidRequestException
     {
         return null;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function validateForCsrf(RequestInterface $request): ?bool
     {
         return true;

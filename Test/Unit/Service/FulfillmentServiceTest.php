@@ -79,6 +79,8 @@ class FulfillmentServiceTest extends TestCase
         $this->trackFactoryMock = $this->createMock(TrackFactory::class);
         $this->apiConfigMock = $this->createMock(ApiConfig::class);
         $this->loggerMock = $this->createMock(LoggerInterface::class);
+        $dateTimeMock = $this->createMock(\Magento\Framework\Stdlib\DateTime\DateTime::class);
+        $dateTimeMock->method('gmtDate')->willReturn('2026-05-19 12:00:00');
 
         $this->service = new FulfillmentService(
             $this->orderRepositoryMock,
@@ -88,7 +90,8 @@ class FulfillmentServiceTest extends TestCase
             $this->searchCriteriaBuilderMock,
             $this->trackFactoryMock,
             $this->apiConfigMock,
-            $this->loggerMock
+            $this->loggerMock,
+            $dateTimeMock
         );
     }
 

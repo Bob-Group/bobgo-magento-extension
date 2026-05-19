@@ -1,0 +1,55 @@
+parameters:
+    level: 2
+    paths:
+        - Api
+        - Block
+        - Controller
+        - Cron
+        - Helper
+        - Model
+        - Observer
+        - Plugin
+        - Service
+    excludePaths:
+        - vendor/*
+        - Test/*
+    bootstrapFiles:
+        - Test/stubs/autoload-prepend.php
+        - Test/bootstrap.php
+    treatPhpDocTypesAsCertain: false
+    reportUnmatchedIgnoredErrors: false
+    ignoreErrors:
+        # -- Stub-environment noise (real APIs that exist in Magento at runtime
+        # but aren't declared in our minimal test stubs)
+        - '#Method Magento\\.*::.*\(\) invoked with \d+ parameters?, 0 required#'
+        - '#Call to method \w+\(\) on an unknown class .*Factory\.#'
+        - '#unknown class .*Factory#'
+        - '#has invalid type .*Factory\.#'
+        - '#Class .*BobGroup\\BobGo\\.* extends unknown class Magento\\#'
+        - '#Class .*BobGroup\\BobGo\\.* implements unknown interface Magento\\#'
+        - '#calls .* but BobGroup\\BobGo\\.* does not extend any class#'
+        - '#Access to an undefined property BobGroup\\BobGo\\.*::\$(messageManager|_logger|_scopeConfig|_rateErrorFactory|_rateFactory|_rateMethodFactory|_request|_trackFactory|_trackStatusFactory|_numBoxes|_debugReplacePrivateDataKeys|stockRegistry)#'
+        - '#Call to an undefined method BobGroup\\BobGo\\.*::(getUrl|getRequest|getStoreConfig|getConfigData|getConfigFlag|isActive|getAllItems|_redirect|isZipCodeRequired)#'
+        - '#PHPDoc tag @var for variable .* contains unknown class Magento\\#'
+        - '#PHPDoc tag @var for variable .* contains unknown class BobGroup\\BobGo\\Model\\Carrier\\(Store|Item)#'
+        - '#Variable \$\w+ in PHPDoc tag @var does not match any variable in the foreach loop#'
+        # Magento OrderInterface vs concrete Order: real Order class exposes
+        # canShip()/getState()/getAllItems()/getExtensionAttributes() but our
+        # stub only stubs the interface.
+        - '#Call to an undefined method Magento\\Sales\\Api\\Data\\OrderInterface::(canShip|getState|getAllItems|getExtensionAttributes|setExtensionAttributes)\(\)#'
+        # RateRequest extends DataObject so getDest*/getAllItems work via __call.
+        - '#Call to an undefined method Magento\\Quote\\Model\\Quote\\Address\\RateRequest::#'
+        # Quote\Item: same — magic methods on DataObject base.
+        - '#Call to (an undefined )?method (getSku|getName|getItemId|getQty|getPrice|getWeight|getProduct|getStore|getBaseUrl)\(\) on an unknown class Magento\\(Quote|Sales)\\#'
+        - '#Call to an undefined method Magento\\Quote\\Model\\Quote\\Item::#'
+        # AbstractCarrier base constants we inherit.
+        - '#Access to undefined constant .*::(HANDLING_TYPE_PERCENT|DEBUG_KEYS_MASK)#'
+        # Result/Redirect/Page/Status — Magento controller return types and tracking.
+        - '#has invalid return type Magento\\Framework\\Controller\\Result\\#'
+        - '#has invalid return type Magento\\Framework\\View\\Result\\#'
+        - '#has invalid return type Magento\\Shipping\\Model\\Tracking\\#'
+        - '#Call to an undefined static method Magento\\Framework\\View\\Element\\Html\\Link\\Current::_toHtml#'
+        # Magento class types used as constructor / plugin signatures — exist in real Magento.
+        - '#has invalid type Magento\\Framework\\View\\Element\\Template\\Context#'
+        - '#has invalid type Magento\\Framework\\App\\DefaultPathInterface#'
+        - '#has invalid type Magento\\Checkout\\Block\\Checkout\\LayoutProcessor#'

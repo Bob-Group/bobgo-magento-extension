@@ -19,6 +19,9 @@ class ApiConfig
     /** @var string Config path for the encrypted Bob Go API key */
     const XML_PATH_API_KEY = 'carriers/bobgo/api_key';
 
+    /** @var string Config path for the encrypted webhook signing secret */
+    const XML_PATH_WEBHOOK_SECRET = 'carriers/bobgo/webhook_secret';
+
     /** @var string Config path for the environment selector (sandbox/production) */
     const XML_PATH_ENVIRONMENT = 'carriers/bobgo/environment';
 
@@ -79,6 +82,21 @@ class ApiConfig
     public function getApiKey(): ?string
     {
         $value = $this->scopeConfig->getValue(self::XML_PATH_API_KEY, ScopeInterface::SCOPE_STORE);
+        if (!is_string($value) || $value === '') {
+            return null;
+        }
+        $decrypted = $this->encryptor->decrypt($value);
+        return is_string($decrypted) && $decrypted !== '' ? $decrypted : null;
+    }
+
+    /**
+     * Get the decrypted webhook signing secret used to verify inbound Bob Go webhooks.
+     *
+     * @return string|null The webhook secret, or null if not configured
+     */
+    public function getWebhookSecret(): ?string
+    {
+        $value = $this->scopeConfig->getValue(self::XML_PATH_WEBHOOK_SECRET, ScopeInterface::SCOPE_STORE);
         if (!is_string($value) || $value === '') {
             return null;
         }

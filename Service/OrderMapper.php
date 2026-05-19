@@ -67,6 +67,7 @@ class OrderMapper implements OrderMapperInterface
         $billingAddress = $order->getBillingAddress();
 
         return [
+            'channel_ref_id'                    => (string) $order->getEntityId(),
             'channel_order_number'              => $order->getIncrementId(),
             'customer_name'                     => $order->getCustomerFirstname() ?: ($billingAddress ? $billingAddress->getFirstname() : ''),
             'customer_surname'                  => $order->getCustomerLastname() ?: ($billingAddress ? $billingAddress->getLastname() : ''),
@@ -149,6 +150,7 @@ class OrderMapper implements OrderMapperInterface
     private function mapItem(OrderItemInterface $item): array
     {
         $mapped = [
+            'channel_ref_id'    => (string) $item->getItemId(),
             'description'       => $item->getName() ?: '',
             'sku'               => $item->getSku(),
             'unit_price'        => (float) $item->getPriceInclTax(),

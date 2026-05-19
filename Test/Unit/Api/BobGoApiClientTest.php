@@ -8,6 +8,8 @@ use BobGroup\BobGo\Api\BobGoApiException;
 use BobGroup\BobGo\Model\Config\ApiConfig;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
+use Magento\Store\Api\Data\StoreInterface;
+use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -47,10 +49,16 @@ class BobGoApiClientTest extends TestCase
 
         $this->curlFactoryMock->method('create')->willReturn($this->curlMock);
 
+        $storeMock = $this->createMock(StoreInterface::class);
+        $storeMock->method('getBaseUrl')->willReturn('https://store.example.com/');
+        $storeManagerMock = $this->createMock(StoreManagerInterface::class);
+        $storeManagerMock->method('getStore')->willReturn($storeMock);
+
         $this->client = new BobGoApiClient(
             $this->apiConfigMock,
             $this->curlFactoryMock,
-            $this->loggerMock
+            $this->loggerMock,
+            $storeManagerMock
         );
     }
 
@@ -59,24 +67,21 @@ class BobGoApiClientTest extends TestCase
         $this->apiConfigMock->method('getApiKey')->willReturn('test-key-abc123');
         $this->apiConfigMock->method('getBaseUrl')->willReturn(ApiConfig::BASE_URL_SANDBOX);
 
-        $this->curlMock->expects($this->exactly(2))
-            ->method('addHeader')
-            ->willReturnCallback(function (string $name, string $value) {
-                static $callIndex = 0;
-                if ($callIndex === 0) {
-                    $this->assertSame('Content-Type', $name);
-                    $this->assertSame('application/json', $value);
-                } elseif ($callIndex === 1) {
-                    $this->assertSame('Authorization', $name);
-                    $this->assertSame('Bearer test-key-abc123', $value);
-                }
-                $callIndex++;
+        $headers = [];
+        $this->curlMock->method('addHeader')
+            ->willReturnCallback(function (string $name, string $value) use (&$headers) {
+                $headers[$name] = $value;
             });
 
         $this->curlMock->method('getStatus')->willReturn(200);
         $this->curlMock->method('getBody')->willReturn('{"success":true}');
 
         $this->client->post('orders', ['order_id' => '123']);
+
+        $this->assertSame('application/json', $headers['Content-Type'] ?? null);
+        $this->assertSame('application/json', $headers['Accept'] ?? null);
+        $this->assertSame('Bearer test-key-abc123', $headers['Authorization'] ?? null);
+        $this->assertSame('https://store.example.com', $headers['bobgo-channel-identifier'] ?? null);
     }
 
     public function testPostBuildsCorrectUrl(): void

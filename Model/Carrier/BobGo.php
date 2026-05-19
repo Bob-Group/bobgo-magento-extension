@@ -203,7 +203,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     public function getBaseUrl(): string
     {
-        /** @var Store $store */
+        /** @var \Magento\Store\Model\Store $store */
         $store = $this->_storeManager->getStore();
         $storeBase = $store->getBaseUrl();
 
@@ -263,7 +263,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         $defaultErrorMsg = __('The shipping module is not available.');
         $showMethod = $this->getConfigData('showmethod');
 
-        /** @var Item $item */
+        /** @var \Magento\Quote\Model\Quote\Item $item */
         foreach ($this->getAllItems($rateRequest) as $item) {
             $product = $item->getProduct();
             if ($product && $product->getId()) {

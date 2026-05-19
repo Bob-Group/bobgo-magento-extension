@@ -1,0 +1,73 @@
+<?php
+/** @var \BobGroup\BobGo\Block\Adminhtml\Order\View\BobGoInfo $block */
+/** @var \Magento\Framework\Escaper $escaper */
+
+$order = $block->getOrder();
+if ($order === null) {
+    return;
+}
+
+$bobgoOrderId   = (string) ($order->getData('bobgo_order_id') ?? '');
+$bobgoOrderRef  = (string) ($order->getData('bobgo_order_ref') ?? '');
+$syncStatus     = (string) ($order->getData('bobgo_sync_status') ?? '—');
+$lastSynced     = (string) ($order->getData('bobgo_last_synced') ?? '—');
+$lastWebhook    = (string) ($order->getData('bobgo_last_webhook') ?? '—');
+$shipments      = $block->getShipments();
+?>
+<section class="admin__page-section bobgo-order-info">
+    <div class="admin__page-section-title">
+        <span class="title"><?= $escaper->escapeHtml(__('Bob Go')) ?></span>
+    </div>
+    <div class="admin__page-section-content">
+        <table class="admin__table-secondary">
+            <tr>
+                <th><?= $escaper->escapeHtml(__('Bob Go order id')) ?></th>
+                <td><?= $bobgoOrderId !== '' ? $escaper->escapeHtml($bobgoOrderId) : '—' ?></td>
+            </tr>
+            <tr>
+                <th><?= $escaper->escapeHtml(__('Bob Go order ref')) ?></th>
+                <td><?= $bobgoOrderRef !== '' ? $escaper->escapeHtml($bobgoOrderRef) : '—' ?></td>
+            </tr>
+            <tr>
+                <th><?= $escaper->escapeHtml(__('Sync status')) ?></th>
+                <td><?= $escaper->escapeHtml($syncStatus) ?></td>
+            </tr>
+            <tr>
+                <th><?= $escaper->escapeHtml(__('Last synced')) ?></th>
+                <td><?= $escaper->escapeHtml($lastSynced) ?></td>
+            </tr>
+            <tr>
+                <th><?= $escaper->escapeHtml(__('Last webhook')) ?></th>
+                <td><?= $escaper->escapeHtml($lastWebhook) ?></td>
+            </tr>
+        </table>
+
+        <?php if (!empty($shipments)): ?>
+            <h4><?= $escaper->escapeHtml(__('Shipments (from Bob Go)')) ?></h4>
+            <?php foreach ($shipments as $shipment): ?>
+                <table class="admin__table-secondary" style="margin-bottom:8px;">
+                    <tr>
+                        <th><?= $escaper->escapeHtml(__('Tracking number')) ?></th>
+                        <td><?= $escaper->escapeHtml((string) ($shipment['tracking_number'] ?? '—')) ?></td>
+                    </tr>
+                    <tr>
+                        <th><?= $escaper->escapeHtml(__('Courier')) ?></th>
+                        <td><?= $escaper->escapeHtml((string) ($shipment['courier'] ?? $shipment['courier_name'] ?? '—')) ?></td>
+                    </tr>
+                    <tr>
+                        <th><?= $escaper->escapeHtml(__('Status')) ?></th>
+                        <td><?= $escaper->escapeHtml((string) ($shipment['status'] ?? '—')) ?></td>
+                    </tr>
+                </table>
+            <?php endforeach; ?>
+        <?php endif; ?>
+
+        <p style="margin-top:12px;">
+            <a href="<?= $escaper->escapeUrl($block->getResyncUrl()) ?>"
+               class="action-default"
+               onclick="return confirm('<?= $escaper->escapeJs(__('Resync this order with Bob Go?')) ?>');">
+                <?= $escaper->escapeHtml(__('Resync with Bob Go')) ?>
+            </a>
+        </p>
+    </div>
+</section>

@@ -10,6 +10,7 @@ use Magento\Sales\Api\Data\ShipmentItemCreationInterfaceFactory;
 use Magento\Framework\Api\SearchCriteriaBuilder;
 use Magento\Sales\Model\Order\Shipment\TrackFactory;
 use BobGroup\BobGo\Model\Config\ApiConfig;
+use Magento\Framework\Stdlib\DateTime\DateTime;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -70,6 +71,11 @@ class FulfillmentService
      */
     private LoggerInterface $logger;
 
+    /**
+     * @var DateTime
+     */
+    private DateTime $dateTime;
+
     public function __construct(
         OrderRepositoryInterface $orderRepository,
         ShipOrderInterface $shipOrder,
@@ -78,7 +84,8 @@ class FulfillmentService
         SearchCriteriaBuilder $searchCriteriaBuilder,
         TrackFactory $trackFactory,
         ApiConfig $apiConfig,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        DateTime $dateTime
     ) {
         $this->orderRepository = $orderRepository;
         $this->shipOrder = $shipOrder;
@@ -88,6 +95,24 @@ class FulfillmentService
         $this->trackFactory = $trackFactory;
         $this->apiConfig = $apiConfig;
         $this->logger = $logger;
+        $this->dateTime = $dateTime;
+    }
+
+    /**
+     * Bump the bobgo_last_webhook timestamp on an order. Safe to call from
+     * every webhook handler — failures are swallowed.
+     */
+    private function stampLastWebhook(\Magento\Sales\Api\Data\OrderInterface $order): void
+    {
+        try {
+            $order->setData('bobgo_last_webhook', $this->dateTime->gmtDate());
+            $this->orderRepository->save($order);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Bob Go: failed to stamp bobgo_last_webhook', [
+                'order_id' => $order->getEntityId(),
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -116,6 +141,8 @@ class FulfillmentService
             ]);
             return;
         }
+
+        $this->stampLastWebhook($order);
 
         if (!$order->canShip()) {
             $this->logger->info('Bob Go fulfillment: order cannot be shipped', [
@@ -213,6 +240,8 @@ class FulfillmentService
             ]);
             return;
         }
+
+        $this->stampLastWebhook($order);
 
         /** @var \Magento\Sales\Model\Order $order */
         $shipments = $order->getShipmentsCollection();

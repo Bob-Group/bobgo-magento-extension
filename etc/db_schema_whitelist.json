@@ -1,12 +1,40 @@
 {
     "sales_order": {
         "column": {
-            "bobgo_order_id": true
+            "bobgo_order_id": true,
+            "bobgo_order_ref": true,
+            "bobgo_sync_status": true,
+            "bobgo_sync_hash": true,
+            "bobgo_last_synced": true,
+            "bobgo_last_webhook": true,
+            "bobgo_shipments": true
         }
     },
     "sales_order_item": {
         "column": {
             "bobgo_order_item_id": true
+        }
+    },
+    "bobgo_sync_log": {
+        "column": {
+            "entity_id": true,
+            "order_id": true,
+            "event_type": true,
+            "direction": true,
+            "event_id": true,
+            "payload": true,
+            "http_status": true,
+            "success": true,
+            "retry_count": true,
+            "created_at": true
+        },
+        "index": {
+            "BOBGO_SYNC_LOG_EVENT_ID": true,
+            "BOBGO_SYNC_LOG_ORDER_ID": true,
+            "BOBGO_SYNC_LOG_CREATED_AT": true
+        },
+        "constraint": {
+            "PRIMARY": true
         }
     }
 }

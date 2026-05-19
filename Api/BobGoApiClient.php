@@ -5,6 +5,7 @@ namespace BobGroup\BobGo\Api;
 
 use BobGroup\BobGo\Model\Config\ApiConfig;
 use Magento\Framework\HTTP\Client\CurlFactory;
+use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -37,14 +38,21 @@ class BobGoApiClient
      */
     private LoggerInterface $logger;
 
+    /**
+     * @var StoreManagerInterface
+     */
+    private StoreManagerInterface $storeManager;
+
     public function __construct(
         ApiConfig $apiConfig,
         CurlFactory $curlFactory,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        StoreManagerInterface $storeManager
     ) {
         $this->apiConfig = $apiConfig;
         $this->curlFactory = $curlFactory;
         $this->logger = $logger;
+        $this->storeManager = $storeManager;
     }
 
     /**
@@ -138,9 +146,20 @@ class BobGoApiClient
 
         $curl = $this->curlFactory->create();
         $curl->addHeader('Content-Type', 'application/json');
+        $curl->addHeader('Accept', 'application/json');
         $curl->addHeader('Authorization', 'Bearer ' . $apiKey);
+        $curl->addHeader('bobgo-channel-identifier', $this->getChannelIdentifier());
         $curl->setOption(CURLOPT_TIMEOUT, self::REQUEST_TIMEOUT_SECONDS);
         return $curl;
+    }
+
+    /**
+     * Canonical store URL used by Bob Go to associate inbound API calls with
+     * the right channel. Must remain stable for the lifetime of the integration.
+     */
+    private function getChannelIdentifier(): string
+    {
+        return rtrim($this->storeManager->getStore()->getBaseUrl(), '/');
     }
 
     /**
