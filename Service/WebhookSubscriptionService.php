@@ -24,6 +24,7 @@ class WebhookSubscriptionService
     private const WEBHOOK_TOPICS = [
         'fulfillment/created',
         'tracking/updated',
+        'order/updated',
     ];
 
     private const WEBHOOK_PATH = '/bobgo/webhook/receive';

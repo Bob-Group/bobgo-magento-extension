@@ -873,6 +873,7 @@ NULL/empty event ids skip dedup entirely (MySQL treats NULLs as not-equal in uni
 |-------|---------|-------------|
 | `fulfillment/created` | `FulfillmentService::processFulfillment()` | Creates a Magento shipment |
 | `tracking/updated` | `FulfillmentService::processTrackingUpdate()` | Adds tracking to the latest shipment + status comment |
+| `order/updated` | _(none — acknowledge + log only)_ | HMAC-verified, deduped, and written to `bobgo_sync_log` as `EVENT_ORDER_UPDATED_INBOUND`. Local order is not mutated; field-mapping is reserved for a future pass against real payloads. |
 
 ### Webhook Subscription Management (`Service/WebhookSubscriptionService.php`)
 
@@ -884,7 +885,8 @@ POST /v2/webhooks
 {
   "webhook_subscriptions": [
     { "delivery_url": "https://store.example.com/bobgo/webhook/receive", "topic": "fulfillment/created", "status": "active" },
-    { "delivery_url": "https://store.example.com/bobgo/webhook/receive", "topic": "tracking/updated", "status": "active" }
+    { "delivery_url": "https://store.example.com/bobgo/webhook/receive", "topic": "tracking/updated", "status": "active" },
+    { "delivery_url": "https://store.example.com/bobgo/webhook/receive", "topic": "order/updated",      "status": "active" }
   ]
 }
 ```
@@ -1010,9 +1012,10 @@ Followed by one card per shipment (when `bobgo_shipments` is populated), showing
 | `EVENT_WEBHOOK_CLAIM`         | `webhook_claim`         | inbound  | Sentinel row inserted by `claimEventId()`. Upgraded in place to the real outcome on success. |
 | `EVENT_WEBHOOK_RECEIVED`      | `webhook_received`      | inbound  | Used for transient/unexpected processing failures (with `event_id = NULL` so retries can re-claim). |
 | `EVENT_WEBHOOK_REJECTED`      | `webhook_rejected`      | inbound  | Signature or body parse failure. Payload truncated to 256 B before persistence. |
-| `EVENT_WEBHOOK_UNKNOWN_TOPIC` | `webhook_unknown_topic` | inbound  | Topic resolved but isn't `fulfillment/created` or `tracking/updated`. 200 returned, `success = false` so operators can grep. |
+| `EVENT_WEBHOOK_UNKNOWN_TOPIC` | `webhook_unknown_topic` | inbound  | Topic resolved but isn't one of the known routes (`fulfillment/created`, `tracking/updated`, `order/updated`). 200 returned, `success = false` so operators can grep. |
 | `EVENT_FULFILLMENT_RECEIVED`  | `fulfillment_received`  | inbound  | |
 | `EVENT_TRACKING_UPDATED`      | `tracking_updated`      | inbound  | |
+| `EVENT_ORDER_UPDATED_INBOUND` | `order_updated_inbound` | inbound  | `order/updated` webhook acknowledged. No local mutation yet — reserved for future field-mapping work. |
 | `EVENT_ORDER_UPDATED_INBOUND` | `order_updated_inbound` | inbound  | Reserved (no current emitter). |
 | `EVENT_ORDER_CREATED`         | `order_created`         | outbound | |
 | `EVENT_ORDER_UPDATED_OUTBOUND`| `order_updated_outbound`| outbound | |

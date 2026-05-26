@@ -46,7 +46,7 @@ Real-time shipping rates, automatic order push, signed-webhook fulfillment sync,
 
 - **Rates at Checkout** — Display live shipping rates from Bob Go directly in the Magento checkout, with optional delivery timeframes and service descriptions
 - **Automatic Order Push** — Orders are POSTed to Bob Go on first save and PATCHed on subsequent saves, with payload-hash dirty checking so unchanged orders never re-hit the API
-- **Signed Webhook Fulfillment Sync** — Bob Go pushes `fulfillment/created` and `tracking/updated` events to the store; every payload is HMAC-SHA256 verified before any processing happens
+- **Signed Webhook Fulfillment Sync** — Bob Go pushes `fulfillment/created`, `tracking/updated`, and `order/updated` events to the store; every payload is HMAC-SHA256 verified before any processing happens
 - **Hourly Reconciliation Cron** — Safety net that re-fetches authoritative fulfilment state from Bob Go for active and recently-completed orders, closing the gap if a webhook is lost
 - **Sync Log** — Dedicated `bobgo_sync_log` table records every inbound and outbound event with direction, payload, HTTP status, success flag and `event_id` for audit and debugging
 - **Admin Order Panel** — Bob Go sync status, last-synced / last-webhook timestamps, shipment list, and a Resync button on the order detail page
@@ -165,7 +165,7 @@ For the destination side, customers fill in a suburb field that the extension in
 
 ### Webhook Fulfillment Sync
 
-When fulfillment sync is enabled, the extension subscribes to two topics on Bob Go: `fulfillment/created` and `tracking/updated`. Delivery URL is `{your-store-url}/bobgo/webhook/receive`.
+When fulfillment sync is enabled, the extension subscribes to three topics on Bob Go: `fulfillment/created`, `tracking/updated`, and `order/updated`. Delivery URL is `{your-store-url}/bobgo/webhook/receive`.
 
 Inbound flow for every webhook:
 
@@ -173,7 +173,7 @@ Inbound flow for every webhook:
 2. **Fulfillment-sync gate** — even with a valid signature, the request is short-circuited to 200 (no processing) if the merchant has disabled fulfillment sync. Stale subscriptions can no longer mutate orders after a disable.
 3. **JSON parse + topic resolution** — topic comes from the header, with a payload-shape fallback for legacy events
 4. **Race-safe `event_id` claim** — a `webhook_claim` row is INSERTed under the `UNIQUE (event_id, direction)` constraint; concurrent deliveries of the same event lose the race and 200 cleanly without reprocessing. NULL `event_id`s are not deduped (the constraint allows multiple NULLs).
-5. **Route** — `fulfillment/created` creates a Magento shipment with items and tracking; `tracking/updated` adds tracking to the matching shipment and records a status comment
+5. **Route** — `fulfillment/created` creates a Magento shipment with items and tracking; `tracking/updated` adds tracking to the matching shipment and records a status comment; `order/updated` is acknowledged and written to `bobgo_sync_log` (no local order mutation today — reserved for future field-mapping work once we've validated real payloads)
 6. **Outcome** — on success, the claim row is upgraded to `success=1` with the resolved event type. On a *transient* failure (`TransientWebhookException` — shipment-creation race, DB lock, etc.), the claim is released, a failure row is written with `event_id = NULL` (so the unique slot stays free for Bob Go's retry), and the response is 500 to trigger the retry. On an *unexpected* failure (any other `\Throwable`), the claim row stays — future retries are 200'd at the dedup gate rather than re-running broken code; an operator can delete the claim row to allow a replay.
 
 Fulfillment shipments are deduped by tracking number **and** by the Bob Go `fulfillment_id` (stored on the shipment row). A payload with neither identifier is refused rather than risking a duplicate. Line items are matched to order items by the `bobgo_order_item_id` link first, then by SKU (popping from a per-SKU queue so duplicate SKUs aren't collapsed).

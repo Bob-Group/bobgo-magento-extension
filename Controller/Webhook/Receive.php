@@ -164,6 +164,14 @@ class Receive extends Action implements CsrfAwareActionInterface
                     $this->syncLogger->logInbound(SyncLog::EVENT_TRACKING_UPDATED, $data, null, $eventId, 200, true);
                     return $result->setData(['message' => 'tracking update processed']);
 
+                case 'order/updated':
+                    // Acknowledge-and-log only for now. The dedup claim and
+                    // success log row are enough for visibility; we don't
+                    // mutate the local order until we've defined a field
+                    // mapping against real payloads.
+                    $this->syncLogger->logInbound(SyncLog::EVENT_ORDER_UPDATED_INBOUND, $data, null, $eventId, 200, true);
+                    return $result->setData(['message' => 'order update acknowledged']);
+
                 default:
                     $this->logger->warning('Bob Go webhook: unknown topic', ['topic' => $topic]);
                     $this->syncLogger->logInbound(SyncLog::EVENT_WEBHOOK_UNKNOWN_TOPIC, $data, null, $eventId, 200, false);

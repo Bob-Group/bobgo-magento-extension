@@ -68,11 +68,13 @@ class WebhookSubscriptionServiceTest extends TestCase
                 $this->callback(function ($payload) {
                     $this->assertArrayHasKey('webhook_subscriptions', $payload);
                     $subs = $payload['webhook_subscriptions'];
-                    $this->assertCount(2, $subs);
+                    $this->assertCount(3, $subs);
                     $this->assertEquals('fulfillment/created', $subs[0]['topic']);
                     $this->assertEquals('tracking/updated', $subs[1]['topic']);
+                    $this->assertEquals('order/updated', $subs[2]['topic']);
                     $this->assertEquals('https://example.com/bobgo/webhook/receive', $subs[0]['delivery_url']);
                     $this->assertEquals('https://example.com/bobgo/webhook/receive', $subs[1]['delivery_url']);
+                    $this->assertEquals('https://example.com/bobgo/webhook/receive', $subs[2]['delivery_url']);
                     $this->assertEquals('active', $subs[0]['status']);
                     return true;
                 })
@@ -100,8 +102,9 @@ class WebhookSubscriptionServiceTest extends TestCase
                 'webhooks',
                 $this->callback(function ($payload) {
                     $subs = $payload['webhook_subscriptions'];
-                    $this->assertCount(1, $subs);
+                    $this->assertCount(2, $subs);
                     $this->assertEquals('tracking/updated', $subs[0]['topic']);
+                    $this->assertEquals('order/updated', $subs[1]['topic']);
                     return true;
                 })
             )
@@ -123,6 +126,11 @@ class WebhookSubscriptionServiceTest extends TestCase
                 [
                     'id' => 2,
                     'topic' => 'tracking/updated',
+                    'delivery_url' => 'https://example.com/bobgo/webhook/receive',
+                ],
+                [
+                    'id' => 3,
+                    'topic' => 'order/updated',
                     'delivery_url' => 'https://example.com/bobgo/webhook/receive',
                 ],
             ]]);
