@@ -1,4 +1,4 @@
-# Bob Go Shipping Extension for Magento 2
+# Bob Go shipping extension for Magento 2
 
 Real-time shipping rates, automatic order push, signed-webhook fulfillment sync, and shipment tracking for South African e-commerce — powered by [Bob Go](https://www.bobgo.co.za).
 
@@ -7,36 +7,36 @@ Real-time shipping rates, automatic order push, signed-webhook fulfillment sync,
 ![Magento](https://img.shields.io/badge/magento-2.3%2B-f46f25)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-green)
 
-## Table of Contents
+## Table of contents
 
 - [Features](#features)
 - [Requirements](#requirements)
 - [Installation](#installation)
-  - [Composer (Recommended)](#composer-recommended)
-  - [Manual Installation](#manual-installation)
-  - [Verify Installation](#verify-installation)
+  - [Composer (recommended)](#composer-recommended)
+  - [Manual installation](#manual-installation)
+  - [Verify installation](#verify-installation)
 - [Configuration](#configuration)
-  - [Getting an API Key](#getting-an-api-key)
-  - [Admin Settings](#admin-settings)
-  - [Configuration Reference](#configuration-reference)
-  - [Store Suburb](#store-suburb)
-- [How It Works](#how-it-works)
-  - [Rates at Checkout](#rates-at-checkout)
-  - [Order Push](#order-push)
-  - [Webhook Fulfillment Sync](#webhook-fulfillment-sync)
-  - [Reconciliation (Safety Net)](#reconciliation-safety-net)
-  - [Sync Log](#sync-log)
-  - [Admin Order Panel](#admin-order-panel)
-  - [Shipment Tracking](#shipment-tracking)
+  - [Getting an API key](#getting-an-api-key)
+  - [Admin settings](#admin-settings)
+  - [Configuration reference](#configuration-reference)
+  - [Store suburb](#store-suburb)
+- [How it works](#how-it-works)
+  - [Rates at checkout](#rates-at-checkout)
+  - [Order push](#order-push)
+  - [Webhook fulfillment sync](#webhook-fulfillment-sync)
+  - [Reconciliation (safety net)](#reconciliation-safety-net)
+  - [Sync log](#sync-log)
+  - [Admin order panel](#admin-order-panel)
+  - [Shipment tracking](#shipment-tracking)
 - [Security](#security)
-  - [HMAC Webhook Verification](#hmac-webhook-verification)
-  - [Encrypted Credentials](#encrypted-credentials)
-  - [CSRF and Admin Hardening](#csrf-and-admin-hardening)
-  - [PII Redaction](#pii-redaction)
+  - [HMAC webhook verification](#hmac-webhook-verification)
+  - [Encrypted credentials](#encrypted-credentials)
+  - [CSRF and admin hardening](#csrf-and-admin-hardening)
+  - [PII redaction](#pii-redaction)
 - [Architecture](#architecture)
-  - [Directory Structure](#directory-structure)
-  - [Database Additions](#database-additions)
-  - [Key Design Decisions](#key-design-decisions)
+  - [Directory structure](#directory-structure)
+  - [Database additions](#database-additions)
+  - [Key design decisions](#key-design-decisions)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [Support](#support)
@@ -44,16 +44,16 @@ Real-time shipping rates, automatic order push, signed-webhook fulfillment sync,
 
 ## Features
 
-- **Rates at Checkout** — Display live shipping rates from Bob Go directly in the Magento checkout, with optional delivery timeframes and service descriptions
-- **Automatic Order Push** — Orders are POSTed to Bob Go on first save and PATCHed on subsequent saves, with payload-hash dirty checking so unchanged orders never re-hit the API
-- **Signed Webhook Fulfillment Sync** — Bob Go pushes `fulfillment/created`, `tracking/updated`, and `order/updated` events to the store; every payload is HMAC-SHA256 verified before any processing happens
-- **Hourly Reconciliation Cron** — Safety net that re-fetches authoritative fulfilment state from Bob Go for active and recently-completed orders, closing the gap if a webhook is lost
-- **Sync Log** — Dedicated `bobgo_sync_log` table records every inbound and outbound event with direction, payload, HTTP status, success flag and `event_id` for audit and debugging
-- **Admin Order Panel** — Bob Go sync status, last-synced / last-webhook timestamps, shipment list, and a Resync button on the order detail page
-- **Custom Suburb Field** — Adds a suburb / local area field to the checkout address form, used as `local_area` on both rate and order payloads for accurate South African shipping
-- **Automatic Weight Conversion** — Item weights are normalised to kilograms at payload-build time without mutating the stored order row
-- **Admin Connectivity Testing** — Saving the carrier config automatically tests API connectivity and rates-at-checkout, surfacing results as admin messages
-- **Automatic Webhook Lifecycle** — Webhook subscriptions are created when fulfillment sync is enabled and cleaned up when it is disabled
+- **Rates at checkout** — Display live shipping rates from Bob Go directly in the Magento checkout, with optional delivery timeframes and service descriptions
+- **Automatic order push** — Orders are POSTed to Bob Go on first save and PATCHed on subsequent saves, with payload-hash dirty checking so unchanged orders never re-hit the API
+- **Signed webhook fulfillment sync** — Bob Go pushes `fulfillment/created`, `tracking/updated`, and `order/updated` events to the store; every payload is HMAC-SHA256 verified before any processing happens
+- **Hourly reconciliation cron** — Safety net that re-fetches authoritative fulfilment state from Bob Go for active and recently-completed orders, closing the gap if a webhook is lost
+- **Sync log** — Dedicated `bobgo_sync_log` table records every inbound and outbound event with direction, payload, HTTP status, success flag and `event_id` for audit and debugging
+- **Admin order panel** — Bob Go sync status, last-synced / last-webhook timestamps, shipment list, and a resync button on the order detail page
+- **Custom suburb field** — Adds a suburb / local area field to the checkout address form, used as `local_area` on both rate and order payloads for accurate South African shipping
+- **Automatic weight conversion** — Item weights are normalised to kilograms at payload-build time without mutating the stored order row
+- **Admin connectivity testing** — Saving the carrier config automatically tests API connectivity and rates-at-checkout, surfacing results as admin messages
+- **Automatic webhook lifecycle** — Webhook subscriptions are created when fulfillment sync is enabled and cleaned up when it is disabled
 
 ## Requirements
 
@@ -63,11 +63,11 @@ Real-time shipping rates, automatic order push, signed-webhook fulfillment sync,
 | Magento | 2.3+ |
 | Bob Go account | [Sign up at bobgo.co.za](https://www.bobgo.co.za) |
 | Bob Go API key | Obtained from your Bob Go dashboard |
-| Bob Go webhook signing secret | Required if you enable Fulfillment Sync (see [Admin Settings](#admin-settings)) |
+| Bob Go webhook signing secret | Required if you enable fulfillment sync (see [admin settings](#admin-settings)) |
 
 ## Installation
 
-### Composer (Recommended)
+### Composer (recommended)
 
 This package is not published on Packagist. Add the GitHub repository as a VCS source first:
 
@@ -85,7 +85,7 @@ php bin/magento setup:di:compile
 php bin/magento cache:flush
 ```
 
-### Manual Installation
+### Manual installation
 
 1. Download the latest release ZIP from the [GitHub releases page](https://github.com/nicholasgousis/bobgo-magento-extension/releases)
 2. Extract the contents to `app/code/BobGroup/BobGo/` in your Magento root
@@ -98,7 +98,7 @@ php bin/magento setup:di:compile
 php bin/magento cache:flush
 ```
 
-### Verify Installation
+### Verify installation
 
 ```bash
 php bin/magento module:status BobGroup_BobGo
@@ -108,25 +108,25 @@ You should see the module listed under "List of enabled modules".
 
 ## Configuration
 
-### Getting an API Key
+### Getting an API key
 
 1. Sign up or log in at [bobgo.co.za](https://www.bobgo.co.za)
 2. Navigate to your account settings to generate an API key
 3. If you plan to enable fulfillment sync, also generate a **webhook signing secret** — Bob Go uses it to sign every webhook delivery and the extension uses it to verify them
 
-### Admin Settings
+### Admin settings
 
 Navigate to **Stores > Configuration > Sales > Shipping Methods > Bob Go** in the Magento admin panel.
 
-### Configuration Reference
+### Configuration reference
 
 All settings live under `carriers/bobgo/*`.
 
 | Setting | Type | Default | Description |
 |---|---|---|---|
 | **Environment** | Select | Sandbox | `Sandbox` (testing) or `Production` (live). Sandbox uses `api.sandbox.bobgo.co.za`, production uses `api.bobgo.co.za`. |
-| **API Key** | Encrypted text | — | Your Bob Go API key. Stored encrypted with Magento's `EncryptorInterface`. |
-| **Webhook Signing Secret** | Encrypted text | — | Merchant-issued HMAC secret used to verify inbound webhooks. **Required** for fulfillment sync — without it every webhook is rejected with a 403. |
+| **API key** | Encrypted text | — | Your Bob Go API key. Stored encrypted with Magento's `EncryptorInterface`. |
+| **Webhook signing secret** | Encrypted text | — | Merchant-issued HMAC secret used to verify inbound webhooks. **Required** for fulfillment sync — without it every webhook is rejected with a 403. |
 | **Enable Bob Go rates at checkout** | Yes/No | No | Customers see live shipping rates at checkout. |
 | **Show additional rate information** | Yes/No | No | Displays delivery timeframes and additional service level descriptions alongside rates. |
 | **Enable order push** | Yes/No | No | Automatically pushes orders to Bob Go for fulfillment when they are placed or updated. |
@@ -139,22 +139,22 @@ Additional configuration:
 |---|---|
 | `general/store_information/suburb` | Origin suburb used as `local_area` on rate requests (see below) |
 
-### Store Suburb
+### Store suburb
 
 To improve rate accuracy, set your store's suburb under **Stores > Configuration > General > General > Store Information > Suburb**. The value is included as the collection address `local_area` on every rate request.
 
 For the destination side, customers fill in a suburb field that the extension injects into the checkout shipping address form. That value flows through to the order's shipping address custom attribute and is used as `local_area` on the order push payload.
 
-## How It Works
+## How it works
 
-### Rates at Checkout
+### Rates at checkout
 
 1. The customer enters their shipping address at checkout
 2. The extension builds a rate request: collection address (your store), delivery address (customer), cart items with weights normalised to kilograms
 3. POST to `rates-at-checkout` on the v2 API using the `street_address` / `local_area` / `zone` / `country` / `code` address shape
 4. Available service levels are returned with prices and (optionally) delivery timeframes, and rendered as shipping options
 
-### Order Push
+### Order push
 
 1. The `OrderSaveObserver` listens on `sales_order_save_after`
 2. New orders (no `bobgo_order_id` yet) are POSTed to `/v2/orders`. The returned Bob Go order id is saved on the order
@@ -163,7 +163,7 @@ For the destination side, customers fill in a suburb field that the extension in
 5. A re-entrancy guard prevents the observer from looping on its own nested save
 6. The Magento `entity_id` is sent as `channel_ref_id` (an immutable idempotency key) and `increment_id` as `channel_order_number` (the human-readable order number)
 
-### Webhook Fulfillment Sync
+### Webhook fulfillment sync
 
 When fulfillment sync is enabled, the extension subscribes to three topics on Bob Go: `fulfillment/created`, `tracking/updated`, and `order/updated`. Delivery URL is `{your-store-url}/bobgo/webhook/receive`.
 
@@ -178,7 +178,7 @@ Inbound flow for every webhook:
 
 Fulfillment shipments are deduped by tracking number **and** by the Bob Go `fulfillment_id` (stored on the shipment row). A payload with neither identifier is refused rather than risking a duplicate. Line items are matched to order items by the `bobgo_order_item_id` link first, then by SKU (popping from a per-SKU queue so duplicate SKUs aren't collapsed).
 
-### Reconciliation (Safety Net)
+### Reconciliation (safety net)
 
 Hourly cron (`Cron\Reconcile` → `ReconciliationService::run`):
 
@@ -189,7 +189,7 @@ Hourly cron (`Cron\Reconcile` → `ReconciliationService::run`):
 
 Webhooks remain the primary fulfillment signal. The reconciler closes the gap when one is lost or delayed.
 
-### Sync Log
+### Sync log
 
 Every inbound and outbound event passes through `SyncLogger` and lands in `bobgo_sync_log`:
 
@@ -198,7 +198,7 @@ Every inbound and outbound event passes through `SyncLogger` and lands in `bobgo
 | `direction` | `inbound` / `outbound` |
 | `event_type` | `webhook_claim`, `webhook_received`, `webhook_rejected`, `webhook_unknown_topic`, `fulfillment_received`, `tracking_updated`, `order_created`, `order_updated_outbound`, `reconciliation_fetched` |
 | `event_id` | Provider-issued id (used for inbound dedup; deliberately `NULL` on transient-failure rows so the unique slot stays free for the retry) |
-| `payload` | JSON request/response body, capped at 64 KB and with PII fields redacted (see [PII Redaction](#pii-redaction)) |
+| `payload` | JSON request/response body, capped at 64 KB and with PII fields redacted (see [PII redaction](#pii-redaction)) |
 | `http_status` | Observed/returned HTTP status |
 | `success` | Outcome flag |
 | `retry_count` | Reserved for future use |
@@ -209,7 +209,7 @@ Indexed on `event_id`, `order_id`, `created_at`. The `(event_id, direction)` pai
 
 A daily cron (`Cron\PruneSyncLog`, scheduled `15 3 * * *` UTC) deletes rows older than 30 days. Active `webhook_claim` rows are kept regardless so an in-flight delivery can't be pruned mid-flight.
 
-### Admin Order Panel
+### Admin order panel
 
 The admin order detail page gains a Bob Go panel showing:
 
@@ -219,7 +219,7 @@ The admin order detail page gains a Bob Go panel showing:
 - Bob Go shipments — tracking numbers, courier, service level, status (full-replaced by reconciliation)
 - A POST-only **Resync with Bob Go** button that re-pushes the order and refetches authoritative fulfilment state
 
-### Shipment Tracking
+### Shipment tracking
 
 There are two tracking surfaces in the extension:
 
@@ -234,7 +234,7 @@ There are two tracking surfaces in the extension:
 
 ## Security
 
-### HMAC Webhook Verification
+### HMAC webhook verification
 
 Every inbound webhook body is HMAC-SHA256 signed by Bob Go using the merchant-issued webhook signing secret. The extension recomputes the signature over the same raw byte sequence and compares in constant time. Any of these fail closed with a 403, and the body is never inspected:
 
@@ -244,17 +244,17 @@ Every inbound webhook body is HMAC-SHA256 signed by Bob Go using the merchant-is
 
 Rejected request bodies are written to the sync log, truncated to 256 bytes so an unauthenticated attacker can't bloat the table with sustained traffic.
 
-### Encrypted Credentials
+### Encrypted credentials
 
 The API key and the webhook signing secret are stored using Magento's `Backend\Encrypted` backend model. Accessors in `Model/Config/ApiConfig` decrypt on read via `EncryptorInterface::decrypt()`. API keys are masked in error logs (only the last four characters are shown).
 
-### CSRF and Admin Hardening
+### CSRF and admin hardening
 
-The admin **Resync** action is POST-only (`HttpPostActionInterface`), so Magento enforces form-key verification automatically. The button on the order panel is rendered as a `<form method="post">` with a hidden form key — accidental or malicious GET requests to the resync URL return a redirect, never a state change.
+The admin **resync** action is POST-only (`HttpPostActionInterface`), so Magento enforces form-key verification automatically. The button on the order panel is rendered as a `<form method="post">` with a hidden form key — accidental or malicious GET requests to the resync URL return a redirect, never a state change.
 
 The public webhook endpoint exits Magento's CSRF flow (signature verification is the auth mechanism).
 
-### PII Redaction
+### PII redaction
 
 `SyncLogger` redacts the following keys to `***` before persisting payloads to `bobgo_sync_log`:
 
@@ -265,7 +265,7 @@ The canonical record of these values is the order itself; the log keeps shape an
 
 ## Architecture
 
-### Directory Structure
+### Directory structure
 
 ```
 BobGroup/BobGo/
@@ -341,7 +341,7 @@ BobGroup/BobGo/
 └── registration.php                   # class_exists-guarded Magento registration
 ```
 
-### Database Additions
+### Database additions
 
 Declarative schema (`etc/db_schema.xml`):
 
@@ -363,7 +363,7 @@ And one new table:
 |---|---|
 | `bobgo_sync_log` | One row per inbound or outbound event. Columns: `entity_id`, `order_id`, `event_type`, `direction`, `event_id`, `payload`, `http_status`, `success`, `retry_count`, `created_at`. Indexed on `event_id`, `order_id`, `created_at`. **UNIQUE** on `(event_id, direction)` — load-bearing for race-safe webhook dedup. |
 
-### Key Design Decisions
+### Key design decisions
 
 - **Centralised API client** — All Bob Go API calls go through `BobGoApiClient` (Bearer auth, channel-identifier header, structured exceptions). Per-endpoint timeouts: 8 s for `rates-at-checkout` (checkout-blocking), 15 s default for everything else, 5 s connect timeout. Error logs cap response bodies at 512 bytes so 4xx echoes don't recur PII into `system.log`.
 - **Webhook verification before processing** — `Receive` calls `WebhookSignatureVerifier` first; nothing else looks at the body until it passes
@@ -372,12 +372,12 @@ And one new table:
 - **Sync-hash dirty checking** — `OrderPushService::updateOrder()` skips PATCHes when nothing has actually changed
 - **Weight conversion at payload-build time** — LBS → KG happens in `OrderMapper`, not as a `beforeSave` mutation, so the underlying order row is never corrupted by repeated saves
 - **Region code resolution** — origin store region is stored by Magento as a numeric `region_id`; the carrier resolves it to a province code (e.g. "GP", "WC") via `RegionFactory` before sending to Bob Go
-- **Reconciliation as safety net** — Webhooks remain primary; the hourly cron only repaints state when something differs. Two scoped queries: active states (NEW/PROCESSING/HOLDED) are always included; COMPLETE orders only within a 14-day lookback.
+- **Reconciliation as safety net** — webhooks remain primary; the hourly cron only repaints state when something differs. Two scoped queries: active states (NEW/PROCESSING/HOLDED) are always included; COMPLETE orders only within a 14-day lookback.
 - **Single sync log writer** — `SyncLogger` is the only path that writes `bobgo_sync_log`, with built-in PII redaction (customer + address fields) and length capping
-- **Non-blocking order push** — API errors during order push are caught and logged; they never prevent the order from being saved in Magento. The service methods return `bool` so the admin Resync action can surface real outcomes (the observer just ignores the return).
-- **Suburb flows quote → order** — Layout processor adds the field; checkout JS mixin copies its value into `extension_attributes`; `ToOrderAddressPlugin` carries the value across the quote→order address conversion; `OrderMapper` reads it back as `local_area` on outbound payloads.
+- **Non-blocking order push** — API errors during order push are caught and logged; they never prevent the order from being saved in Magento. The service methods return `bool` so the admin resync action can surface real outcomes (the observer just ignores the return).
+- **Suburb flows quote → order** — layout processor adds the field; checkout JS mixin copies its value into `extension_attributes`; `ToOrderAddressPlugin` carries the value across the quote→order address conversion; `OrderMapper` reads it back as `local_area` on outbound payloads.
 - **Extension attributes** — `suburb` is declared on both `Quote\Api\Data\AddressInterface` and `Sales\Api\Data\OrderAddressInterface`; `bobgo_order_id` is exposed on the order interface for REST consumers
-- **POST-only admin Resync** — Implements `HttpPostActionInterface` so Magento enforces form-key verification automatically
+- **POST-only admin resync** — implements `HttpPostActionInterface` so Magento enforces form-key verification automatically
 
 ## Troubleshooting
 
@@ -399,13 +399,13 @@ And one new table:
 
 The most common cause is a mismatched signing secret. Check:
 
-1. The **Webhook Signing Secret** field is populated in admin (it's stored encrypted, so you can't see the value once saved — re-paste it to be sure)
+1. The **Webhook signing secret** field is populated in admin (it's stored encrypted, so you can't see the value once saved — re-paste it to be sure)
 2. The secret matches what you registered the webhook with on the Bob Go side
 3. Filter `bobgo_sync_log` on `event_type = 'webhook_rejected'` to see the captured request snippet and reason
 
 ### Fulfillment sync not working
 
-1. **Enable fulfillment sync** is set to **Yes** and a **Webhook Signing Secret** is set
+1. **Enable fulfillment sync** is set to **Yes** and a **webhook signing secret** is set
 2. Your store's base URL is publicly reachable from the internet (Bob Go must reach `{your-store-url}/bobgo/webhook/receive`)
 3. Webhook subscriptions were created — check the admin success message after saving config, or `bobgo_sync_log` for outbound `webhooks` POSTs
 4. The hourly reconciliation cron is running (it's the safety net if a webhook is lost)
@@ -444,7 +444,7 @@ If you upgraded from a version that included the legacy `AddWeightUnitToOrderPlu
 
 - **Website:** [bobgo.co.za](https://www.bobgo.co.za)
 - **Email:** support@bobgo.co.za
-- **Issues:** [GitHub Issues](https://github.com/nicholasgousis/bobgo-magento-extension/issues)
+- **Issues:** [GitHub issues](https://github.com/nicholasgousis/bobgo-magento-extension/issues)
 
 ## License
 
