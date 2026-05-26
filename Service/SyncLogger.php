@@ -20,6 +20,24 @@ class SyncLogger
 {
     private const MAX_PAYLOAD_BYTES = 65535;
 
+    /**
+     * Payload keys that contain personally-identifying information. Their
+     * values are replaced with "***" before persistence so the sync log can
+     * be exported, backed up, or shared without leaking customer PII. The
+     * canonical record of these values is the order itself.
+     */
+    private const PII_KEYS = [
+        'customer_email',
+        'customer_phone',
+        'customer_name',
+        'customer_surname',
+        'telephone',
+        'phone',
+        'email',
+    ];
+
+    private const REDACTED = '***';
+
     private SyncLogFactory $syncLogFactory;
     private SyncLogResource $syncLogResource;
     private SyncLogCollectionFactory $collectionFactory;
@@ -126,10 +144,33 @@ class SyncLogger
         if (is_string($payload)) {
             return substr($payload, 0, self::MAX_PAYLOAD_BYTES);
         }
-        $encoded = json_encode($payload);
+        $redacted = $this->redactPii($payload);
+        $encoded = json_encode($redacted);
         if ($encoded === false) {
             return null;
         }
         return substr($encoded, 0, self::MAX_PAYLOAD_BYTES);
+    }
+
+    /**
+     * Recursively replace PII values with a redaction marker.
+     *
+     * @param mixed $value
+     * @return mixed
+     */
+    private function redactPii($value)
+    {
+        if (!is_array($value)) {
+            return $value;
+        }
+        $out = [];
+        foreach ($value as $k => $v) {
+            if (is_string($k) && in_array(strtolower($k), self::PII_KEYS, true)) {
+                $out[$k] = self::REDACTED;
+                continue;
+            }
+            $out[$k] = $this->redactPii($v);
+        }
+        return $out;
     }
 }

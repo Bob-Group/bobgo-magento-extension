@@ -278,6 +278,18 @@ if (!class_exists(\Magento\Framework\App\Action\Action::class, false)) {
 if (!interface_exists(\Magento\Framework\App\CsrfAwareActionInterface::class, false)) {
     eval('namespace Magento\Framework\App; interface CsrfAwareActionInterface { public function createCsrfValidationException(\Magento\Framework\App\RequestInterface $request): ?\Magento\Framework\App\Request\InvalidRequestException; public function validateForCsrf(\Magento\Framework\App\RequestInterface $request): ?bool; }');
 }
+if (!interface_exists(\Magento\Framework\App\Action\HttpPostActionInterface::class, false)) {
+    eval('namespace Magento\Framework\App\Action; interface HttpPostActionInterface {}');
+}
+if (!interface_exists(\Magento\Sales\Api\ShipmentRepositoryInterface::class, false)) {
+    eval('namespace Magento\Sales\Api; interface ShipmentRepositoryInterface { public function get($id); public function save($shipment); }');
+}
+if (!interface_exists(\Magento\Framework\Api\AttributeInterface::class, false)) {
+    eval('namespace Magento\Framework\Api; interface AttributeInterface { public function getAttributeCode(); public function getValue(); public function setAttributeCode($code); public function setValue($value); }');
+}
+if (!class_exists(\Magento\Framework\Data\Form\FormKey::class, false)) {
+    eval('namespace Magento\Framework\Data\Form; class FormKey { public function getFormKey(): string { return ""; } }');
+}
 if (!interface_exists(\Magento\Framework\App\RequestInterface::class, false)) {
     eval('namespace Magento\Framework\App; interface RequestInterface { public function getContent(); public function getHeader($name); public function getParam($name); }');
 }

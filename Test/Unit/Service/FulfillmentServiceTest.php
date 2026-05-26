@@ -15,6 +15,7 @@ use Magento\Sales\Api\Data\ShipmentTrackCreationInterface;
 use Magento\Sales\Api\Data\ShipmentTrackCreationInterfaceFactory;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Api\ShipOrderInterface;
+use Magento\Sales\Api\ShipmentRepositoryInterface;
 use Magento\Sales\Model\Order\Shipment;
 use Magento\Sales\Model\Order\Shipment\Track;
 use Magento\Sales\Model\Order\Shipment\TrackFactory;
@@ -82,6 +83,8 @@ class FulfillmentServiceTest extends TestCase
         $dateTimeMock = $this->createMock(\Magento\Framework\Stdlib\DateTime\DateTime::class);
         $dateTimeMock->method('gmtDate')->willReturn('2026-05-19 12:00:00');
 
+        $shipmentRepositoryMock = $this->createMock(ShipmentRepositoryInterface::class);
+
         $this->service = new FulfillmentService(
             $this->orderRepositoryMock,
             $this->shipOrderMock,
@@ -91,7 +94,8 @@ class FulfillmentServiceTest extends TestCase
             $this->trackFactoryMock,
             $this->apiConfigMock,
             $this->loggerMock,
-            $dateTimeMock
+            $dateTimeMock,
+            $shipmentRepositoryMock
         );
     }
 
@@ -315,6 +319,8 @@ class FulfillmentServiceTest extends TestCase
         $shipmentCollectionMock = $this->createMock(ShipmentCollection::class);
         $shipmentCollectionMock->method('getSize')->willReturn(1);
         $shipmentCollectionMock->method('getLastItem')->willReturn($shipmentMock);
+        $shipmentCollectionMock->method('getIterator')
+            ->willReturn(new \ArrayIterator([$shipmentMock]));
 
         $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
 

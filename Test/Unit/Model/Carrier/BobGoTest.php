@@ -205,40 +205,6 @@ class BobGoTest extends TestCase
         $this->assertInstanceOf(BobGo::class, $result);
     }
 
-    public function testTriggerRatesTestUsesApiClient(): void
-    {
-        $this->scopeConfigMock->method('getValue')
-            ->willReturnMap([
-                ['carriers/bobgo/active', ScopeInterface::SCOPE_STORE, null, '1'],
-            ]);
-
-        $this->apiClientMock->method('post')
-            ->with('rates-at-checkout', $this->anything())
-            ->willReturn([
-                'rates' => [['id' => 'rate-1', 'service_name' => 'Standard']],
-            ]);
-
-        $result = $this->bobGo->triggerRatesTest();
-
-        $this->assertIsArray($result);
-        $this->assertNotFalse($result);
-    }
-
-    public function testTriggerRatesTestReturnsFalseOnApiError(): void
-    {
-        $this->scopeConfigMock->method('getValue')
-            ->willReturnMap([
-                ['carriers/bobgo/active', ScopeInterface::SCOPE_STORE, null, '1'],
-            ]);
-
-        $this->apiClientMock->method('post')
-            ->willThrowException(new BobGoApiException('API error', 401));
-
-        $result = $this->bobGo->triggerRatesTest();
-
-        $this->assertFalse($result);
-    }
-
     public function testCollectRatesPayloadHasNoIdentifier(): void
     {
         $this->scopeConfigMock->method('getValue')

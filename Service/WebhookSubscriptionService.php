@@ -5,6 +5,7 @@ namespace BobGroup\BobGo\Service;
 
 use BobGroup\BobGo\Api\BobGoApiClient;
 use BobGroup\BobGo\Api\BobGoApiException;
+use BobGroup\BobGo\Model\Config\ApiConfig;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
 
@@ -42,14 +43,21 @@ class WebhookSubscriptionService
      */
     private LoggerInterface $logger;
 
+    /**
+     * @var ApiConfig
+     */
+    private ApiConfig $apiConfig;
+
     public function __construct(
         BobGoApiClient $apiClient,
         StoreManagerInterface $storeManager,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        ApiConfig $apiConfig
     ) {
         $this->apiClient = $apiClient;
         $this->storeManager = $storeManager;
         $this->logger = $logger;
+        $this->apiConfig = $apiConfig;
     }
 
     /**
@@ -60,6 +68,9 @@ class WebhookSubscriptionService
      */
     public function subscribe(): void
     {
+        if (!$this->apiConfig->isConfigured()) {
+            return;
+        }
         $deliveryUrl = $this->getWebhookDeliveryUrl();
         $existing = $this->getExistingTopicsForUrl($deliveryUrl);
 
@@ -107,6 +118,9 @@ class WebhookSubscriptionService
      */
     public function unsubscribe(): void
     {
+        if (!$this->apiConfig->isConfigured()) {
+            return;
+        }
         try {
             $subscriptions = $this->getSubscriptions();
 

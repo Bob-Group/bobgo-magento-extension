@@ -169,6 +169,10 @@ class OrderPushService
     }
 
     /**
+     * Hash of the canonicalised payload. md5 is used here as a fingerprint
+     * (collision resistance is not security-critical — this only gates
+     * whether we send a PATCH); not for any cryptographic purpose.
+     *
      * @param array<string,mixed> $payload
      */
     private function computeHash(array $payload): string

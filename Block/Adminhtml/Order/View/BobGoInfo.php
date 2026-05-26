@@ -5,6 +5,7 @@ namespace BobGroup\BobGo\Block\Adminhtml\Order\View;
 
 use Magento\Backend\Block\Template;
 use Magento\Backend\Block\Template\Context;
+use Magento\Framework\Data\Form\FormKey;
 use Magento\Framework\Registry;
 use Magento\Sales\Api\Data\OrderInterface;
 
@@ -18,14 +19,17 @@ use Magento\Sales\Api\Data\OrderInterface;
 class BobGoInfo extends Template
 {
     private Registry $registry;
+    private FormKey $formKey;
 
     public function __construct(
         Context $context,
         Registry $registry,
+        FormKey $formKey,
         array $data = []
     ) {
         parent::__construct($context, $data);
         $this->registry = $registry;
+        $this->formKey = $formKey;
     }
 
     public function getOrder(): ?OrderInterface
@@ -42,6 +46,18 @@ class BobGoInfo extends Template
             return '#';
         }
         return $this->getUrl('bobgo/order/resync', ['order_id' => $order->getEntityId()]);
+    }
+
+    /**
+     * Hidden form_key input for the resync form. Magento's admin requires a
+     * valid form_key on POSTs.
+     */
+    public function getFormKeyInput(): string
+    {
+        return sprintf(
+            '<input type="hidden" name="form_key" value="%s" />',
+            $this->escapeHtmlAttr($this->formKey->getFormKey())
+        );
     }
 
     /**

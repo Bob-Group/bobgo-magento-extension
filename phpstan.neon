@@ -53,3 +53,15 @@ parameters:
         - '#has invalid type Magento\\Framework\\View\\Element\\Template\\Context#'
         - '#has invalid type Magento\\Framework\\App\\DefaultPathInterface#'
         - '#has invalid type Magento\\Checkout\\Block\\Checkout\\LayoutProcessor#'
+        - '#has invalid type Magento\\Sales\\Api\\ShipmentRepositoryInterface#'
+        - '#has invalid type Magento\\Framework\\Data\\Form\\FormKey#'
+        - '#Property BobGroup\\BobGo\\.* has unknown class Magento\\Sales\\Api\\ShipmentRepositoryInterface as its type#'
+        - '#Property BobGroup\\BobGo\\.* has unknown class Magento\\Framework\\Data\\Form\\FormKey as its type#'
+        - '#Call to an undefined method BobGroup\\BobGo\\Block\\Adminhtml\\Order\\View\\BobGoInfo::escapeHtmlAttr#'
+        - '#Call to method getFormKey\(\) on an unknown class Magento\\Framework\\Data\\Form\\FormKey#'
+        # OrderAddressInterface inherits getData()/getCustomAttribute() via the AbstractExtensibleObject base — our stub interface omits them.
+        - '#Call to an undefined method Magento\\Sales\\Api\\Data\\OrderAddressInterface::(getData|getCustomAttribute)#'
+        # ShipmentRepositoryInterface stubs lack the methods we exercise.
+        - '#Call to an undefined method Magento\\Sales\\Api\\ShipmentRepositoryInterface::#'
+        # Order::STATE_COMPLETE referenced through the stub Order class
+        - '#Access to undefined constant Magento\\Sales\\Model\\Order::STATE_COMPLETE#'

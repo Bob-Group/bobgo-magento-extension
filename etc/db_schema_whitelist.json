@@ -15,6 +15,11 @@
             "bobgo_order_item_id": true
         }
     },
+    "sales_shipment": {
+        "column": {
+            "bobgo_fulfillment_id": true
+        }
+    },
     "bobgo_sync_log": {
         "column": {
             "entity_id": true,

@@ -32,14 +32,23 @@ class ReconciliationService
     public const BATCH_SIZE = 100;
 
     /**
-     * Order states considered "in active fulfilment" — i.e. eligible to be
-     * refetched. We deliberately exclude canceled/closed/complete to keep
-     * batch sizes manageable on busy stores.
+     * How far back to look for completed orders that may still receive
+     * tracking updates from Bob Go. Catches late checkpoints (e.g. proof of
+     * delivery uploaded a day after the order auto-completed) without
+     * dragging every historical order into the batch.
+     */
+    private const COMPLETE_LOOKBACK_DAYS = 14;
+
+    /**
+     * Order states eligible for reconciliation. "Active" states are always
+     * included; STATE_COMPLETE is also reconciled within the lookback window
+     * via an additional updated_at filter — see loadCandidateOrders().
      */
     private const ACTIVE_STATES = [
         Order::STATE_PROCESSING,
         Order::STATE_HOLDED,
         Order::STATE_NEW,
+        Order::STATE_COMPLETE,
     ];
 
     private OrderRepositoryInterface $orderRepository;
@@ -150,9 +159,18 @@ class ReconciliationService
      */
     private function loadCandidateOrders(): array
     {
+        $lookbackDate = gmdate(
+            'Y-m-d H:i:s',
+            time() - (self::COMPLETE_LOOKBACK_DAYS * 86400)
+        );
+
         $criteria = $this->searchCriteriaBuilder
             ->addFilter('bobgo_order_id', null, 'notnull')
             ->addFilter('state', self::ACTIVE_STATES, 'in')
+            // Completed orders only stay in the reconciliation pool for
+            // COMPLETE_LOOKBACK_DAYS — orders in active states aren't bound
+            // by updated_at (we want them every run).
+            ->addFilter('updated_at', $lookbackDate, 'gteq')
             ->setPageSize(self::BATCH_SIZE)
             ->create();
 
@@ -177,7 +195,7 @@ class ReconciliationService
                 break;
             }
         }
-        if ($raw === [] && array_keys($response) === range(0, count($response) - 1)) {
+        if ($raw === [] && count($response) > 0 && array_keys($response) === range(0, count($response) - 1)) {
             $raw = $response;
         }
 

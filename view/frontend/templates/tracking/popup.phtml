@@ -206,7 +206,7 @@ $results = $block->getTrackingInfo();
                             </div>
                         </div>
                         <?php if ($currentStatus): ?>
-                            <span class="bobgo-status-badge <?= /* @noEscape */ $statusClass ?>">
+                            <span class="bobgo-status-badge <?= $block->escapeHtmlAttr($statusClass) ?>">
                                 <?= $block->escapeHtml($currentStatus) ?>
                             </span>
                         <?php endif; ?>

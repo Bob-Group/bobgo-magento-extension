@@ -6,6 +6,7 @@ namespace BobGroup\BobGo\Test\Unit\Service;
 use BobGroup\BobGo\Service\OrderMapper;
 use Magento\Catalog\Api\Data\ProductInterface;
 use Magento\Catalog\Api\ProductRepositoryInterface;
+use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\UrlInterface;
 use Magento\Sales\Api\Data\OrderAddressInterface;
@@ -32,10 +33,19 @@ class OrderMapperTest extends TestCase
      */
     private $storeManager;
 
+    /**
+     * @var ScopeConfigInterface&\PHPUnit\Framework\MockObject\MockObject
+     */
+    private $scopeConfig;
+
     protected function setUp(): void
     {
         $this->productRepository = $this->createMock(ProductRepositoryInterface::class);
         $this->storeManager = $this->createMock(StoreManagerInterface::class);
+        $this->scopeConfig = $this->createMock(ScopeConfigInterface::class);
+
+        // Default weight unit is KGS so tests don't have to think about it.
+        $this->scopeConfig->method('getValue')->willReturn('kgs');
 
         $store = $this->createMock(StoreInterface::class);
         $store->method('getBaseUrl')
@@ -47,7 +57,7 @@ class OrderMapperTest extends TestCase
         $this->productRepository->method('getById')
             ->willThrowException(new NoSuchEntityException());
 
-        $this->mapper = new OrderMapper($this->productRepository, $this->storeManager);
+        $this->mapper = new OrderMapper($this->productRepository, $this->storeManager, $this->scopeConfig);
     }
 
     public function testMapOrderToPayload(): void
@@ -221,7 +231,7 @@ class OrderMapperTest extends TestCase
         $product->method('getImage')->willReturn('/t/e/test-product.jpg');
         $productRepo->method('getById')->willReturn($product);
 
-        $mapper = new OrderMapper($productRepo, $this->storeManager);
+        $mapper = new OrderMapper($productRepo, $this->storeManager, $this->scopeConfig);
 
         $item = $this->createMock(OrderItemInterface::class);
         $item->method('getParentItemId')->willReturn(null);
@@ -256,7 +266,7 @@ class OrderMapperTest extends TestCase
         $product->method('getImage')->willReturn('no_selection');
         $productRepo->method('getById')->willReturn($product);
 
-        $mapper = new OrderMapper($productRepo, $this->storeManager);
+        $mapper = new OrderMapper($productRepo, $this->storeManager, $this->scopeConfig);
 
         $order = $this->createOrderMock();
         $payload = $mapper->mapOrderToPayload($order);
@@ -325,6 +335,89 @@ class OrderMapperTest extends TestCase
         $this->assertArrayNotHasKey('id', $payload['order_items'][0]);
     }
 
+    public function testWeightConvertsLbsToKgInPayload(): void
+    {
+        // Override scopeConfig with one that reports LBS.
+        $lbsConfig = $this->createMock(\Magento\Framework\App\Config\ScopeConfigInterface::class);
+        $lbsConfig->method('getValue')->willReturn('lbs');
+        $mapper = new OrderMapper($this->productRepository, $this->storeManager, $lbsConfig);
+
+        $item = $this->createMock(OrderItemInterface::class);
+        $item->method('getParentItemId')->willReturn(null);
+        $item->method('getItemId')->willReturn(1);
+        $item->method('getSku')->willReturn('SKU-LBS');
+        $item->method('getName')->willReturn('Product');
+        $item->method('getPriceInclTax')->willReturn(10.0);
+        $item->method('getQtyOrdered')->willReturn(1.0);
+        $item->method('getWeight')->willReturn(10.0); // 10 lbs
+
+        $order = $this->createOrderMock(['items' => [$item]]);
+        $payload = $mapper->mapOrderToPayload($order);
+
+        $this->assertEqualsWithDelta(4.5359237, $payload['order_items'][0]['unit_weight_kg'], 0.0001);
+    }
+
+    public function testWeightPassesThroughForKgs(): void
+    {
+        $item = $this->createMock(OrderItemInterface::class);
+        $item->method('getParentItemId')->willReturn(null);
+        $item->method('getItemId')->willReturn(1);
+        $item->method('getSku')->willReturn('SKU-KG');
+        $item->method('getName')->willReturn('Product');
+        $item->method('getPriceInclTax')->willReturn(10.0);
+        $item->method('getQtyOrdered')->willReturn(1.0);
+        $item->method('getWeight')->willReturn(2.5);
+
+        $order = $this->createOrderMock(['items' => [$item]]);
+        $payload = $this->mapper->mapOrderToPayload($order);
+
+        $this->assertSame(2.5, $payload['order_items'][0]['unit_weight_kg']);
+    }
+
+    public function testSuburbCustomAttributeUsedAsLocalArea(): void
+    {
+        $attr = $this->createMock(\Magento\Framework\Api\AttributeInterface::class);
+        $attr->method('getValue')->willReturn('Sandton');
+
+        $address = $this->getMockBuilder(\Magento\Sales\Api\Data\OrderAddressInterface::class)
+            ->addMethods(['getCustomAttribute', 'getData'])
+            ->getMockForAbstractClass();
+        $address->method('getStreet')->willReturn(['1 Test Rd']);
+        $address->method('getCity')->willReturn('Johannesburg');
+        $address->method('getPostcode')->willReturn('2196');
+        $address->method('getRegion')->willReturn('Gauteng');
+        $address->method('getCountryId')->willReturn('ZA');
+        $address->method('getCompany')->willReturn('Acme');
+        $address->method('getCustomAttribute')
+            ->with('suburb')
+            ->willReturn($attr);
+
+        $order = $this->createOrderMock(['shippingAddress' => $address]);
+        $payload = $this->mapper->mapOrderToPayload($order);
+
+        $this->assertSame('Sandton', $payload['delivery_address']['local_area']);
+        $this->assertSame('Johannesburg', $payload['delivery_address']['city']);
+    }
+
+    public function testLocalAreaFallsBackToCityWhenNoSuburb(): void
+    {
+        $address = $this->getMockBuilder(\Magento\Sales\Api\Data\OrderAddressInterface::class)
+            ->addMethods(['getCustomAttribute', 'getData'])
+            ->getMockForAbstractClass();
+        $address->method('getStreet')->willReturn(['1 Test Rd']);
+        $address->method('getCity')->willReturn('Cape Town');
+        $address->method('getPostcode')->willReturn('8001');
+        $address->method('getRegion')->willReturn('Western Cape');
+        $address->method('getCountryId')->willReturn('ZA');
+        $address->method('getCompany')->willReturn('Acme');
+        $address->method('getCustomAttribute')->willReturn(null);
+
+        $order = $this->createOrderMock(['shippingAddress' => $address]);
+        $payload = $this->mapper->mapOrderToPayload($order);
+
+        $this->assertSame('Cape Town', $payload['delivery_address']['local_area']);
+    }
+
     /**
      * Create an order mock with configurable field overrides.
      *
@@ -374,7 +467,7 @@ class OrderMapperTest extends TestCase
         $order->method('getShippingDescription')->willReturn($config['shippingDescription']);
         $order->method('getCreatedAt')->willReturn($config['createdAt']);
         $order->method('getUpdatedAt')->willReturn($config['updatedAt']);
-        $order->method('getShippingAddress')->willReturn(null);
+        $order->method('getShippingAddress')->willReturn($config['shippingAddress'] ?? null);
         $order->method('getBillingAddress')->willReturn(null);
         $order->method('getCustomerFirstname')->willReturn('Test');
         $order->method('getCustomerLastname')->willReturn('Customer');

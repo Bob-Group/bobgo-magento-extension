@@ -20,6 +20,10 @@
         <column xsi:type="varchar" name="bobgo_order_item_id" nullable="true" length="255"
                 comment="Bob Go Order Item ID"/>
     </table>
+    <table name="sales_shipment" resource="sales" comment="Sales Shipment">
+        <column xsi:type="varchar" name="bobgo_fulfillment_id" nullable="true" length="128"
+                comment="Bob Go fulfilment id (idempotency)"/>
+    </table>
 
     <table name="bobgo_sync_log" resource="default" engine="innodb" comment="Bob Go inbound/outbound sync log">
         <column xsi:type="int" name="entity_id" identity="true" nullable="false" unsigned="true"

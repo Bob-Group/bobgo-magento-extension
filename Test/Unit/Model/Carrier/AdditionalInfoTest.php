@@ -82,7 +82,7 @@ class AdditionalInfoTest extends TestCase
         $requestBody = json_encode([
             'address' => [
                 'custom_attributes' => [
-                    ['value' => 'Test Suburb']
+                    ['attribute_code' => 'suburb', 'value' => 'Test Suburb']
                 ]
             ]
         ]);
@@ -93,6 +93,35 @@ class AdditionalInfoTest extends TestCase
         $result = $this->additionalInfo->getSuburb();
 
         $this->assertEquals('Test Suburb', $result);
+    }
+
+    public function testGetSuburbSkipsAttributesAheadOfIt(): void
+    {
+        $requestBody = json_encode([
+            'address' => [
+                'custom_attributes' => [
+                    ['attribute_code' => 'something_else', 'value' => 'ignore me'],
+                    ['attribute_code' => 'suburb', 'value' => 'Sandton'],
+                ]
+            ]
+        ]);
+
+        $this->requestMock->method('getContent')->willReturn($requestBody);
+        $this->assertSame('Sandton', $this->additionalInfo->getSuburb());
+    }
+
+    public function testGetSuburbHandlesAssociativeShape(): void
+    {
+        $requestBody = json_encode([
+            'address' => [
+                'custom_attributes' => [
+                    'suburb' => ['value' => 'Rosebank'],
+                ]
+            ]
+        ]);
+
+        $this->requestMock->method('getContent')->willReturn($requestBody);
+        $this->assertSame('Rosebank', $this->additionalInfo->getSuburb());
     }
 
     public function testGetSuburbReturnsEmptyStringWhenNotSet(): void

@@ -63,6 +63,11 @@ class Receive extends Action implements CsrfAwareActionInterface
         $this->syncLogger = $syncLogger;
     }
 
+    /** Cap on how much of a rejected body we persist — anyone who fails signature
+     *  verification can spray 64 KB requests at us, so we keep just enough to
+     *  diagnose the rejection without giving them a free log-bloat vector. */
+    private const REJECTED_BODY_CAP_BYTES = 256;
+
     public function execute()
     {
         $result = $this->jsonFactory->create();
@@ -74,7 +79,7 @@ class Receive extends Action implements CsrfAwareActionInterface
         if (!$this->signatureVerifier->verify($rawBody, is_string($providedSignature) ? $providedSignature : null)) {
             $this->syncLogger->logInbound(
                 SyncLog::EVENT_WEBHOOK_REJECTED,
-                $rawBody,
+                substr($rawBody, 0, self::REJECTED_BODY_CAP_BYTES),
                 null,
                 $this->getEventId($request),
                 403,
@@ -88,7 +93,7 @@ class Receive extends Action implements CsrfAwareActionInterface
         if (!is_array($data)) {
             $this->syncLogger->logInbound(
                 SyncLog::EVENT_WEBHOOK_REJECTED,
-                $rawBody,
+                substr($rawBody, 0, self::REJECTED_BODY_CAP_BYTES),
                 null,
                 $this->getEventId($request),
                 400,
@@ -145,7 +150,7 @@ class Receive extends Action implements CsrfAwareActionInterface
 
                 default:
                     $this->logger->warning('Bob Go webhook: unknown topic', ['topic' => $topic]);
-                    $this->syncLogger->logInbound(SyncLog::EVENT_WEBHOOK_RECEIVED, $data, null, $eventId, 200, true);
+                    $this->syncLogger->logInbound(SyncLog::EVENT_WEBHOOK_UNKNOWN_TOPIC, $data, null, $eventId, 200, false);
                     return $result->setData(['message' => 'unknown topic, ignored']);
             }
         } catch (\Exception $e) {

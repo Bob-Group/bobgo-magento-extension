@@ -15,6 +15,7 @@ class SyncLog extends AbstractModel
 
     public const EVENT_WEBHOOK_RECEIVED        = 'webhook_received';
     public const EVENT_WEBHOOK_REJECTED        = 'webhook_rejected';
+    public const EVENT_WEBHOOK_UNKNOWN_TOPIC   = 'webhook_unknown_topic';
     public const EVENT_FULFILLMENT_RECEIVED    = 'fulfillment_received';
     public const EVENT_TRACKING_UPDATED        = 'tracking_updated';
     public const EVENT_ORDER_UPDATED_INBOUND   = 'order_updated_inbound';

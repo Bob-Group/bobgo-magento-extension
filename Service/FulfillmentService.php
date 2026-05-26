@@ -5,6 +5,7 @@ namespace BobGroup\BobGo\Service;
 
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Api\ShipOrderInterface;
+use Magento\Sales\Api\ShipmentRepositoryInterface;
 use Magento\Sales\Api\Data\ShipmentTrackCreationInterfaceFactory;
 use Magento\Sales\Api\Data\ShipmentItemCreationInterfaceFactory;
 use Magento\Framework\Api\SearchCriteriaBuilder;
@@ -76,6 +77,11 @@ class FulfillmentService
      */
     private DateTime $dateTime;
 
+    /**
+     * @var ShipmentRepositoryInterface
+     */
+    private ShipmentRepositoryInterface $shipmentRepository;
+
     public function __construct(
         OrderRepositoryInterface $orderRepository,
         ShipOrderInterface $shipOrder,
@@ -85,7 +91,8 @@ class FulfillmentService
         TrackFactory $trackFactory,
         ApiConfig $apiConfig,
         LoggerInterface $logger,
-        DateTime $dateTime
+        DateTime $dateTime,
+        ShipmentRepositoryInterface $shipmentRepository
     ) {
         $this->orderRepository = $orderRepository;
         $this->shipOrder = $shipOrder;
@@ -96,6 +103,7 @@ class FulfillmentService
         $this->apiConfig = $apiConfig;
         $this->logger = $logger;
         $this->dateTime = $dateTime;
+        $this->shipmentRepository = $shipmentRepository;
     }
 
     /**
@@ -153,12 +161,31 @@ class FulfillmentService
             return;
         }
 
-        // Idempotency check - don't create duplicate shipments
+        // Idempotency — webhook event_id dedup already short-circuited a
+        // retry of THIS event upstream. These checks catch a second event for
+        // the same fulfilment (e.g. an updated webhook re-fired for an order
+        // that was already shipped).
         if ($trackingNumber !== '' && $this->hasExistingTrackingNumber($order, $trackingNumber)) {
             $this->logger->info('Bob Go fulfillment: shipment already exists for tracking number', [
                 'order_id' => $order->getEntityId(),
                 'fulfillment_id' => $fulfillmentId,
                 'tracking_number' => $trackingNumber,
+            ]);
+            return;
+        }
+        if ($fulfillmentId !== null && $fulfillmentId !== ''
+            && $this->hasExistingFulfillmentId($order, (string) $fulfillmentId)
+        ) {
+            $this->logger->info('Bob Go fulfillment: shipment already exists for fulfillment id', [
+                'order_id' => $order->getEntityId(),
+                'fulfillment_id' => $fulfillmentId,
+            ]);
+            return;
+        }
+        if ($trackingNumber === '' && ($fulfillmentId === null || $fulfillmentId === '')) {
+            // Nothing to dedup on — refuse rather than risk a duplicate shipment.
+            $this->logger->warning('Bob Go fulfillment: payload has no tracking number or id, skipping', [
+                'order_id' => $order->getEntityId(),
             ]);
             return;
         }
@@ -178,7 +205,7 @@ class FulfillmentService
 
         try {
             $notifyCustomer = $this->apiConfig->shouldNotifyCustomer();
-            $this->shipOrder->execute(
+            $shipmentId = $this->shipOrder->execute(
                 (int) $order->getEntityId(),
                 $items,
                 $notifyCustomer,
@@ -186,6 +213,10 @@ class FulfillmentService
                 null,
                 $tracks
             );
+
+            if ($fulfillmentId !== null && $fulfillmentId !== '') {
+                $this->stampFulfillmentIdOnShipment((int) $shipmentId, (string) $fulfillmentId);
+            }
 
             $this->logger->info('Bob Go fulfillment: shipment created', [
                 'order_id' => $order->getEntityId(),
@@ -252,16 +283,24 @@ class FulfillmentService
             return;
         }
 
-        /** @var \Magento\Sales\Model\Order\Shipment $shipment */
-        $shipment = $shipments->getLastItem();
-
-        // Ensure tracking number exists on shipment
+        // Prefer the shipment that already carries this tracking number — on a
+        // multi-shipment order, falling back to the latest shipment would
+        // attach the update to the wrong one.
+        $shipment = null;
         $trackExists = false;
-        foreach ($shipment->getAllTracks() as $existingTrack) {
-            if ($existingTrack->getTrackNumber() === (string) $trackingNumber) {
-                $trackExists = true;
-                break;
+        foreach ($shipments as $candidate) {
+            /** @var \Magento\Sales\Model\Order\Shipment $candidate */
+            foreach ($candidate->getAllTracks() as $existingTrack) {
+                if ($existingTrack->getTrackNumber() === (string) $trackingNumber) {
+                    $shipment = $candidate;
+                    $trackExists = true;
+                    break 2;
+                }
             }
+        }
+        if ($shipment === null) {
+            /** @var \Magento\Sales\Model\Order\Shipment $shipment */
+            $shipment = $shipments->getLastItem();
         }
 
         try {
@@ -356,10 +395,6 @@ class FulfillmentService
 
     /**
      * Check if a shipment with the given tracking number already exists on the order.
-     *
-     * @param \Magento\Sales\Api\Data\OrderInterface $order
-     * @param string $trackingNumber
-     * @return bool
      */
     private function hasExistingTrackingNumber(\Magento\Sales\Api\Data\OrderInterface $order, string $trackingNumber): bool
     {
@@ -379,6 +414,51 @@ class FulfillmentService
         }
 
         return false;
+    }
+
+    /**
+     * Check if a shipment with the given Bob Go fulfillment id already exists.
+     *
+     * The fulfilment id is stored on the shipment as `bobgo_fulfillment_id`
+     * after we create it. Best-effort — if the column isn't populated we
+     * fall back to the tracking-number dedup.
+     */
+    private function hasExistingFulfillmentId(\Magento\Sales\Api\Data\OrderInterface $order, string $fulfillmentId): bool
+    {
+        /** @var \Magento\Sales\Model\Order $order */
+        $shipments = $order->getShipmentsCollection();
+        if ($shipments === false || $shipments->getSize() === 0) {
+            return false;
+        }
+        foreach ($shipments as $shipment) {
+            if ((string) $shipment->getData('bobgo_fulfillment_id') === $fulfillmentId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Persist the Bob Go fulfilment id on the freshly-created shipment so
+     * later duplicate webhook deliveries (after event_id retention has
+     * expired) can still be deduped.
+     */
+    private function stampFulfillmentIdOnShipment(int $shipmentId, string $fulfillmentId): void
+    {
+        if ($shipmentId <= 0) {
+            return;
+        }
+        try {
+            $shipment = $this->shipmentRepository->get($shipmentId);
+            $shipment->setData('bobgo_fulfillment_id', $fulfillmentId);
+            $this->shipmentRepository->save($shipment);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Bob Go: failed to stamp fulfillment id on shipment', [
+                'shipment_id' => $shipmentId,
+                'fulfillment_id' => $fulfillmentId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

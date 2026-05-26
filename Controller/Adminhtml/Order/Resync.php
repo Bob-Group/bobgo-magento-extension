@@ -7,7 +7,9 @@ use BobGroup\BobGo\Service\OrderPushService;
 use BobGroup\BobGo\Service\ReconciliationService;
 use Magento\Backend\App\Action;
 use Magento\Backend\App\Action\Context;
+use Magento\Framework\App\Action\HttpPostActionInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Admin "Resync" button on the order detail page.
@@ -16,25 +18,32 @@ use Magento\Sales\Api\OrderRepositoryInterface;
  * PATCH otherwise — the dirty-check is bypassed because the operator
  * explicitly asked for a push) and then refetches the authoritative
  * shipment state via ReconciliationService.
+ *
+ * POST-only — implements HttpPostActionInterface so Magento enforces
+ * form-key verification automatically. Triggered from the admin order
+ * panel via a form button (see view/adminhtml/templates/order/view/bobgo_info.phtml).
  */
-class Resync extends Action
+class Resync extends Action implements HttpPostActionInterface
 {
     public const ADMIN_RESOURCE = 'Magento_Sales::actions_edit';
 
     private OrderRepositoryInterface $orderRepository;
     private OrderPushService $orderPushService;
     private ReconciliationService $reconciliationService;
+    private LoggerInterface $bobgoLogger;
 
     public function __construct(
         Context $context,
         OrderRepositoryInterface $orderRepository,
         OrderPushService $orderPushService,
-        ReconciliationService $reconciliationService
+        ReconciliationService $reconciliationService,
+        LoggerInterface $logger
     ) {
         parent::__construct($context);
         $this->orderRepository = $orderRepository;
         $this->orderPushService = $orderPushService;
         $this->reconciliationService = $reconciliationService;
+        $this->bobgoLogger = $logger;
     }
 
     public function execute()
@@ -61,6 +70,11 @@ class Resync extends Action
 
             $this->messageManager->addSuccessMessage(__('Bob Go resync triggered.'));
         } catch (\Throwable $e) {
+            $this->bobgoLogger->error('Bob Go: admin resync failed', [
+                'order_id' => $orderId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             $this->messageManager->addErrorMessage(__('Bob Go resync failed: %1', $e->getMessage()));
         }
 

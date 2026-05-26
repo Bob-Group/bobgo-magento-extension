@@ -5,10 +5,10 @@
         <arguments>
             <argument name="productRepository" xsi:type="object">Magento\Catalog\Api\ProductRepositoryInterface</argument>
             <argument name="storeManager" xsi:type="object">Magento\Store\Model\StoreManagerInterface</argument>
+            <argument name="scopeConfig" xsi:type="object">Magento\Framework\App\Config\ScopeConfigInterface</argument>
         </arguments>
     </type>
     <type name="Magento\Sales\Api\OrderRepositoryInterface">
-        <plugin name="add_weight_unit_to_order_item" type="BobGroup\BobGo\Plugin\AddWeightUnitToOrderPlugin" />
         <plugin name="bobgo_order_repository_plugin" type="BobGroup\BobGo\Plugin\OrderRepositoryPlugin" sortOrder="20" />
     </type>
 

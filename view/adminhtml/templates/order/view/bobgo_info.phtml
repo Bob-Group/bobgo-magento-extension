@@ -76,12 +76,14 @@ $shipments      = $block->getShipments();
             <?php endforeach; ?>
         <?php endif; ?>
 
-        <p style="margin-top:12px;">
-            <a href="<?= $escaper->escapeUrl($block->getResyncUrl()) ?>"
-               class="action-default"
-               onclick="return confirm('<?= $escaper->escapeJs(__('Resync this order with Bob Go?')) ?>');">
+        <form action="<?= $escaper->escapeUrl($block->getResyncUrl()) ?>"
+              method="post"
+              style="margin-top:12px;"
+              onsubmit="return confirm('<?= $escaper->escapeJs(__('Resync this order with Bob Go?')) ?>');">
+            <?= /* @noEscape */ $block->getFormKeyInput() ?>
+            <button type="submit" class="action-default">
                 <?= $escaper->escapeHtml(__('Resync with Bob Go')) ?>
-            </a>
-        </p>
+            </button>
+        </form>
     </div>
 </section>

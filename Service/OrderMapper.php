@@ -5,10 +5,12 @@ namespace BobGroup\BobGo\Service;
 
 use BobGroup\BobGo\Api\OrderMapperInterface;
 use Magento\Catalog\Api\ProductRepositoryInterface;
+use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\UrlInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\Data\OrderItemInterface;
+use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
 
 /**
@@ -20,18 +22,25 @@ use Magento\Store\Model\StoreManagerInterface;
  */
 class OrderMapper implements OrderMapperInterface
 {
+    private const LBS_TO_KG = 0.45359237;
+
     /** @var ProductRepositoryInterface */
     private $productRepository;
 
     /** @var StoreManagerInterface */
     private $storeManager;
 
+    /** @var ScopeConfigInterface */
+    private $scopeConfig;
+
     public function __construct(
         ProductRepositoryInterface $productRepository,
-        StoreManagerInterface $storeManager
+        StoreManagerInterface $storeManager,
+        ScopeConfigInterface $scopeConfig
     ) {
         $this->productRepository = $productRepository;
         $this->storeManager = $storeManager;
+        $this->scopeConfig = $scopeConfig;
     }
     /**
      * @param OrderInterface $order
@@ -112,15 +121,44 @@ class OrderMapper implements OrderMapperInterface
         $street = $address->getStreet();
         $streetAddress = is_array($street) ? implode(', ', $street) : (string) $street;
 
+        $suburb = $this->extractSuburb($address);
+        $city = (string) ($address->getCity() ?? '');
+
         return [
             'company'        => $address->getCompany() ?: '',
             'street_address' => $streetAddress,
-            'local_area'     => $address->getCity(),
-            'city'           => $address->getCity(),
+            'local_area'     => $suburb !== '' ? $suburb : $city,
+            'city'           => $city,
             'zone'           => $address->getRegion(),
             'country'        => $address->getCountryId(),
             'code'           => $address->getPostcode(),
         ];
+    }
+
+    /**
+     * Pull the suburb custom attribute off the order shipping address.
+     *
+     * Tries the structured custom-attribute API first (the canonical shape
+     * for an order address) and falls back to the magic data accessor for
+     * cases where the value was set on the address as raw data.
+     */
+    private function extractSuburb(\Magento\Sales\Api\Data\OrderAddressInterface $address): string
+    {
+        if (method_exists($address, 'getCustomAttribute')) {
+            $attr = $address->getCustomAttribute('suburb');
+            if ($attr && $attr->getValue() !== null && $attr->getValue() !== '') {
+                return (string) $attr->getValue();
+            }
+        }
+
+        if (method_exists($address, 'getData')) {
+            $direct = $address->getData('suburb');
+            if (is_scalar($direct) && (string) $direct !== '') {
+                return (string) $direct;
+            }
+        }
+
+        return '';
     }
 
     /**
@@ -183,7 +221,7 @@ class OrderMapper implements OrderMapperInterface
             'sku'               => $item->getSku(),
             'unit_price'        => (float) $item->getPriceInclTax(),
             'qty'               => (int) $item->getQtyOrdered(),
-            'unit_weight_kg'    => (float) $item->getWeight(),
+            'unit_weight_kg'    => $this->normaliseWeightKg((float) $item->getWeight()),
             'channel_image_url' => $this->getProductImageUrl($item),
         ];
 
@@ -199,6 +237,29 @@ class OrderMapper implements OrderMapperInterface
      * @param OrderItemInterface $item
      * @return string|null
      */
+    /**
+     * Convert a Magento order item weight to kilograms.
+     *
+     * Bob Go expects kilograms. Magento stores the item weight in the store's
+     * configured weight unit (KGS or LBS). We normalise to KG at payload-build
+     * time so the order row itself stays in its native unit — earlier versions
+     * mutated the row in a beforeSave plugin and re-converted on every save,
+     * silently corrupting the data.
+     */
+    private function normaliseWeightKg(float $weight): float
+    {
+        if ($weight <= 0.0) {
+            return 0.0;
+        }
+
+        $unit = $this->scopeConfig->getValue('general/locale/weight_unit', ScopeInterface::SCOPE_STORE);
+        if (is_string($unit) && strtolower($unit) === 'lbs') {
+            return $weight * self::LBS_TO_KG;
+        }
+
+        return $weight;
+    }
+
     private function getProductImageUrl(OrderItemInterface $item): ?string
     {
         try {

@@ -5,6 +5,7 @@ namespace BobGroup\BobGo\Test\Unit\Service;
 
 use BobGroup\BobGo\Api\BobGoApiClient;
 use BobGroup\BobGo\Api\BobGoApiException;
+use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Service\WebhookSubscriptionService;
 use Magento\Framework\UrlInterface;
 use Magento\Store\Model\Store;
@@ -26,11 +27,18 @@ class WebhookSubscriptionServiceTest extends TestCase
     /** @var LoggerInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $loggerMock;
 
+    /** @var ApiConfig|\PHPUnit\Framework\MockObject\MockObject */
+    private $apiConfigMock;
+
     protected function setUp(): void
     {
         $this->apiClientMock = $this->createMock(BobGoApiClient::class);
         $this->storeManagerMock = $this->createMock(StoreManagerInterface::class);
         $this->loggerMock = $this->createMock(LoggerInterface::class);
+        $this->apiConfigMock = $this->createMock(ApiConfig::class);
+
+        // Tests assume an API key is configured unless they say otherwise.
+        $this->apiConfigMock->method('isConfigured')->willReturn(true);
 
         $storeMock = $this->createMock(Store::class);
         $storeMock->method('getBaseUrl')
@@ -41,7 +49,8 @@ class WebhookSubscriptionServiceTest extends TestCase
         $this->service = new WebhookSubscriptionService(
             $this->apiClientMock,
             $this->storeManagerMock,
-            $this->loggerMock
+            $this->loggerMock,
+            $this->apiConfigMock
         );
     }
 

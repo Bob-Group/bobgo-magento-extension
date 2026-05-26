@@ -11,7 +11,6 @@ use Magento\Directory\Model\CurrencyFactory;
 use Magento\Directory\Model\RegionFactory;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\DataObject;
-use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Xml\Security;
 use Magento\Quote\Model\Quote\Address\RateRequest;
 use Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory;
@@ -972,20 +971,16 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
     /**
      * Retrieves the destination company name from the additional information.
-     *
-     * @return mixed|string The destination company name.
      */
-    public function getDestComp(): mixed
+    public function getDestComp(): string
     {
         return $this->additionalInfo->getDestComp();
     }
 
     /**
      * Retrieves the destination suburb from the additional information.
-     *
-     * @return mixed|string The destination suburb.
      */
-    public function getDestSuburb(): mixed
+    public function getDestSuburb(): string
     {
         return $this->additionalInfo->getSuburb();
     }
@@ -1039,80 +1034,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         }
 
         return $itemsArray;
-    }
-
-    /**
-     * Trigger a test for rates.
-     *
-     * @return array<int|string, mixed>|bool Returns an array of results or false on failure.
-     */
-    public function triggerRatesTest(): array|bool
-    {
-        // Check if the 'Show rates for checkout' setting is enabled
-        $isEnabled = $this->scopeConfig->getValue(
-            'carriers/bobgo/active',
-            \Magento\Store\Model\ScopeInterface::SCOPE_STORE
-        );
-
-        if ($isEnabled) {
-            // Sample test payload
-            $payload = [
-                'collection_address' => [
-                    'company' => 'Test Store',
-                    'street_address' => '36 Marelu Street',
-                    'local_area' => 'Pretoria',
-                    'city' => 'Pretoria',
-                    'zone' => 'GP',
-                    'country' => 'ZA',
-                    'code' => '0081',
-                ],
-                'delivery_address' => [
-                    'company' => 'Test Company',
-                    'street_address' => '456 Test Ave',
-                    'local_area' => 'Test Suburb',
-                    'city' => 'Durban',
-                    'zone' => 'KZN',
-                    'country' => 'ZA',
-                    'code' => '3000',
-                ],
-                'items' => [
-                    [
-                        'description' => 'Test Product',
-                        'quantity' => 1,
-                        'price' => 100.00,
-                        'length_cm' => 0,
-                        'width_cm' => 0,
-                        'height_cm' => 0,
-                        'weight_kg' => 0.5,
-                    ]
-                ],
-                'declared_value' => 0,
-            ];
-
-            try {
-                $response = $this->apiClient->post('rates-at-checkout', $payload);
-
-                // Check if the response contains a 'message' (indicating an error)
-                if (isset($response['message'])) {
-                    throw new LocalizedException(__('Error from BobGo: %1', $response['message']));
-                }
-
-                // Check if the response contains rates with a valid id field
-                if (isset($response['rates']) && is_array($response['rates']) && !empty($response['rates'])) {
-                    foreach ($response['rates'] as $rate) {
-                        if (isset($rate['id']) && $rate['id'] !== null) {
-                            return $response; // Successful response with a valid id
-                        }
-                    }
-                    throw new LocalizedException(__('Rates received but id field is empty or invalid.'));
-                } else {
-                    throw new LocalizedException(__('Received response but no valid rates were found.'));
-                }
-            } catch (\Exception $e) {
-                return false;
-            }
-        }
-        return false;
     }
 
 }
