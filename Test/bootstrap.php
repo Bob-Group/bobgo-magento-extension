@@ -134,7 +134,7 @@ if (!class_exists(\Magento\Framework\Data\Form\Element\AbstractElement::class, f
 $stubs = [
     'interface' => [
         'Magento\Sales\Api\Data\OrderInterface' => ['getEntityId', 'getIncrementId', 'getGrandTotal', 'getTotalDue', 'getDiscountAmount', 'getOrderCurrencyCode', 'getStatus', 'getShippingMethod', 'getShippingDescription', 'getCreatedAt', 'getUpdatedAt', 'getShippingAddress', 'getBillingAddress', 'getItems', 'getData', 'setData', 'getCustomerFirstname', 'getCustomerLastname', 'getCustomerEmail'],
-        'Magento\Sales\Api\Data\OrderItemInterface' => ['getItemId', 'getParentItemId', 'getProductId', 'getSku', 'getName', 'getPriceInclTax', 'getQtyOrdered', 'getWeight', 'setWeight', 'getData', 'setData'],
+        'Magento\Sales\Api\Data\OrderItemInterface' => ['getItemId', 'getParentItemId', 'getProductId', 'getProductType', 'getSku', 'getName', 'getPriceInclTax', 'getQtyOrdered', 'getWeight', 'setWeight', 'getData', 'setData'],
         'Magento\Sales\Api\Data\OrderAddressInterface' => ['getStreet', 'getCity', 'getPostcode', 'getRegion', 'getCountryId', 'getCompany', 'getFirstname', 'getLastname', 'getTelephone'],
         'Magento\Sales\Api\OrderRepositoryInterface' => ['save', 'get', 'getList', 'delete'],
         'Magento\Sales\Api\OrderItemRepositoryInterface' => ['save', 'get', 'getList', 'delete'],

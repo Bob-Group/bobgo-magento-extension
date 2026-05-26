@@ -146,13 +146,6 @@ class OrderPushService
             $order->setData('bobgo_order_id', $bobgoOrderId);
         }
 
-        // Bob Go may return an immutable string ref alongside the numeric id;
-        // capture whichever key it uses so reconciliation/lookups have it.
-        $orderRef = $response['order_ref'] ?? $response['reference'] ?? null;
-        if ($orderRef !== null && $orderRef !== '') {
-            $order->setData('bobgo_order_ref', (string) $orderRef);
-        }
-
         $order->setData('bobgo_sync_hash', $hash);
         $order->setData('bobgo_sync_status', 'success');
         $order->setData('bobgo_last_synced', $this->dateTime->gmtDate());
@@ -212,6 +205,9 @@ class OrderPushService
      * Matches response items to Magento items by SKU. When duplicate SKUs exist,
      * positional order is used as a tie-breaker.
      *
+     * Must mirror OrderMapper::mapItems() — skip configurable parents and target
+     * the simple child so the id we store lines up with the SKU we send on PATCH.
+     *
      * @param array<int,array<string,mixed>> $responseItems
      */
     private function saveOrderItemIds(OrderInterface $order, array $responseItems): void
@@ -232,7 +228,7 @@ class OrderPushService
         $skuIndex = [];
 
         foreach ($order->getItems() as $item) {
-            if ($item->getParentItemId()) {
+            if ($item->getProductType() === 'configurable') {
                 continue;
             }
 

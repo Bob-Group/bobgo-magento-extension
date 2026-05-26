@@ -685,24 +685,24 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     /**
      * Return container types of carrier.
      *
+     * Always returns an array (possibly empty) — Magento's admin packaging popup
+     * template (vendor/magento/module-shipping/.../popup_content.phtml) iterates
+     * the return value with foreach, which fatals if given `false`.
+     *
      * @param \Magento\Framework\DataObject|null $params
-     * @return array<string, mixed>|false
-     * @SuppressWarnings(PHPMD.CyclomaticComplexity)
+     * @return array<string, mixed>
      */
     public function getContainerTypes(?\Magento\Framework\DataObject $params = null)
     {
         $result = [];
         $allowedContainers = $this->getConfigData('containers');
         if ($allowedContainers) {
-            $allowedContainers = explode(',', $allowedContainers);
-        }
-        if ($allowedContainers) {
-            foreach ($allowedContainers as $container) {
+            foreach (explode(',', (string) $allowedContainers) as $container) {
                 $result[$container] = $this->getCode('container_types', $container);
             }
         }
 
-        return !empty($result) ? $result : false;
+        return $result;
     }
 
     /**
@@ -822,6 +822,9 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
             // Set the carrier code
             $method->setCarrier(self::CODE);
+            // Default carrier title to empty so the checkout shows only the service
+            // name; deliveryDays() overrides this when additional_info is enabled.
+            $method->setCarrierTitle('');
 
             // Strip out the redundant 'bobgo_' prefix if present
             $serviceCode = $rate['service_code'] ?? '';

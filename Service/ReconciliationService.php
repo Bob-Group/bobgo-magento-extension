@@ -162,22 +162,56 @@ class ReconciliationService
 
     /**
      * Bob Go's response may put the shipments under various keys depending on
-     * the endpoint version. Normalise to a plain list.
+     * the endpoint version. Normalise to a plain list of flat shipment objects
+     * the admin block can render directly.
      *
      * @param array<string,mixed> $response
      * @return array<int,array<string,mixed>>
      */
     private function extractShipments(array $response): array
     {
+        $raw = [];
         foreach (['order_fulfillments', 'fulfillments', 'shipments', 'data'] as $key) {
             if (isset($response[$key]) && is_array($response[$key])) {
-                return array_values($response[$key]);
+                $raw = array_values($response[$key]);
+                break;
             }
         }
-        // If the response is itself the array of shipments
-        if (array_keys($response) === range(0, count($response) - 1)) {
-            return $response;
+        if ($raw === [] && array_keys($response) === range(0, count($response) - 1)) {
+            $raw = $response;
         }
-        return [];
+
+        $normalised = [];
+        foreach ($raw as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $normalised[] = $this->normaliseShipment($entry);
+        }
+        return $normalised;
+    }
+
+    /**
+     * Flatten the Bob Go fulfillment entry shape
+     * ({order_fulfillment, shipment, buyer_collection}) into the keys the admin
+     * block reads. Tolerates already-flat entries from older response shapes.
+     *
+     * @param array<string,mixed> $entry
+     * @return array<string,mixed>
+     */
+    private function normaliseShipment(array $entry): array
+    {
+        $shipment = is_array($entry['shipment'] ?? null) ? $entry['shipment'] : $entry;
+        $provider = is_array($shipment['provider'] ?? null) ? $shipment['provider'] : [];
+        $serviceLevel = is_array($shipment['service_level'] ?? null) ? $shipment['service_level'] : [];
+
+        return [
+            'tracking_number'          => (string) ($shipment['tracking_reference'] ?? $entry['tracking_number'] ?? ''),
+            'provider_tracking_number' => (string) ($shipment['provider_tracking_reference'] ?? ''),
+            'courier'                  => (string) ($provider['name'] ?? $entry['courier'] ?? ''),
+            'provider_slug'            => (string) ($shipment['provider_slug'] ?? ''),
+            'service_level'            => (string) ($serviceLevel['name'] ?? ''),
+            'status'                   => (string) ($shipment['status'] ?? $entry['status'] ?? ''),
+        ];
     }
 }

@@ -85,7 +85,7 @@ class ReconciliationServiceTest extends TestCase
         $this->apiClientMock->expects($this->once())
             ->method('get')
             ->with('order-fulfillments', ['order_id' => 'bobgo_ord_xyz'])
-            ->willReturn(['order_fulfillments' => [['tracking_number' => 'T1']]]);
+            ->willReturn(['order_fulfillments' => [$this->bobGoFulfillment('UASDRTR3', 'Demo Couriers', 'collected')]]);
 
         $this->orderRepositoryMock->expects($this->once())->method('save')->with($order);
         $this->syncLoggerMock->expects($this->once())->method('logOutbound');
@@ -99,23 +99,34 @@ class ReconciliationServiceTest extends TestCase
         $order = $this->makeOrder(7, 'bobgo_ord_a', '[]', $writes);
 
         $this->apiClientMock->method('get')
-            ->willReturn(['order_fulfillments' => [['tracking_number' => 'NEW']]]);
+            ->willReturn(['order_fulfillments' => [$this->bobGoFulfillment('UASDRTR3', 'Demo Couriers', 'collected')]]);
 
         $this->orderRepositoryMock->expects($this->once())->method('save');
         $this->service->reconcileOrder($order);
 
         $this->assertArrayHasKey('bobgo_shipments', $writes);
-        $this->assertStringContainsString('NEW', (string) $writes['bobgo_shipments']);
+        $decoded = json_decode((string) $writes['bobgo_shipments'], true);
+        $this->assertSame('UASDRTR3', $decoded[0]['tracking_number']);
+        $this->assertSame('Demo Couriers', $decoded[0]['courier']);
+        $this->assertSame('collected', $decoded[0]['status']);
         $this->assertSame('2026-05-19 12:00:00', $writes['bobgo_last_synced']);
     }
 
     public function testReconcileOrderIsNoOpWhenShipmentsUnchanged(): void
     {
-        $existing = json_encode([['tracking_number' => 'SAME']]);
+        $normalised = [[
+            'tracking_number'          => 'UASDRTR3',
+            'provider_tracking_number' => 'XK3VVL',
+            'courier'                  => 'Demo Couriers',
+            'provider_slug'            => 'demo',
+            'service_level'            => 'Bob Box',
+            'status'                   => 'collected',
+        ]];
+        $existing = (string) json_encode($normalised);
         $order = $this->makeOrder(7, 'bobgo_ord_a', $existing);
 
         $this->apiClientMock->method('get')
-            ->willReturn(['order_fulfillments' => [['tracking_number' => 'SAME']]]);
+            ->willReturn(['order_fulfillments' => [$this->bobGoFulfillment('UASDRTR3', 'Demo Couriers', 'collected')]]);
 
         // Nothing changed → no write to the repository.
         $this->orderRepositoryMock->expects($this->never())->method('save');
@@ -164,7 +175,49 @@ class ReconciliationServiceTest extends TestCase
         $this->service->run();
     }
 
+    public function testNormalisesNestedBobGoShipmentFields(): void
+    {
+        $writes = [];
+        $order = $this->makeOrder(7, 'bobgo_ord_a', '[]', $writes);
+
+        $this->apiClientMock->method('get')
+            ->willReturn(['order_fulfillments' => [$this->bobGoFulfillment('UASDRTR3', 'Demo Couriers', 'collected')]]);
+
+        $this->service->reconcileOrder($order);
+
+        $decoded = json_decode((string) $writes['bobgo_shipments'], true);
+        $this->assertCount(1, $decoded);
+        $this->assertSame([
+            'tracking_number'          => 'UASDRTR3',
+            'provider_tracking_number' => 'XK3VVL',
+            'courier'                  => 'Demo Couriers',
+            'provider_slug'            => 'demo',
+            'service_level'            => 'Bob Box',
+            'status'                   => 'collected',
+        ], $decoded[0]);
+    }
+
     // --- helpers ---------------------------------------------------------
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function bobGoFulfillment(string $tracking, string $courier, string $status): array
+    {
+        return [
+            'order_fulfillment' => ['id' => 2546, 'channel_ref_id' => ''],
+            'buyer_collection'  => null,
+            'shipment' => [
+                'tracking_reference'          => $tracking,
+                'provider_tracking_reference' => 'XK3VVL',
+                'provider_slug'               => 'demo',
+                'status'                      => $status,
+                'provider'      => ['name' => $courier, 'slug' => 'demo'],
+                'service_level' => ['name' => 'Bob Box', 'code' => 'BOXL-S'],
+            ],
+        ];
+    }
+
 
     private function stubOrderList(array $orders): void
     {

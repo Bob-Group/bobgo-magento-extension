@@ -154,12 +154,16 @@ class BobGoApiClient
     }
 
     /**
-     * Canonical store URL used by Bob Go to associate inbound API calls with
-     * the right channel. Must remain stable for the lifetime of the integration.
+     * Canonical store identifier used by Bob Go to associate inbound API calls
+     * with the right channel. Format: "host[/path]" — no scheme, no trailing
+     * slash. The scheme is omitted because a ":" in the header value breaks
+     * downstream parsers that split on the first colon.
      */
     private function getChannelIdentifier(): string
     {
-        return rtrim($this->storeManager->getStore()->getBaseUrl(), '/');
+        $baseUrl = $this->storeManager->getStore()->getBaseUrl();
+        $withoutScheme = (string)preg_replace('#^https?://#i', '', $baseUrl);
+        return rtrim($withoutScheme, '/');
     }
 
     /**

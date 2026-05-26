@@ -32,6 +32,7 @@ use Psr\Log\LoggerInterface;
 class Receive extends Action implements CsrfAwareActionInterface
 {
     private const TOPIC_HEADERS = [
+        'X-Bobgroup-Topic',
         'X-BobGo-Topic',
         'X-Webhook-Topic',
         'X-Topic',

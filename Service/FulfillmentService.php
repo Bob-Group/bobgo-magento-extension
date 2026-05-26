@@ -172,7 +172,7 @@ class FulfillmentService
             $track = $this->trackCreationFactory->create();
             $track->setTrackNumber($trackingNumber);
             $track->setCarrierCode('bobgo');
-            $track->setTitle('Bob Go');
+            $track->setTitle($this->extractCourierName($data));
             $tracks[] = $track;
         }
 
@@ -219,7 +219,7 @@ class FulfillmentService
         $channelOrderNumber = $data['channel_order_number'] ?? null;
         $trackingNumber = $data['shipment_tracking_reference'] ?? ($data['id'] ?? '');
         $statusFriendly = $data['status_friendly'] ?? ($data['status'] ?? '');
-        $courierName = $data['courier_name'] ?? 'Bob Go';
+        $courierName = $this->extractCourierName($data);
 
         if ($channelOrderNumber === null || $channelOrderNumber === '') {
             $this->logger->error('Bob Go tracking update missing channel_order_number', ['data' => $data]);
@@ -324,6 +324,34 @@ class FulfillmentService
         }
 
         return reset($orders);
+    }
+
+    /**
+     * Pull the courier display name out of the fulfillment payload, tolerating
+     * the two shapes Bob Go emits: flat (courier_name on the root, as on the
+     * tracking-update webhook) and nested (shipment.provider.name, as on the
+     * order-fulfillments GET response). Falls back to "Bob Go" so the tracking
+     * row always has a title.
+     *
+     * @param array<string,mixed> $data
+     */
+    private function extractCourierName(array $data): string
+    {
+        $shipment = is_array($data['shipment'] ?? null) ? $data['shipment'] : [];
+        $provider = is_array($shipment['provider'] ?? null) ? $shipment['provider'] : [];
+        $rootProvider = is_array($data['provider'] ?? null) ? $data['provider'] : [];
+
+        $candidates = [
+            $data['courier_name'] ?? null,
+            $provider['name'] ?? null,
+            $rootProvider['name'] ?? null,
+        ];
+        foreach ($candidates as $candidate) {
+            if (is_string($candidate) && $candidate !== '') {
+                return $candidate;
+            }
+        }
+        return 'Bob Go';
     }
 
     /**

@@ -124,23 +124,51 @@ class OrderMapper implements OrderMapperInterface
     }
 
     /**
+     * Bob Go expects ONE line per shipped product. For configurable products,
+     * Magento records two order items — the configurable parent (customer-paid
+     * price, base product name) and the simple child (variant name + SKU, price 0).
+     * We send the simple child (it has the variant info Bob Go needs) and copy the
+     * parent's price onto it so Bob Go sees the right amount.
+     *
      * @param OrderInterface $order
      * @return array<int,array<string,mixed>>
      */
     private function mapItems(OrderInterface $order): array
     {
-        $items = [];
+        $allItems = $order->getItems() ?: [];
 
-        foreach ($order->getItems() as $item) {
-            // Skip child items (e.g. configurable product children)
-            if ($item->getParentItemId()) {
+        // Build id → item lookup so children can find their parent for price.
+        $byId = [];
+        foreach ($allItems as $item) {
+            $byId[(int) $item->getItemId()] = $item;
+        }
+
+        $mapped = [];
+        foreach ($allItems as $item) {
+            // Skip configurable parents — the simple child carries the variant
+            // name and SKU and is what should be shipped/fulfilled.
+            if ($item->getProductType() === 'configurable') {
                 continue;
             }
 
-            $items[] = $this->mapItem($item);
+            $entry = $this->mapItem($item);
+
+            // If this simple is a child of a configurable, the customer-paid price
+            // sits on the parent (child's price is 0). Mirror it over.
+            $parentItemId = $item->getParentItemId();
+            if (
+                $parentItemId !== null
+                && $parentItemId !== ''
+                && isset($byId[(int) $parentItemId])
+                && (float) $entry['unit_price'] === 0.0
+            ) {
+                $entry['unit_price'] = (float) $byId[(int) $parentItemId]->getPriceInclTax();
+            }
+
+            $mapped[] = $entry;
         }
 
-        return $items;
+        return $mapped;
     }
 
     /**
@@ -150,7 +178,7 @@ class OrderMapper implements OrderMapperInterface
     private function mapItem(OrderItemInterface $item): array
     {
         $mapped = [
-            'channel_ref_id'    => (string) $item->getItemId(),
+            'channel_ref_id'    => (int) $item->getItemId(),
             'description'       => $item->getName() ?: '',
             'sku'               => $item->getSku(),
             'unit_price'        => (float) $item->getPriceInclTax(),

@@ -8,7 +8,6 @@ if ($order === null) {
 }
 
 $bobgoOrderId   = (string) ($order->getData('bobgo_order_id') ?? '');
-$bobgoOrderRef  = (string) ($order->getData('bobgo_order_ref') ?? '');
 $syncStatus     = (string) ($order->getData('bobgo_sync_status') ?? '—');
 $lastSynced     = (string) ($order->getData('bobgo_last_synced') ?? '—');
 $lastWebhook    = (string) ($order->getData('bobgo_last_webhook') ?? '—');
@@ -23,10 +22,6 @@ $shipments      = $block->getShipments();
             <tr>
                 <th><?= $escaper->escapeHtml(__('Bob Go order id')) ?></th>
                 <td><?= $bobgoOrderId !== '' ? $escaper->escapeHtml($bobgoOrderId) : '—' ?></td>
-            </tr>
-            <tr>
-                <th><?= $escaper->escapeHtml(__('Bob Go order ref')) ?></th>
-                <td><?= $bobgoOrderRef !== '' ? $escaper->escapeHtml($bobgoOrderRef) : '—' ?></td>
             </tr>
             <tr>
                 <th><?= $escaper->escapeHtml(__('Sync status')) ?></th>
@@ -45,18 +40,37 @@ $shipments      = $block->getShipments();
         <?php if (!empty($shipments)): ?>
             <h4><?= $escaper->escapeHtml(__('Shipments (from Bob Go)')) ?></h4>
             <?php foreach ($shipments as $shipment): ?>
+                <?php
+                $tracking = (string) ($shipment['tracking_number'] ?? '');
+                $providerTracking = (string) ($shipment['provider_tracking_number'] ?? '');
+                $courier = (string) ($shipment['courier'] ?? '');
+                $serviceLevel = (string) ($shipment['service_level'] ?? '');
+                $status = (string) ($shipment['status'] ?? '');
+                ?>
                 <table class="admin__table-secondary" style="margin-bottom:8px;">
                     <tr>
                         <th><?= $escaper->escapeHtml(__('Tracking number')) ?></th>
-                        <td><?= $escaper->escapeHtml((string) ($shipment['tracking_number'] ?? '—')) ?></td>
+                        <td><?= $tracking !== '' ? $escaper->escapeHtml($tracking) : '—' ?></td>
                     </tr>
+                    <?php if ($providerTracking !== '' && $providerTracking !== $tracking): ?>
+                    <tr>
+                        <th><?= $escaper->escapeHtml(__('Courier tracking ref')) ?></th>
+                        <td><?= $escaper->escapeHtml($providerTracking) ?></td>
+                    </tr>
+                    <?php endif; ?>
                     <tr>
                         <th><?= $escaper->escapeHtml(__('Courier')) ?></th>
-                        <td><?= $escaper->escapeHtml((string) ($shipment['courier'] ?? $shipment['courier_name'] ?? '—')) ?></td>
+                        <td><?= $courier !== '' ? $escaper->escapeHtml($courier) : '—' ?></td>
                     </tr>
+                    <?php if ($serviceLevel !== ''): ?>
+                    <tr>
+                        <th><?= $escaper->escapeHtml(__('Service level')) ?></th>
+                        <td><?= $escaper->escapeHtml($serviceLevel) ?></td>
+                    </tr>
+                    <?php endif; ?>
                     <tr>
                         <th><?= $escaper->escapeHtml(__('Status')) ?></th>
-                        <td><?= $escaper->escapeHtml((string) ($shipment['status'] ?? '—')) ?></td>
+                        <td><?= $status !== '' ? $escaper->escapeHtml($status) : '—' ?></td>
                     </tr>
                 </table>
             <?php endforeach; ?>

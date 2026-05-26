@@ -81,7 +81,51 @@ class BobGoApiClientTest extends TestCase
         $this->assertSame('application/json', $headers['Content-Type'] ?? null);
         $this->assertSame('application/json', $headers['Accept'] ?? null);
         $this->assertSame('Bearer test-key-abc123', $headers['Authorization'] ?? null);
-        $this->assertSame('https://store.example.com', $headers['bobgo-channel-identifier'] ?? null);
+        $this->assertSame('store.example.com', $headers['bobgo-channel-identifier'] ?? null);
+    }
+
+    /**
+     * @dataProvider channelIdentifierProvider
+     */
+    public function testChannelIdentifierNormalization(string $baseUrl, string $expected): void
+    {
+        $storeMock = $this->createMock(StoreInterface::class);
+        $storeMock->method('getBaseUrl')->willReturn($baseUrl);
+        $storeManagerMock = $this->createMock(StoreManagerInterface::class);
+        $storeManagerMock->method('getStore')->willReturn($storeMock);
+
+        $client = new BobGoApiClient(
+            $this->apiConfigMock,
+            $this->curlFactoryMock,
+            $this->loggerMock,
+            $storeManagerMock
+        );
+
+        $this->apiConfigMock->method('getApiKey')->willReturn('test-key');
+        $this->apiConfigMock->method('getBaseUrl')->willReturn(ApiConfig::BASE_URL_SANDBOX);
+
+        $headers = [];
+        $this->curlMock->method('addHeader')
+            ->willReturnCallback(function (string $name, string $value) use (&$headers) {
+                $headers[$name] = $value;
+            });
+        $this->curlMock->method('getStatus')->willReturn(200);
+        $this->curlMock->method('getBody')->willReturn('{}');
+
+        $client->get('webhooks');
+
+        $this->assertSame($expected, $headers['bobgo-channel-identifier'] ?? null);
+    }
+
+    public function channelIdentifierProvider(): array
+    {
+        return [
+            'https with trailing slash'    => ['https://app.bobgo-magento.test/', 'app.bobgo-magento.test'],
+            'http with trailing slash'     => ['http://shop.local/', 'shop.local'],
+            'https without trailing slash' => ['https://store.example.com', 'store.example.com'],
+            'subpath preserved'            => ['https://example.com/shop/', 'example.com/shop'],
+            'uppercase scheme'             => ['HTTPS://Example.com/', 'Example.com'],
+        ];
     }
 
     public function testPostBuildsCorrectUrl(): void

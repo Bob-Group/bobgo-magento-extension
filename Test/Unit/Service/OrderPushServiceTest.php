@@ -240,17 +240,20 @@ class OrderPushServiceTest extends TestCase
         $this->service->pushOrder($order);
     }
 
-    public function testPushOrderSkipsChildItemsForIdMatching(): void
+    public function testPushOrderSavesIdOnSimpleChildNotConfigurableParent(): void
     {
+        // Configurable parent — must NOT receive the bobgo id; we map the simple
+        // child so the id needs to live there for PATCH to round-trip cleanly.
         $parentItem = $this->createMock(OrderItemInterface::class);
-        $parentItem->method('getParentItemId')->willReturn(null);
-        $parentItem->method('getSku')->willReturn('PARENT-SKU');
-        $parentItem->expects($this->once())->method('setData')
-            ->with('bobgo_order_item_id', '500');
+        $parentItem->method('getProductType')->willReturn('configurable');
+        $parentItem->method('getSku')->willReturn('WS12-M-Orange');
+        $parentItem->expects($this->never())->method('setData');
 
         $childItem = $this->createMock(OrderItemInterface::class);
-        $childItem->method('getParentItemId')->willReturn(1);
-        $childItem->expects($this->never())->method('setData');
+        $childItem->method('getProductType')->willReturn('simple');
+        $childItem->method('getSku')->willReturn('WS12-M-Orange');
+        $childItem->expects($this->once())->method('setData')
+            ->with('bobgo_order_item_id', '500');
 
         $writes = [];
         $order = $this->makeOrder(100, '000000100', [], $writes);
@@ -260,7 +263,7 @@ class OrderPushServiceTest extends TestCase
         $this->apiClientMock->method('post')->willReturn([
             'id' => 'bg-order-123',
             'order_items' => [
-                ['id' => 500, 'sku' => 'PARENT-SKU'],
+                ['id' => 500, 'sku' => 'WS12-M-Orange'],
             ],
         ]);
 

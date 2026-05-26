@@ -144,25 +144,58 @@ class OrderMapperTest extends TestCase
         $this->assertSame('unpaid', $payload['payment_status']);
     }
 
-    public function testChildItemsFiltered(): void
+    public function testConfigurableParentSkippedAndChildPriceTakenFromParent(): void
     {
+        // Configurable parent: customer-paid price R22, base product name.
         $parentItem = $this->createMock(OrderItemInterface::class);
         $parentItem->method('getParentItemId')->willReturn(null);
+        $parentItem->method('getProductType')->willReturn('configurable');
         $parentItem->method('getItemId')->willReturn(1);
-        $parentItem->method('getSku')->willReturn('PARENT-SKU');
-        $parentItem->method('getName')->willReturn('Parent Product');
-        $parentItem->method('getPriceInclTax')->willReturn(100.00);
+        $parentItem->method('getSku')->willReturn('WS12');
+        $parentItem->method('getName')->willReturn('Radiant Tee');
+        $parentItem->method('getPriceInclTax')->willReturn(22.00);
         $parentItem->method('getQtyOrdered')->willReturn(1.0);
-        $parentItem->method('getWeight')->willReturn(1.0);
+        $parentItem->method('getWeight')->willReturn(0.5);
 
+        // Simple child: variant name + SKU, price 0 (Magento puts price on parent).
         $childItem = $this->createMock(OrderItemInterface::class);
         $childItem->method('getParentItemId')->willReturn(1);
+        $childItem->method('getProductType')->willReturn('simple');
+        $childItem->method('getItemId')->willReturn(2);
+        $childItem->method('getSku')->willReturn('WS12-M-Orange');
+        $childItem->method('getName')->willReturn('Radiant Tee-M-Orange');
+        $childItem->method('getPriceInclTax')->willReturn(0.0);
+        $childItem->method('getQtyOrdered')->willReturn(1.0);
+        $childItem->method('getWeight')->willReturn(0.5);
 
         $order = $this->createOrderMock(['items' => [$parentItem, $childItem]]);
         $payload = $this->mapper->mapOrderToPayload($order);
 
         $this->assertCount(1, $payload['order_items']);
-        $this->assertSame('PARENT-SKU', $payload['order_items'][0]['sku']);
+        $this->assertSame('WS12-M-Orange', $payload['order_items'][0]['sku']);
+        $this->assertSame('Radiant Tee-M-Orange', $payload['order_items'][0]['description']);
+        // Price was lifted from the configurable parent
+        $this->assertSame(22.00, $payload['order_items'][0]['unit_price']);
+    }
+
+    public function testSimpleProductOrderUnaffected(): void
+    {
+        $item = $this->createMock(OrderItemInterface::class);
+        $item->method('getParentItemId')->willReturn(null);
+        $item->method('getProductType')->willReturn('simple');
+        $item->method('getItemId')->willReturn(1);
+        $item->method('getSku')->willReturn('SIMPLE-SKU');
+        $item->method('getName')->willReturn('Simple Product');
+        $item->method('getPriceInclTax')->willReturn(50.00);
+        $item->method('getQtyOrdered')->willReturn(2.0);
+        $item->method('getWeight')->willReturn(0.25);
+
+        $order = $this->createOrderMock(['items' => [$item]]);
+        $payload = $this->mapper->mapOrderToPayload($order);
+
+        $this->assertCount(1, $payload['order_items']);
+        $this->assertSame('SIMPLE-SKU', $payload['order_items'][0]['sku']);
+        $this->assertSame(50.00, $payload['order_items'][0]['unit_price']);
     }
 
     public function testMapOrderToUpdatePayloadIncludesId(): void
