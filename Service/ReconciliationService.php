@@ -40,15 +40,15 @@ class ReconciliationService
     private const COMPLETE_LOOKBACK_DAYS = 14;
 
     /**
-     * Order states eligible for reconciliation. "Active" states are always
-     * included; STATE_COMPLETE is also reconciled within the lookback window
-     * via an additional updated_at filter — see loadCandidateOrders().
+     * Order states reconciled on every run, regardless of age. Stuck orders
+     * (e.g. PROCESSING for 30 days because the merchant is slow to ship)
+     * must remain in the pool — that's exactly the case reconciliation
+     * exists for.
      */
     private const ACTIVE_STATES = [
         Order::STATE_PROCESSING,
         Order::STATE_HOLDED,
         Order::STATE_NEW,
-        Order::STATE_COMPLETE,
     ];
 
     private OrderRepositoryInterface $orderRepository;
@@ -157,25 +157,73 @@ class ReconciliationService
     /**
      * @return OrderInterface[]
      */
+    /**
+     * Build the reconciliation batch.
+     *
+     * Two scoped queries (rather than one with a date filter) because
+     * SearchCriteriaBuilder ANDs filter groups together — putting
+     * `updated_at >= X` on the same builder would exclude long-stuck
+     * active-state orders, which are exactly what we need to reconcile.
+     *
+     * - Active states (NEW/PROCESSING/HOLDED): every run, regardless of age.
+     * - COMPLETE: only orders touched within the lookback window, so we
+     *   catch late tracking checkpoints (proof of delivery, etc.) without
+     *   pulling in every historical order on every cron tick.
+     *
+     * The two result sets are merged and deduped by entity id, then capped
+     * at BATCH_SIZE so the cron run stays bounded on busy stores.
+     *
+     * @return OrderInterface[]
+     */
     private function loadCandidateOrders(): array
     {
-        $lookbackDate = gmdate(
-            'Y-m-d H:i:s',
-            time() - (self::COMPLETE_LOOKBACK_DAYS * 86400)
-        );
+        $active = $this->loadOrdersForStates(self::ACTIVE_STATES);
+        $complete = $this->loadCompleteOrdersInLookback();
+
+        $merged = [];
+        foreach (array_merge($active, $complete) as $order) {
+            $id = (int) $order->getEntityId();
+            if ($id <= 0 || isset($merged[$id])) {
+                continue;
+            }
+            $merged[$id] = $order;
+            if (count($merged) >= self::BATCH_SIZE) {
+                break;
+            }
+        }
+        return array_values($merged);
+    }
+
+    /**
+     * @param string[] $states
+     * @return OrderInterface[]
+     */
+    private function loadOrdersForStates(array $states): array
+    {
+        $criteria = $this->searchCriteriaBuilder
+            ->addFilter('bobgo_order_id', null, 'notnull')
+            ->addFilter('state', $states, 'in')
+            ->setPageSize(self::BATCH_SIZE)
+            ->create();
+
+        return $this->orderRepository->getList($criteria)->getItems();
+    }
+
+    /**
+     * @return OrderInterface[]
+     */
+    private function loadCompleteOrdersInLookback(): array
+    {
+        $lookbackDate = gmdate('Y-m-d H:i:s', time() - (self::COMPLETE_LOOKBACK_DAYS * 86400));
 
         $criteria = $this->searchCriteriaBuilder
             ->addFilter('bobgo_order_id', null, 'notnull')
-            ->addFilter('state', self::ACTIVE_STATES, 'in')
-            // Completed orders only stay in the reconciliation pool for
-            // COMPLETE_LOOKBACK_DAYS — orders in active states aren't bound
-            // by updated_at (we want them every run).
+            ->addFilter('state', Order::STATE_COMPLETE, 'eq')
             ->addFilter('updated_at', $lookbackDate, 'gteq')
             ->setPageSize(self::BATCH_SIZE)
             ->create();
 
-        $list = $this->orderRepository->getList($criteria);
-        return $list->getItems();
+        return $this->orderRepository->getList($criteria)->getItems();
     }
 
     /**
