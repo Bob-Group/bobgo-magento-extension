@@ -169,13 +169,14 @@ When fulfillment sync is enabled, the extension subscribes to two topics on Bob 
 
 Inbound flow for every webhook:
 
-1. **HMAC verification** — the raw body is verified against the `Bobgo-Webhook-Signature` header (HMAC-SHA256, base64, constant-time compare). Failed verification → 403, body never inspected
-2. **JSON parse + topic resolution** — topic comes from the header, with a payload-shape fallback for legacy events
-3. **`event_id` dedup** — replayed deliveries return 200 without reprocessing
-4. **Route** — `fulfillment/created` creates a Magento shipment with items and tracking; `tracking/updated` adds tracking to the matching shipment and records a status comment
-5. Every outcome — accepted, rejected, duplicate, processing error — is written to `bobgo_sync_log`
+1. **HMAC verification** — the raw body is verified against the `Bobgo-Webhook-Signature` header (HMAC-SHA256, base64, constant-time compare). Failed verification → 403, body never inspected. Rejected bodies are truncated to 256 bytes before persistence.
+2. **Fulfillment-sync gate** — even with a valid signature, the request is short-circuited to 200 (no processing) if the merchant has disabled fulfillment sync. Stale subscriptions can no longer mutate orders after a disable.
+3. **JSON parse + topic resolution** — topic comes from the header, with a payload-shape fallback for legacy events
+4. **Race-safe `event_id` claim** — a `webhook_claim` row is INSERTed under the `UNIQUE (event_id, direction)` constraint; concurrent deliveries of the same event lose the race and 200 cleanly without reprocessing. NULL `event_id`s are not deduped (the constraint allows multiple NULLs).
+5. **Route** — `fulfillment/created` creates a Magento shipment with items and tracking; `tracking/updated` adds tracking to the matching shipment and records a status comment
+6. **Outcome** — on success, the claim row is upgraded to `success=1` with the resolved event type. On a *transient* failure (`TransientWebhookException` — shipment-creation race, DB lock, etc.), the claim is released, a failure row is written with `event_id = NULL` (so the unique slot stays free for Bob Go's retry), and the response is 500 to trigger the retry. On an *unexpected* failure (any other `\Throwable`), the claim row stays — future retries are 200'd at the dedup gate rather than re-running broken code; an operator can delete the claim row to allow a replay.
 
-Fulfillment shipments are deduped by tracking number **and** by the Bob Go `fulfillment_id` (stored on the shipment row). A payload with neither identifier is refused rather than risking a duplicate.
+Fulfillment shipments are deduped by tracking number **and** by the Bob Go `fulfillment_id` (stored on the shipment row). A payload with neither identifier is refused rather than risking a duplicate. Line items are matched to order items by the `bobgo_order_item_id` link first, then by SKU (popping from a per-SKU queue so duplicate SKUs aren't collapsed).
 
 ### Reconciliation (Safety Net)
 
@@ -195,16 +196,18 @@ Every inbound and outbound event passes through `SyncLogger` and lands in `bobgo
 | Column | Purpose |
 |---|---|
 | `direction` | `inbound` / `outbound` |
-| `event_type` | `webhook_received`, `webhook_rejected`, `webhook_unknown_topic`, `fulfillment_received`, `tracking_updated`, `order_created`, `order_updated_outbound`, `reconciliation_fetched` |
-| `event_id` | Provider-issued id (used for inbound dedup) |
-| `payload` | JSON request/response body, capped at 64 KB and with PII fields (`customer_email`, `customer_phone`, etc.) redacted |
+| `event_type` | `webhook_claim`, `webhook_received`, `webhook_rejected`, `webhook_unknown_topic`, `fulfillment_received`, `tracking_updated`, `order_created`, `order_updated_outbound`, `reconciliation_fetched` |
+| `event_id` | Provider-issued id (used for inbound dedup; deliberately `NULL` on transient-failure rows so the unique slot stays free for the retry) |
+| `payload` | JSON request/response body, capped at 64 KB and with PII fields redacted (see [PII Redaction](#pii-redaction)) |
 | `http_status` | Observed/returned HTTP status |
 | `success` | Outcome flag |
 | `retry_count` | Reserved for future use |
 | `order_id` | Linked Magento `entity_id` when available |
 | `created_at` | Timestamp |
 
-Indexed on `event_id`, `order_id`, `created_at` for fast lookups.
+Indexed on `event_id`, `order_id`, `created_at`. The `(event_id, direction)` pair carries a **UNIQUE** constraint, which is what makes the webhook dedup race-safe — the second concurrent delivery hits a duplicate-key error rather than racing past the check.
+
+A daily cron (`Cron\PruneSyncLog`, scheduled `15 3 * * *` UTC) deletes rows older than 30 days. Active `webhook_claim` rows are kept regardless so an in-flight delivery can't be pruned mid-flight.
 
 ### Admin Order Panel
 
@@ -218,13 +221,16 @@ The admin order detail page gains a Bob Go panel showing:
 
 ### Shipment Tracking
 
-The extension overrides Magento's default tracking popup with a custom view that displays:
+There are two tracking surfaces in the extension:
 
-- Live tracking status from the Bob Go API
-- Shipment event timeline
-- Tracking URLs for direct carrier tracking
+1. **Tracking popup (always on)** — overrides Magento's default tracking popup with a custom view showing live status from the Bob Go API, shipment event timeline, and direct carrier tracking URLs. Reachable from the customer's order history once a shipment has been created.
 
-When customers click "Track" on their order, they see real-time tracking information fetched from Bob Go.
+2. **Standalone tracking page** — `/bobgo/tracking/index`. Currently **hidden by default** (controlled by the `carriers/bobgo/enable_track_order` config flag, which is itself hidden from the admin UI). When enabled, it accepts a customer-entered order number or tracking reference. The endpoint is hardened in three layers:
+   - GET renders an empty form; only POST with a valid form_key performs a lookup.
+   - The input must match either a local order's `increment_id` OR a tracking number already recorded on a local shipment. Misses 404 silently without hitting Bob Go — this prevents the endpoint from being used as a tracking-reference oracle against the merchant's Bob Go account.
+   - Even with both gates passed, the call inherits the API client's 15 s timeout so a Bob Go outage can't hang the customer.
+
+   The standalone page should remain disabled until merchants explicitly need it; the tracking popup covers the normal customer flow.
 
 ## Security
 
@@ -250,7 +256,12 @@ The public webhook endpoint exits Magento's CSRF flow (signature verification is
 
 ### PII Redaction
 
-`SyncLogger` redacts the following keys to `***` before persisting payloads to `bobgo_sync_log`: `customer_email`, `customer_phone`, `customer_name`, `customer_surname`, `telephone`, `phone`, `email`. The canonical record of these values is the order itself; the log keeps shape and identifiers, not raw PII.
+`SyncLogger` redacts the following keys to `***` before persisting payloads to `bobgo_sync_log`:
+
+- **Customer identifiers** — `customer_email`, `customer_phone`, `customer_name`, `customer_surname`, `telephone`, `phone`, `email`
+- **Address fields** — `street_address`, `street`, `street1`, `street2`, `address_line_1`, `address_line_2`, `local_area`, `suburb`, `city`, `postcode`, `postal_code`, `zip`, `code` (Bob Go v2's postal-code key)
+
+The canonical record of these values is the order itself; the log keeps shape and identifiers, not raw PII. The redaction recurses into nested arrays, so a `delivery_address` block inside a webhook payload is scrubbed wherever it appears.
 
 ## Architecture
 
@@ -275,7 +286,8 @@ BobGroup/BobGo/
 │   ├── Tracking/Index.php          # Customer-facing tracking page
 │   └── Webhook/Receive.php         # HMAC-verified webhook receiver
 ├── Cron/
-│   └── Reconcile.php               # Hourly cron entry — wraps ReconciliationService
+│   ├── Reconcile.php               # Hourly cron entry — wraps ReconciliationService
+│   └── PruneSyncLog.php            # Daily cron — prunes bobgo_sync_log via SyncLogRetentionService
 ├── Helper/Data.php                 # Module helper (version, debug logging)
 ├── Model/
 │   ├── Carrier/
@@ -294,13 +306,17 @@ BobGroup/BobGo/
 ├── Plugin/
 │   ├── Checkout/Block/
 │   │   └── LayoutProcessorPlugin.php  # Injects suburb field into checkout
+│   ├── Quote/
+│   │   └── ToOrderAddressPlugin.php   # Copies quote-address suburb → order-address ext attr
 │   └── OrderRepositoryPlugin.php      # Loads/saves bobgo_order_id extension attribute
 ├── Service/
 │   ├── FulfillmentService.php         # Shipment creation from webhooks
 │   ├── OrderMapper.php                # Order → API payload (weight + suburb handling)
 │   ├── OrderPushService.php           # POST/PATCH orders with sync-hash dirty check
 │   ├── ReconciliationService.php      # Hourly safety-net refetch
-│   ├── SyncLogger.php                 # Single writer for bobgo_sync_log + PII redaction
+│   ├── SyncLogger.php                 # Single writer for bobgo_sync_log + PII redaction + atomic claim/release
+│   ├── SyncLogRetentionService.php    # 30-day prune logic for bobgo_sync_log
+│   ├── TransientWebhookException.php  # Marker exception that routes webhook failures to a 500
 │   ├── WebhookSignatureVerifier.php   # HMAC-SHA256 verification
 │   └── WebhookSubscriptionService.php # Webhook subscription lifecycle
 ├── etc/
@@ -313,7 +329,7 @@ BobGroup/BobGo/
 │   ├── db_schema_whitelist.json       # Whitelist for declarative schema
 │   ├── di.xml                         # DI: preferences, plugins, arguments
 │   ├── events.xml                     # Frontend events
-│   ├── extension_attributes.xml       # suburb (quote address), bobgo_order_id (order)
+│   ├── extension_attributes.xml       # suburb (quote + order address), bobgo_order_id (order)
 │   └── module.xml                     # Module definition + sequence deps
 ├── view/
 │   ├── adminhtml/                     # Admin order panel layout + template
@@ -345,19 +361,22 @@ And one new table:
 
 | Table | Purpose |
 |---|---|
-| `bobgo_sync_log` | One row per inbound or outbound event. Columns: `entity_id`, `order_id`, `event_type`, `direction`, `event_id`, `payload`, `http_status`, `success`, `retry_count`, `created_at`. Indexed on `event_id`, `order_id`, `created_at`. |
+| `bobgo_sync_log` | One row per inbound or outbound event. Columns: `entity_id`, `order_id`, `event_type`, `direction`, `event_id`, `payload`, `http_status`, `success`, `retry_count`, `created_at`. Indexed on `event_id`, `order_id`, `created_at`. **UNIQUE** on `(event_id, direction)` — load-bearing for race-safe webhook dedup. |
 
 ### Key Design Decisions
 
-- **Centralised API client** — All Bob Go API calls go through `BobGoApiClient` (Bearer auth, channel-identifier header, 30 s timeout, structured exceptions)
+- **Centralised API client** — All Bob Go API calls go through `BobGoApiClient` (Bearer auth, channel-identifier header, structured exceptions). Per-endpoint timeouts: 8 s for `rates-at-checkout` (checkout-blocking), 15 s default for everything else, 5 s connect timeout. Error logs cap response bodies at 512 bytes so 4xx echoes don't recur PII into `system.log`.
 - **Webhook verification before processing** — `Receive` calls `WebhookSignatureVerifier` first; nothing else looks at the body until it passes
-- **`event_id` dedup** — Retried webhook deliveries 200 quickly without re-running side effects
+- **Race-safe webhook dedup** — `claimEventId()` does an atomic INSERT under a UNIQUE constraint; concurrent deliveries can't both pass a "have I seen this?" check. Failure rows are written with `event_id = NULL` so the unique slot stays free for the retry.
+- **Transient vs unexpected failures** — `TransientWebhookException` signals "Bob Go should retry" (claim released, 500 response). Any other `Throwable` is treated as "don't know if it's safe to retry, keep the claim, operator decides."
 - **Sync-hash dirty checking** — `OrderPushService::updateOrder()` skips PATCHes when nothing has actually changed
 - **Weight conversion at payload-build time** — LBS → KG happens in `OrderMapper`, not as a `beforeSave` mutation, so the underlying order row is never corrupted by repeated saves
-- **Reconciliation as safety net** — Webhooks remain primary; the hourly cron only repaints state when something differs
-- **Single sync log writer** — `SyncLogger` is the only path that writes `bobgo_sync_log`, with built-in PII redaction and length capping
-- **Non-blocking order push** — API errors during order push are caught and logged; they never prevent the order from being saved in Magento
-- **Extension attributes** — `suburb` is a quote address extension attribute (also readable as a custom attribute on the order address); `bobgo_order_id` is exposed on the order interface for REST consumers
+- **Region code resolution** — origin store region is stored by Magento as a numeric `region_id`; the carrier resolves it to a province code (e.g. "GP", "WC") via `RegionFactory` before sending to Bob Go
+- **Reconciliation as safety net** — Webhooks remain primary; the hourly cron only repaints state when something differs. Two scoped queries: active states (NEW/PROCESSING/HOLDED) are always included; COMPLETE orders only within a 14-day lookback.
+- **Single sync log writer** — `SyncLogger` is the only path that writes `bobgo_sync_log`, with built-in PII redaction (customer + address fields) and length capping
+- **Non-blocking order push** — API errors during order push are caught and logged; they never prevent the order from being saved in Magento. The service methods return `bool` so the admin Resync action can surface real outcomes (the observer just ignores the return).
+- **Suburb flows quote → order** — Layout processor adds the field; checkout JS mixin copies its value into `extension_attributes`; `ToOrderAddressPlugin` carries the value across the quote→order address conversion; `OrderMapper` reads it back as `local_area` on outbound payloads.
+- **Extension attributes** — `suburb` is declared on both `Quote\Api\Data\AddressInterface` and `Sales\Api\Data\OrderAddressInterface`; `bobgo_order_id` is exposed on the order interface for REST consumers
 - **POST-only admin Resync** — Implements `HttpPostActionInterface` so Magento enforces form-key verification automatically
 
 ## Troubleshooting
