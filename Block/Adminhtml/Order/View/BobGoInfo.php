@@ -19,7 +19,7 @@ use Magento\Sales\Api\Data\OrderInterface;
 class BobGoInfo extends Template
 {
     private Registry $registry;
-    private FormKey $formKey;
+    private FormKey $bobGoFormKey;
 
     public function __construct(
         Context $context,
@@ -29,7 +29,7 @@ class BobGoInfo extends Template
     ) {
         parent::__construct($context, $data);
         $this->registry = $registry;
-        $this->formKey = $formKey;
+        $this->bobGoFormKey = $formKey;
     }
 
     public function getOrder(): ?OrderInterface
@@ -56,7 +56,7 @@ class BobGoInfo extends Template
     {
         return sprintf(
             '<input type="hidden" name="form_key" value="%s" />',
-            $this->escapeHtmlAttr($this->formKey->getFormKey())
+            $this->escapeHtmlAttr($this->bobGoFormKey->getFormKey())
         );
     }
 
