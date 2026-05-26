@@ -158,7 +158,7 @@ $stubs = [
         // Note: Magento\Sales\Model\Order is defined separately below (implements OrderInterface)
 
         'Magento\Sales\Model\Order\Shipment' => ['getTracks', 'getAllTracks', 'getEntityId', 'addTrack', 'save', 'getLastItem'],
-        'Magento\Sales\Model\Order\Shipment\Track' => ['getTrackNumber', 'setTrackNumber', 'setCarrierCode', 'setTitle'],
+        'Magento\Sales\Model\Order\Shipment\Track' => ['getTrackNumber', 'setTrackNumber', 'getTitle', 'setCarrierCode', 'setTitle', 'save'],
         'Magento\Sales\Model\Order\Shipment\TrackFactory' => ['create'],
         // Note: ShipmentCollection is defined separately below (implements IteratorAggregate)
         'Magento\Store\Model\Store' => ['getBaseUrl'],

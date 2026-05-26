@@ -250,7 +250,7 @@ class FulfillmentServiceTest extends TestCase
         $this->service->processFulfillment($data);
     }
 
-    public function testProcessTrackingUpdateAddsTrack(): void
+    public function testProcessTrackingUpdateBackfillsPlaceholderTitle(): void
     {
         $orderId = 42;
         $incrementId = '000000042';
@@ -258,35 +258,33 @@ class FulfillmentServiceTest extends TestCase
             'channel_order_number' => $incrementId,
             'shipment_tracking_reference' => 'TRACK002',
             'status_friendly' => 'In Transit',
-            'courier_name' => 'FastShip',
+            'courier_name' => 'Sandbox Couriers',
         ];
 
         $orderMock = $this->createMock(\Magento\Sales\Model\Order::class);
         $orderMock->method('getEntityId')->willReturn($orderId);
 
-        // Existing shipment with no tracks
+        // Matching track on the shipment, but with the generic "Bob Go"
+        // placeholder title left by fulfillment/created.
+        $existingTrackMock = $this->createMock(Track::class);
+        $existingTrackMock->method('getTrackNumber')->willReturn('TRACK002');
+        $existingTrackMock->method('getTitle')->willReturn('Bob Go');
+        $existingTrackMock->expects($this->once())->method('setTitle')->with('Sandbox Couriers');
+        $existingTrackMock->expects($this->once())->method('save');
+
         $shipmentMock = $this->createMock(Shipment::class);
-        $shipmentMock->method('getAllTracks')->willReturn([]);
+        $shipmentMock->method('getAllTracks')->willReturn([$existingTrackMock]);
 
         $shipmentCollectionMock = $this->createMock(ShipmentCollection::class);
         $shipmentCollectionMock->method('getSize')->willReturn(1);
-        $shipmentCollectionMock->method('getLastItem')->willReturn($shipmentMock);
+        $shipmentCollectionMock->method('getIterator')
+            ->willReturn(new \ArrayIterator([$shipmentMock]));
 
         $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
 
         $this->mockOrderLookupByIncrementId($orderMock);
 
-        // Track model creation
-        $trackModelMock = $this->createMock(Track::class);
-        $trackModelMock->expects($this->once())->method('setTrackNumber')->with('TRACK002');
-        $trackModelMock->expects($this->once())->method('setCarrierCode')->with('bobgo');
-        $trackModelMock->expects($this->once())->method('setTitle')->with('FastShip');
-        $this->trackFactoryMock->method('create')->willReturn($trackModelMock);
-
-        $shipmentMock->expects($this->once())->method('addTrack')->with($trackModelMock);
-        $shipmentMock->expects($this->once())->method('save');
-
-        // Expect order comment with status
+        // Order comment with status should still be added.
         $orderMock->expects($this->once())
             ->method('addCommentToStatusHistory')
             ->with('Bob Go tracking update: In Transit (ref: TRACK002)');
@@ -295,7 +293,7 @@ class FulfillmentServiceTest extends TestCase
         $this->service->processTrackingUpdate($data);
     }
 
-    public function testProcessTrackingUpdateSkipsDuplicates(): void
+    public function testProcessTrackingUpdateLeavesRealTitleAlone(): void
     {
         $orderId = 42;
         $incrementId = '000000042';
@@ -309,16 +307,20 @@ class FulfillmentServiceTest extends TestCase
         $orderMock = $this->createMock(\Magento\Sales\Model\Order::class);
         $orderMock->method('getEntityId')->willReturn($orderId);
 
-        // Existing shipment with the same tracking number already present
+        // Matching track already has a real courier title — backfill must not run.
         $existingTrackMock = $this->createMock(Track::class);
         $existingTrackMock->method('getTrackNumber')->willReturn('EXISTING001');
+        $existingTrackMock->method('getTitle')->willReturn('CourierCo');
+        $existingTrackMock->expects($this->never())->method('setTitle');
+        $existingTrackMock->expects($this->never())->method('save');
 
         $shipmentMock = $this->createMock(Shipment::class);
         $shipmentMock->method('getAllTracks')->willReturn([$existingTrackMock]);
+        $shipmentMock->expects($this->never())->method('addTrack');
+        $shipmentMock->expects($this->never())->method('save');
 
         $shipmentCollectionMock = $this->createMock(ShipmentCollection::class);
         $shipmentCollectionMock->method('getSize')->willReturn(1);
-        $shipmentCollectionMock->method('getLastItem')->willReturn($shipmentMock);
         $shipmentCollectionMock->method('getIterator')
             ->willReturn(new \ArrayIterator([$shipmentMock]));
 
@@ -326,15 +328,54 @@ class FulfillmentServiceTest extends TestCase
 
         $this->mockOrderLookupByIncrementId($orderMock);
 
-        // addTrack and save on shipment should never be called (duplicate skipped)
-        $shipmentMock->expects($this->never())->method('addTrack');
-        $shipmentMock->expects($this->never())->method('save');
-
-        // But order comment with status should still be added
         $orderMock->expects($this->once())
             ->method('addCommentToStatusHistory')
             ->with('Bob Go tracking update: Delivered (ref: EXISTING001)');
         $orderMock->expects($this->once())->method('save');
+
+        $this->service->processTrackingUpdate($data);
+    }
+
+    public function testProcessTrackingUpdateThrowsTransientWhenNoMatchingShipment(): void
+    {
+        $orderId = 42;
+        $incrementId = '000000042';
+        $data = [
+            'channel_order_number' => $incrementId,
+            'shipment_tracking_reference' => 'UASS4ZW6',
+            'status_friendly' => 'In Transit',
+            'courier_name' => 'Sandbox Couriers',
+        ];
+
+        $orderMock = $this->createMock(\Magento\Sales\Model\Order::class);
+        $orderMock->method('getEntityId')->willReturn($orderId);
+
+        // Order already has a shipment, but for a DIFFERENT tracking number —
+        // simulates the race where tracking/updated for fulfillment #2 arrives
+        // before fulfillment/created for #2 has committed shipment #7.
+        $otherTrackMock = $this->createMock(Track::class);
+        $otherTrackMock->method('getTrackNumber')->willReturn('UASSCK7G');
+
+        $otherShipmentMock = $this->createMock(Shipment::class);
+        $otherShipmentMock->method('getAllTracks')->willReturn([$otherTrackMock]);
+        // Critically: must NOT have anything added to it.
+        $otherShipmentMock->expects($this->never())->method('addTrack');
+        $otherShipmentMock->expects($this->never())->method('save');
+
+        $shipmentCollectionMock = $this->createMock(ShipmentCollection::class);
+        $shipmentCollectionMock->method('getSize')->willReturn(1);
+        $shipmentCollectionMock->method('getIterator')
+            ->willReturn(new \ArrayIterator([$otherShipmentMock]));
+
+        $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
+
+        $this->mockOrderLookupByIncrementId($orderMock);
+
+        // No comment should be added — we're throwing so Bob Go retries.
+        $orderMock->expects($this->never())->method('addCommentToStatusHistory');
+
+        $this->expectException(\BobGroup\BobGo\Service\TransientWebhookException::class);
+        $this->expectExceptionMessageMatches('/No shipment carries tracking UASS4ZW6 yet/');
 
         $this->service->processTrackingUpdate($data);
     }

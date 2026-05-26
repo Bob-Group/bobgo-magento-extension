@@ -308,39 +308,55 @@ class FulfillmentService
             return;
         }
 
-        // Prefer the shipment that already carries this tracking number — on a
-        // multi-shipment order, falling back to the latest shipment would
-        // attach the update to the wrong one.
+        // Locate the shipment that already carries this tracking number.
+        // We will NOT fall back to "the latest shipment" — on a multi-shipment
+        // order that misattaches the update; and even on single-shipment
+        // orders it can attach to the wrong shipment when this webhook races
+        // ahead of a fulfillment/created that's still in flight.
         $shipment = null;
-        $trackExists = false;
+        $existingTrack = null;
         foreach ($shipments as $candidate) {
             /** @var \Magento\Sales\Model\Order\Shipment $candidate */
-            foreach ($candidate->getAllTracks() as $existingTrack) {
-                if ($existingTrack->getTrackNumber() === (string) $trackingNumber) {
+            foreach ($candidate->getAllTracks() as $track) {
+                if ($track->getTrackNumber() === (string) $trackingNumber) {
                     $shipment = $candidate;
-                    $trackExists = true;
+                    $existingTrack = $track;
                     break 2;
                 }
             }
         }
+
         if ($shipment === null) {
-            /** @var \Magento\Sales\Model\Order\Shipment $shipment */
-            $shipment = $shipments->getLastItem();
+            // Bob Go fires fulfillment/created and tracking/updated independently
+            // and their deliveries can race. The shipment + track is owned by
+            // the fulfillment/created handler; if it hasn't created it yet,
+            // throw transient so Bob Go retries and we attach to the right
+            // shipment on the next attempt.
+            $this->logger->info('Bob Go tracking update: no matching shipment yet, will retry', [
+                'order_id' => $order->getEntityId(),
+                'tracking_number' => $trackingNumber,
+            ]);
+            throw new TransientWebhookException(sprintf(
+                'No shipment carries tracking %s yet for order %s; will retry once fulfillment/created arrives',
+                $trackingNumber,
+                (string) $order->getEntityId()
+            ));
         }
 
         try {
-            if (!$trackExists) {
-                /** @var \Magento\Sales\Model\Order\Shipment\Track $trackModel */
-                $trackModel = $this->trackFactory->create();
-                $trackModel->setTrackNumber((string) $trackingNumber);
-                $trackModel->setCarrierCode('bobgo');
-                $trackModel->setTitle($courierName);
-                $shipment->addTrack($trackModel);
-                $shipment->save();
-
-                $this->logger->info('Bob Go tracking update: track added', [
+            // Backfill the courier title when fulfillment/created stamped the
+            // generic "Bob Go" placeholder (its payload often lacks the courier
+            // display name) and tracking/updated now carries the real
+            // courier_name. Saves the operator a manual edit.
+            $currentTitle = (string) $existingTrack->getTitle();
+            $isPlaceholder = $currentTitle === '' || $currentTitle === 'Bob Go';
+            if ($isPlaceholder && $courierName !== '' && $courierName !== 'Bob Go') {
+                $existingTrack->setTitle($courierName);
+                $existingTrack->save();
+                $this->logger->info('Bob Go tracking update: courier title backfilled', [
                     'order_id' => $order->getEntityId(),
                     'tracking_number' => $trackingNumber,
+                    'courier_name' => $courierName,
                 ]);
             }
 
