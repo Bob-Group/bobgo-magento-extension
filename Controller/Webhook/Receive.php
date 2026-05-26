@@ -170,26 +170,46 @@ class Receive extends Action implements CsrfAwareActionInterface
                     return $result->setData(['message' => 'unknown topic, ignored']);
             }
         } catch (TransientWebhookException $e) {
-            // Transient failure — release the dedup claim so Bob Go's retry
-            // can re-process the same event_id, and return 500 to trigger
-            // that retry.
+            // Transient failure — release the dedup claim and log the
+            // failure WITHOUT event_id so the unique (event_id, direction)
+            // slot stays free for Bob Go's retry to re-claim. We embed
+            // the event_id in the payload so operators can still trace it.
             $this->syncLogger->releaseEventIdClaim($eventId);
             $this->logger->error('Bob Go webhook processing failed (transient, will retry)', [
                 'topic' => $topic,
+                'event_id' => $eventId,
                 'error' => $e->getMessage(),
             ]);
-            $this->syncLogger->logInbound(SyncLog::EVENT_WEBHOOK_RECEIVED, $data, null, $eventId, 500, false);
+            $this->syncLogger->logInbound(
+                SyncLog::EVENT_WEBHOOK_RECEIVED,
+                ['event_id' => $eventId, 'topic' => $topic, 'data' => $data, 'error' => $e->getMessage()],
+                null,
+                null, // intentionally null — do NOT re-occupy the dedup slot
+                500,
+                false
+            );
             return $result->setHttpResponseCode(500)->setData(['error' => 'Processing failed']);
         } catch (\Throwable $e) {
-            // Permanent / unexpected — still release the claim so an operator
-            // who fixes the underlying data and replays the event isn't
-            // blocked, but return 200 because retrying won't help on its own.
-            $this->syncLogger->releaseEventIdClaim($eventId);
-            $this->logger->error('Bob Go webhook processing failed (permanent)', [
+            // Permanent / unexpected. We DON'T release the claim — the row
+            // stays as a marker so retries from Bob Go are short-circuited.
+            // A 500 is returned for visibility (so the operator notices),
+            // but Bob Go's subsequent retries will be 200'd at the dedup
+            // check rather than re-running broken code.
+            $this->logger->error('Bob Go webhook processing failed (unexpected)', [
                 'topic' => $topic,
+                'event_id' => $eventId,
                 'error' => $e->getMessage(),
             ]);
-            $this->syncLogger->logInbound(SyncLog::EVENT_WEBHOOK_RECEIVED, $data, null, $eventId, 500, false);
+            // Same rule as the transient branch: don't log with event_id,
+            // because the claim row already holds the slot.
+            $this->syncLogger->logInbound(
+                SyncLog::EVENT_WEBHOOK_RECEIVED,
+                ['event_id' => $eventId, 'topic' => $topic, 'data' => $data, 'error' => $e->getMessage()],
+                null,
+                null,
+                500,
+                false
+            );
             return $result->setHttpResponseCode(500)->setData(['error' => 'Processing failed']);
         }
     }

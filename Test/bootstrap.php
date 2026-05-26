@@ -266,7 +266,7 @@ if (!class_exists(\Magento\Framework\Model\AbstractModel::class, false)) {
 
 // Stub Magento ResourceModel AbstractDb (parent of SyncLog resource model)
 if (!class_exists(\Magento\Framework\Model\ResourceModel\Db\AbstractDb::class, false)) {
-    eval('namespace Magento\Framework\Model\ResourceModel\Db; abstract class AbstractDb { protected function _construct(): void {} protected function _init($table, $idField) {} public function save($object) { return $this; } }');
+    eval('namespace Magento\Framework\Model\ResourceModel\Db; abstract class AbstractDb { protected function _construct(): void {} protected function _init($table, $idField) {} public function save($object) { return $this; } public function delete($object) { return $this; } public function getConnection() { return null; } public function getMainTable() { return ""; } }');
 }
 
 // Stub Magento controller/block parent classes used by our concrete classes — minimum
@@ -292,6 +292,18 @@ if (!class_exists(\Magento\Framework\Exception\AlreadyExistsException::class, fa
 }
 if (!class_exists(\Magento\Framework\Data\Form\FormKey::class, false)) {
     eval('namespace Magento\Framework\Data\Form; class FormKey { public function getFormKey(): string { return ""; } }');
+}
+if (!class_exists(\Magento\Sales\Api\Data\OrderAddressExtensionFactory::class, false)) {
+    eval('namespace Magento\Sales\Api\Data; class OrderAddressExtensionFactory { public function create() { return new \stdClass(); } }');
+}
+if (!class_exists(\Magento\Quote\Model\Quote\Address\ToOrderAddress::class, false)) {
+    eval('namespace Magento\Quote\Model\Quote\Address; class ToOrderAddress { public function convert($quoteAddress, $data = []) {} }');
+}
+if (!interface_exists(\Magento\Quote\Api\Data\AddressInterface::class, false)) {
+    eval('namespace Magento\Quote\Api\Data; interface AddressInterface {}');
+}
+if (!interface_exists(\Magento\Sales\Api\Data\OrderAddressInterface::class, false)) {
+    eval('namespace Magento\Sales\Api\Data; interface OrderAddressInterface {}');
 }
 if (!interface_exists(\Magento\Framework\App\RequestInterface::class, false)) {
     eval('namespace Magento\Framework\App; interface RequestInterface { public function getContent(); public function getHeader($name); public function getParam($name); }');
@@ -326,5 +338,14 @@ if (!class_exists(\Magento\Framework\Registry::class, false)) {
 
 // Stub Magento ResourceModel AbstractCollection (parent of SyncLog collection)
 if (!class_exists(\Magento\Framework\Model\ResourceModel\Db\Collection\AbstractCollection::class, false)) {
-    eval('namespace Magento\Framework\Model\ResourceModel\Db\Collection; abstract class AbstractCollection { protected function _construct(): void {} protected function _init($model, $resourceModel) {} public function addFieldToFilter($field, $condition = null) { return $this; } public function setPageSize($size) { return $this; } public function getSize() { return 0; } }');
+    eval('namespace Magento\Framework\Model\ResourceModel\Db\Collection; abstract class AbstractCollection implements \IteratorAggregate { protected function _construct(): void {} protected function _init($model, $resourceModel) {} public function addFieldToFilter($field, $condition = null) { return $this; } public function setPageSize($size) { return $this; } public function getSize() { return 0; } public function getFirstItem() { return null; } public function getIterator(): \Traversable { return new \ArrayIterator([]); } }');
+}
+
+// Factory class generation in real Magento is dynamic. Stub the two we
+// exercise in unit tests so createMock() can resolve them.
+if (!class_exists(\BobGroup\BobGo\Model\SyncLogFactory::class, false)) {
+    eval('namespace BobGroup\BobGo\Model; class SyncLogFactory { public function create(array $data = []) {} }');
+}
+if (!class_exists(\BobGroup\BobGo\Model\ResourceModel\SyncLog\CollectionFactory::class, false)) {
+    eval('namespace BobGroup\BobGo\Model\ResourceModel\SyncLog; class CollectionFactory { public function create(array $data = []) {} }');
 }

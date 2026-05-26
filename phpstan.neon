@@ -68,6 +68,7 @@ parameters:
         - '#Call to method validate\(\) on an unknown class Magento\\Framework\\Data\\Form\\FormKey\\Validator#'
         - '#Call to (an undefined |)method (getExtensionAttributes|setExtensionAttributes|getCustomAttribute|getData|setData|create)\(\) on an unknown class Magento\\(Quote|Sales)\\#'
         - '#Call to an undefined method Magento\\Sales\\Api\\Data\\OrderAddressInterface::(getExtensionAttributes|setExtensionAttributes|getCustomAttribute|getData|setData)#'
+        - '#Call to an undefined method Magento\\Quote\\Api\\Data\\AddressInterface::(getExtensionAttributes|getCustomAttribute|getData)#'
         - '#Access to an undefined property BobGroup\\BobGo\\Model\\Carrier\\BobGo::\$_regionFactory#'
         - '#Call to method getId\(\) on an unknown class Magento\\Directory\\Model\\Region#'
         - '#Call to method (getCode|getName)\(\) on an unknown class Magento\\Directory\\Model\\Region#'

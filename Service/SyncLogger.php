@@ -46,6 +46,7 @@ class SyncLogger
         'address_line_2',
         'local_area',
         'suburb',
+        'city',
         'postcode',
         'postal_code',
         'zip',
