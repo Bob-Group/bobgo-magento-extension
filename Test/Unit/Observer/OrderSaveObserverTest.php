@@ -139,9 +139,10 @@ class OrderSaveObserverTest extends TestCase
         $this->orderPushServiceMock->expects($this->once())
             ->method('pushOrder')
             ->with($order)
-            ->willReturnCallback(function () use ($eventObserver) {
+            ->willReturnCallback(function () use ($eventObserver): bool {
                 // This simulates the nested sales_order_save_after event
                 $this->observer->execute($eventObserver);
+                return true;
             });
 
         $this->orderPushServiceMock->expects($this->never())

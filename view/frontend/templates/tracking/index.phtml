@@ -35,6 +35,7 @@ $shipmentData = $block->getTrackingData();
 <div class="track-order-container">
     <?php if (empty($shipmentData)) : ?>
         <form action="<?= $block->escapeUrl($block->getUrl('bobgo/tracking/index')) ?>" method="post" class="track-order-form">
+            <?= $block->getBlockHtml('formkey') ?>
             <div class="field">
                 <label for="order_reference"><?= $block->escapeHtml(__('Order Number/Tracking Reference:')) ?></label>
                 <input type="text" id="order_reference" name="order_reference" required>

@@ -287,6 +287,9 @@ if (!interface_exists(\Magento\Sales\Api\ShipmentRepositoryInterface::class, fal
 if (!interface_exists(\Magento\Framework\Api\AttributeInterface::class, false)) {
     eval('namespace Magento\Framework\Api; interface AttributeInterface { public function getAttributeCode(); public function getValue(); public function setAttributeCode($code); public function setValue($value); }');
 }
+if (!class_exists(\Magento\Framework\Exception\AlreadyExistsException::class, false)) {
+    eval('namespace Magento\Framework\Exception; class AlreadyExistsException extends LocalizedException {}');
+}
 if (!class_exists(\Magento\Framework\Data\Form\FormKey::class, false)) {
     eval('namespace Magento\Framework\Data\Form; class FormKey { public function getFormKey(): string { return ""; } }');
 }

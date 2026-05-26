@@ -136,14 +136,25 @@ class OrderMapper implements OrderMapperInterface
     }
 
     /**
-     * Pull the suburb custom attribute off the order shipping address.
+     * Pull the suburb off the order shipping address.
      *
-     * Tries the structured custom-attribute API first (the canonical shape
-     * for an order address) and falls back to the magic data accessor for
-     * cases where the value was set on the address as raw data.
+     * The canonical channel is the OrderAddressInterface extension attribute
+     * (set by ToOrderAddressPlugin at conversion time). Falls back to the
+     * legacy custom-attribute API and then to raw `getData('suburb')` so
+     * orders placed before the plugin was wired still resolve correctly.
      */
     private function extractSuburb(\Magento\Sales\Api\Data\OrderAddressInterface $address): string
     {
+        if (method_exists($address, 'getExtensionAttributes')) {
+            $ext = $address->getExtensionAttributes();
+            if ($ext && method_exists($ext, 'getSuburb')) {
+                $value = $ext->getSuburb();
+                if (is_scalar($value) && (string) $value !== '') {
+                    return (string) $value;
+                }
+            }
+        }
+
         if (method_exists($address, 'getCustomAttribute')) {
             $attr = $address->getCustomAttribute('suburb');
             if ($attr && $attr->getValue() !== null && $attr->getValue() !== '') {

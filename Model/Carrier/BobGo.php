@@ -288,18 +288,20 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             }
         }
 
-        // Require postal code for countries where it is mandatory
+        // Bob Go shipping is only available for South Africa (ZA). Non-ZA
+        // destinations get the generic carrier-not-available error and
+        // skip the rest of the validation chain.
+        if ($rateRequest->getDestCountryId() !== 'ZA') {
+            $errorMsg = $configErrorMsg ? $configErrorMsg : $defaultErrorMsg;
+        }
+
+        // Postcode required for ZA (and any other country Magento marks
+        // postcode-mandatory). Earlier versions cleared this error when
+        // destCountry === 'ZA', which let the carrier fire without a
+        // postcode and break the rate request downstream.
         if (!$errorMsg && !$rateRequest->getDestPostcode()
             && $this->isZipCodeRequired($rateRequest->getDestCountryId())) {
             $errorMsg = __('This shipping method is not available. Please specify the zip code.');
-        }
-
-        // Bob Go shipping is only available for South Africa (ZA).
-        // Clear any previous error for ZA; set error for all other countries.
-        if ($rateRequest->getDestCountryId() === 'ZA') {
-            $errorMsg = '';
-        } else {
-            $errorMsg = $configErrorMsg ? $configErrorMsg : $defaultErrorMsg;
         }
 
         // If there's an error and showMethod is enabled, return an error rate object
@@ -412,7 +414,8 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     {
         /** Store Origin details */
         $originCountry = $this->getStringValue('general/store_information/country_id');
-        $originRegion = $this->getStringValue('general/store_information/region_id');
+        $originRegionRaw = $this->getStringValue('general/store_information/region_id');
+        $originRegion = $this->resolveRegionCode($originRegionRaw, $originCountry);
         $originCity = $this->getStringValue('general/store_information/city');
         $originStreet = $this->getStringValue('general/store_information/postcode');
         $originStreet1 = $this->getStringValue('general/store_information/street_line1');
@@ -432,6 +435,41 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             $originSuburb,
             $weightUnit,
         ];
+    }
+
+    /**
+     * Magento stores the configured store region as `region_id` — a
+     * numeric directory_country_region primary key. Bob Go expects a
+     * province code/name (e.g. "GP", "WC"). Resolve the id through
+     * RegionFactory; fall back to whatever was stored (which might
+     * already be a name in older installs).
+     */
+    private function resolveRegionCode(?string $regionRaw, ?string $countryId): ?string
+    {
+        if ($regionRaw === null || $regionRaw === '') {
+            return null;
+        }
+        // Already non-numeric? Probably a code/name — pass it through.
+        if (!ctype_digit($regionRaw)) {
+            return $regionRaw;
+        }
+        try {
+            /** @var \Magento\Directory\Model\Region $region */
+            $region = $this->_regionFactory->create()->load((int) $regionRaw);
+            if ($region->getId()) {
+                $code = (string) ($region->getCode() ?: $region->getName());
+                if ($code !== '') {
+                    return $code;
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->_logger->warning('Bob Go: failed to resolve origin region', [
+                'region_raw' => $regionRaw,
+                'country_id' => $countryId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+        return $regionRaw;
     }
 
     /**

@@ -4,6 +4,9 @@
     <extension_attributes for="Magento\Quote\Api\Data\AddressInterface">
         <attribute code="suburb" type="string"/>
     </extension_attributes>
+    <extension_attributes for="Magento\Sales\Api\Data\OrderAddressInterface">
+        <attribute code="suburb" type="string"/>
+    </extension_attributes>
     <extension_attributes for="Magento\Sales\Api\Data\OrderInterface">
         <attribute code="bobgo_order_id" type="string"/>
     </extension_attributes>

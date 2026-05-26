@@ -60,15 +60,21 @@ class Resync extends Action implements HttpPostActionInterface
             // Clear the sync hash so updateOrder definitely fires.
             $order->setData('bobgo_sync_hash', null);
 
-            if ($order->getData('bobgo_order_id')) {
-                $this->orderPushService->updateOrder($order);
-            } else {
-                $this->orderPushService->pushOrder($order);
-            }
+            $pushSucceeded = $order->getData('bobgo_order_id')
+                ? $this->orderPushService->updateOrder($order)
+                : $this->orderPushService->pushOrder($order);
 
+            // Reconciliation is best-effort and runs even on push failure so
+            // the panel can still reflect shipment state Bob Go knows about.
             $this->reconciliationService->reconcileOrder($order);
 
-            $this->messageManager->addSuccessMessage(__('Bob Go resync triggered.'));
+            if ($pushSucceeded) {
+                $this->messageManager->addSuccessMessage(__('Bob Go resync completed.'));
+            } else {
+                $this->messageManager->addErrorMessage(
+                    __('Bob Go resync: push to Bob Go failed. See bobgo_sync_log for details.')
+                );
+            }
         } catch (\Throwable $e) {
             $this->bobgoLogger->error('Bob Go: admin resync failed', [
                 'order_id' => $orderId,

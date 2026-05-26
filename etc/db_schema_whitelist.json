@@ -39,7 +39,8 @@
             "BOBGO_SYNC_LOG_CREATED_AT": true
         },
         "constraint": {
-            "PRIMARY": true
+            "PRIMARY": true,
+            "BOBGO_SYNC_LOG_EVENT_ID_DIRECTION_UNQ": true
         }
     }
 }

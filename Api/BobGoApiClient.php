@@ -19,9 +19,30 @@ use Psr\Log\LoggerInterface;
  */
 class BobGoApiClient
 {
-    private const REQUEST_TIMEOUT_SECONDS = 30;
+    /**
+     * Default ceiling for any single Bob Go API call. Earlier versions used
+     * 30 s, which is long enough to make checkout feel broken when Bob Go
+     * is unhealthy. 15 s is still generous (typical responses are sub-second)
+     * while keeping a stalled call out of the customer's way.
+     */
+    private const REQUEST_TIMEOUT_SECONDS = 15;
+    /**
+     * Hard cap for time-sensitive paths (rates-at-checkout). The checkout
+     * blocks on this call, so a faster failure beats a slow success.
+     */
+    private const RATES_TIMEOUT_SECONDS = 8;
+    /**
+     * Magento's Curl client uses CURLOPT_CONNECTTIMEOUT for the TCP
+     * handshake. We override the default (which depends on PHP build) so a
+     * black-holed DNS / firewall doesn't eat the whole request timeout
+     * before we even get to send bytes.
+     */
+    private const CONNECT_TIMEOUT_SECONDS = 5;
     private const MIN_KEY_DISPLAY_LENGTH = 4;
     private const KEY_MASK = '****';
+
+    /** Endpoints that block customer-facing flows and need the tighter ceiling. */
+    private const FAST_PATH_ENDPOINTS = ['rates-at-checkout'];
 
     /**
      * @var ApiConfig
@@ -64,7 +85,7 @@ class BobGoApiClient
     public function get(string $endpoint, array $queryParams = []): array
     {
         $url = $this->buildUrl($endpoint, $queryParams);
-        $curl = $this->createCurl();
+        $curl = $this->createCurl($endpoint);
         $curl->get($url);
         return $this->handleResponse($curl, $endpoint);
     }
@@ -78,7 +99,7 @@ class BobGoApiClient
     public function post(string $endpoint, array $payload): array
     {
         $url = $this->buildUrl($endpoint);
-        $curl = $this->createCurl();
+        $curl = $this->createCurl($endpoint);
         $curl->post($url, $this->encodePayload($payload, $endpoint));
         return $this->handleResponse($curl, $endpoint);
     }
@@ -92,7 +113,7 @@ class BobGoApiClient
     public function patch(string $endpoint, array $payload): array
     {
         $url = $this->buildUrl($endpoint);
-        $curl = $this->createCurl();
+        $curl = $this->createCurl($endpoint);
         $curl->setOption(CURLOPT_CUSTOMREQUEST, 'PATCH');
         $curl->post($url, $this->encodePayload($payload, $endpoint));
         return $this->handleResponse($curl, $endpoint);
@@ -107,7 +128,7 @@ class BobGoApiClient
     public function delete(string $endpoint, array $payload = []): array
     {
         $url = $this->buildUrl($endpoint);
-        $curl = $this->createCurl();
+        $curl = $this->createCurl($endpoint);
 
         $curl->setOption(CURLOPT_CUSTOMREQUEST, 'DELETE');
         if (!empty($payload)) {
@@ -134,10 +155,10 @@ class BobGoApiClient
     }
 
     /**
-     * @return \Magento\Framework\HTTP\Client\Curl
      * @throws BobGoApiException
+     * @return \Magento\Framework\HTTP\Client\Curl
      */
-    private function createCurl(): \Magento\Framework\HTTP\Client\Curl
+    private function createCurl(string $endpoint = ''): \Magento\Framework\HTTP\Client\Curl
     {
         $apiKey = $this->apiConfig->getApiKey();
         if ($apiKey === null) {
@@ -149,7 +170,13 @@ class BobGoApiClient
         $curl->addHeader('Accept', 'application/json');
         $curl->addHeader('Authorization', 'Bearer ' . $apiKey);
         $curl->addHeader('bobgo-channel-identifier', $this->getChannelIdentifier());
-        $curl->setOption(CURLOPT_TIMEOUT, self::REQUEST_TIMEOUT_SECONDS);
+
+        $timeout = in_array($endpoint, self::FAST_PATH_ENDPOINTS, true)
+            ? self::RATES_TIMEOUT_SECONDS
+            : self::REQUEST_TIMEOUT_SECONDS;
+        $curl->setOption(CURLOPT_TIMEOUT, $timeout);
+        $curl->setOption(CURLOPT_CONNECTTIMEOUT, self::CONNECT_TIMEOUT_SECONDS);
+
         return $curl;
     }
 
@@ -193,12 +220,15 @@ class BobGoApiClient
 
         if ($statusCode >= 400) {
             $maskedKey = $this->getMaskedApiKey();
+            // Cap response body in logs — Bob Go's 4xx/5xx responses usually
+            // echo the offending payload back, which can include PII like
+            // email/phone/address that we don't want recurring in system.log.
             $this->logger->error(
                 'Bob Go API error',
                 [
                     'endpoint' => $endpoint,
                     'status_code' => $statusCode,
-                    'response' => $responseBody,
+                    'response_snippet' => substr($responseBody, 0, 512),
                     'api_key' => $maskedKey,
                 ]
             );

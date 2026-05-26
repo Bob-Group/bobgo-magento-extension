@@ -7,6 +7,7 @@ use BobGroup\BobGo\Model\ResourceModel\SyncLog as SyncLogResource;
 use BobGroup\BobGo\Model\ResourceModel\SyncLog\CollectionFactory as SyncLogCollectionFactory;
 use BobGroup\BobGo\Model\SyncLog;
 use BobGroup\BobGo\Model\SyncLogFactory;
+use Magento\Framework\Exception\AlreadyExistsException;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -14,19 +15,20 @@ use Psr\Log\LoggerInterface;
  *
  * Every inbound webhook and every outbound API call should pass through here
  * so that operators have a single timeline to debug delivery and sync issues
- * from. Also provides event_id deduplication for inbound webhooks.
+ * from. Also provides race-safe event_id deduplication for inbound webhooks
+ * via a UNIQUE (event_id, direction) constraint on the table.
  */
 class SyncLogger
 {
     private const MAX_PAYLOAD_BYTES = 65535;
 
     /**
-     * Payload keys that contain personally-identifying information. Their
-     * values are replaced with "***" before persistence so the sync log can
-     * be exported, backed up, or shared without leaking customer PII. The
-     * canonical record of these values is the order itself.
+     * Payload keys whose values are replaced with "***" before persistence.
+     * Customer PII is canonical on the order; the address block is canonical
+     * on the order address — neither needs to live again in the log.
      */
     private const PII_KEYS = [
+        // Direct customer PII
         'customer_email',
         'customer_phone',
         'customer_name',
@@ -34,6 +36,20 @@ class SyncLogger
         'telephone',
         'phone',
         'email',
+        // Address fields — present at the top of address blocks in both
+        // inbound (delivery_address, billing_address) and outbound payloads.
+        'street_address',
+        'street',
+        'street1',
+        'street2',
+        'address_line_1',
+        'address_line_2',
+        'local_area',
+        'suburb',
+        'postcode',
+        'postal_code',
+        'zip',
+        'code', // Bob Go v2 uses "code" as the postal code field.
     ];
 
     private const REDACTED = '***';
@@ -56,8 +72,86 @@ class SyncLogger
     }
 
     /**
+     * Try to atomically claim an event_id for processing.
+     *
+     * Inserts a sentinel "claim" row with the UNIQUE (event_id, direction)
+     * constraint doing the heavy lifting: if a concurrent worker already
+     * claimed the same event_id, the INSERT fails with a duplicate-key
+     * violation and we return false. The caller should then 200 the request
+     * (the other worker is handling — or has handled — this event).
+     *
+     * Empty/null event_ids cannot be claimed (the constraint allows multiple
+     * NULL rows by design), so callers should treat the absence of an
+     * event_id as "no dedup possible" and fall through to processing.
+     */
+    public function claimEventId(?string $eventId, ?string $topic = null): bool
+    {
+        if ($eventId === null || $eventId === '') {
+            return true;
+        }
+        try {
+            $entry = $this->syncLogFactory->create();
+            $entry->setData([
+                'order_id'    => null,
+                'event_type'  => SyncLog::EVENT_WEBHOOK_CLAIM,
+                'direction'   => SyncLog::DIRECTION_INBOUND,
+                'event_id'    => $eventId,
+                'payload'     => $topic !== null ? substr((string) json_encode(['topic' => $topic]), 0, 256) : null,
+                'http_status' => null,
+                'success'     => 0,
+                'retry_count' => 0,
+            ]);
+            $this->syncLogResource->save($entry);
+            return true;
+        } catch (AlreadyExistsException $e) {
+            return false;
+        } catch (\Throwable $e) {
+            // Detect MySQL duplicate-key errors that bubble up as something
+            // other than AlreadyExistsException (driver-dependent).
+            if ($this->isDuplicateKeyError($e)) {
+                return false;
+            }
+            // Anything else (table missing, connection lost, ...) — don't
+            // silently dedup. Log and fall through to processing so the
+            // event isn't lost.
+            $this->logger->error('Bob Go: claimEventId write failed', [
+                'event_id' => $eventId,
+                'error'    => $e->getMessage(),
+            ]);
+            return true;
+        }
+    }
+
+    /**
+     * Release a previously-acquired claim so a retry can re-claim the same
+     * event_id. Used by the controller on transient processing failures.
+     */
+    public function releaseEventIdClaim(?string $eventId): void
+    {
+        if ($eventId === null || $eventId === '') {
+            return;
+        }
+        try {
+            $collection = $this->collectionFactory->create()
+                ->addFieldToFilter('event_id', $eventId)
+                ->addFieldToFilter('direction', SyncLog::DIRECTION_INBOUND)
+                ->addFieldToFilter('event_type', SyncLog::EVENT_WEBHOOK_CLAIM)
+                ->addFieldToFilter('success', 0);
+            foreach ($collection as $row) {
+                $this->syncLogResource->delete($row);
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning('Bob Go: releaseEventIdClaim failed', [
+                'event_id' => $eventId,
+                'error'    => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
      * Has an inbound event with this provider-issued id already been logged
-     * successfully? Used to short-circuit duplicate webhook deliveries.
+     * successfully? Kept for backwards compatibility — new code should use
+     * the atomic claim API above.
      */
     public function wasEventIdProcessed(?string $eventId): bool
     {
@@ -83,6 +177,14 @@ class SyncLogger
         ?int $httpStatus = null,
         bool $success = true
     ): void {
+        // The claim row already occupies the unique (event_id, direction)
+        // slot. If we're recording the final outcome for an event we
+        // successfully claimed, UPDATE the claim row instead of inserting a
+        // new one — otherwise the second INSERT would hit the unique
+        // constraint and the outcome would be lost.
+        if ($eventId !== null && $eventId !== '' && $this->upgradeClaim($eventId, $eventType, $payload, $orderId, $httpStatus, $success)) {
+            return;
+        }
         $this->write(SyncLog::DIRECTION_INBOUND, $eventType, $payload, $orderId, $eventId, $httpStatus, $success);
     }
 
@@ -97,6 +199,48 @@ class SyncLogger
         bool $success = true
     ): void {
         $this->write(SyncLog::DIRECTION_OUTBOUND, $eventType, $payload, $orderId, null, $httpStatus, $success);
+    }
+
+    /**
+     * Convert the claim row into the final outcome row. Returns true if a
+     * claim was found and upgraded, false otherwise (caller should then do
+     * a normal insert).
+     *
+     * @param array<string,mixed>|string|null $payload
+     */
+    private function upgradeClaim(
+        string $eventId,
+        string $eventType,
+        $payload,
+        ?int $orderId,
+        ?int $httpStatus,
+        bool $success
+    ): bool {
+        try {
+            $collection = $this->collectionFactory->create()
+                ->addFieldToFilter('event_id', $eventId)
+                ->addFieldToFilter('direction', SyncLog::DIRECTION_INBOUND)
+                ->addFieldToFilter('event_type', SyncLog::EVENT_WEBHOOK_CLAIM)
+                ->setPageSize(1);
+            $entry = $collection->getFirstItem();
+            if (!$entry || !$entry->getId()) {
+                return false;
+            }
+            $entry->setData('event_type', $eventType);
+            $entry->setData('order_id', $orderId);
+            $entry->setData('payload', $this->serialisePayload($payload));
+            $entry->setData('http_status', $httpStatus);
+            $entry->setData('success', $success ? 1 : 0);
+            $this->syncLogResource->save($entry);
+            return true;
+        } catch (\Throwable $e) {
+            $this->logger->error('Bob Go: SyncLogger upgradeClaim failed', [
+                'error'      => $e->getMessage(),
+                'event_id'   => $eventId,
+                'event_type' => $eventType,
+            ]);
+            return false;
+        }
     }
 
     /**
@@ -172,5 +316,19 @@ class SyncLogger
             $out[$k] = $this->redactPii($v);
         }
         return $out;
+    }
+
+    /**
+     * Recognise MySQL duplicate-entry errors from the driver layer even when
+     * Magento didn't wrap them in AlreadyExistsException.
+     */
+    private function isDuplicateKeyError(\Throwable $e): bool
+    {
+        if ($e instanceof \PDOException && in_array($e->getCode(), ['23000', 23000], true)) {
+            return true;
+        }
+        $msg = strtolower($e->getMessage());
+        return strpos($msg, 'duplicate entry') !== false
+            || strpos($msg, 'integrity constraint violation') !== false;
     }
 }

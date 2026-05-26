@@ -5,5 +5,9 @@
         <job name="bobgo_reconcile_fulfillments" instance="BobGroup\BobGo\Cron\Reconcile" method="execute">
             <schedule>0 * * * *</schedule>
         </job>
+        <!-- Daily at 03:15 UTC — off-peak for most SA-facing stores. -->
+        <job name="bobgo_prune_sync_log" instance="BobGroup\BobGo\Cron\PruneSyncLog" method="execute">
+            <schedule>15 3 * * *</schedule>
+        </job>
     </group>
 </config>

@@ -190,8 +190,25 @@ class FulfillmentService
             return;
         }
 
-        // Build items array for partial fulfillments
+        // Build items array for partial fulfillments. If the payload listed
+        // items but none of them matched a SKU on the order, refuse — Bob Go
+        // treats an empty $items array as "ship everything", and a partial
+        // fulfilment with a wrong/unknown SKU would otherwise blow out as a
+        // full shipment.
         $items = $this->buildShipmentItems($order, $orderItems);
+        if (!empty($orderItems) && empty($items)) {
+            $this->logger->error('Bob Go fulfillment: payload listed items but none matched the order', [
+                'order_id' => $order->getEntityId(),
+                'fulfillment_id' => $fulfillmentId,
+                'payload_skus' => array_values(array_filter(array_map(
+                    static function ($i) { return $i['sku'] ?? null; },
+                    $orderItems
+                ))),
+            ]);
+            throw new TransientWebhookException(
+                'Fulfillment payload references items that are not on the order'
+            );
+        }
 
         // Build tracking entry
         $tracks = [];
@@ -230,6 +247,14 @@ class FulfillmentService
                 'fulfillment_id' => $fulfillmentId,
                 'error' => $e->getMessage(),
             ]);
+            // Re-throw — shipment creation failure is transient (DB lock, race,
+            // momentary integrity violation). Letting the controller return 500
+            // lets Bob Go retry instead of silently dropping the event.
+            throw new TransientWebhookException(
+                'Shipment creation failed: ' . $e->getMessage(),
+                0,
+                $e
+            );
         }
     }
 
@@ -337,6 +362,11 @@ class FulfillmentService
                 'tracking_number' => $trackingNumber,
                 'error' => $e->getMessage(),
             ]);
+            throw new TransientWebhookException(
+                'Tracking update processing failed: ' . $e->getMessage(),
+                0,
+                $e
+            );
         }
     }
 
@@ -463,11 +493,21 @@ class FulfillmentService
 
     /**
      * Build shipment items array from Bob Go fulfillment order_items.
-     * Matches items by SKU. Returns empty array for full fulfillment
-     * (ShipOrderInterface ships all when items is empty).
+     *
+     * Matches by Bob Go order_item id first (the canonical link we set on
+     * order push), then falls back to SKU for orders pushed before that
+     * field existed. SKU matching consumes from a remaining-qty pool so
+     * duplicate SKUs on an order (e.g. the same simple product appearing
+     * twice via different bundle / option configurations) don't collapse
+     * into a single line.
+     *
+     * Returns empty array only when the payload itself was empty, in which
+     * case ShipOrderInterface treats it as "ship everything." The caller
+     * (processFulfillment) already refuses the case where the payload had
+     * items but none matched.
      *
      * @param \Magento\Sales\Api\Data\OrderInterface $order
-     * @param array<int,array<string,mixed>> $orderItems Bob Go order_items with sku/fulfilled_qty
+     * @param array<int,array<string,mixed>> $orderItems Bob Go order_items
      * @return array<\Magento\Sales\Api\Data\ShipmentItemCreationInterface>
      */
     private function buildShipmentItems(\Magento\Sales\Api\Data\OrderInterface $order, array $orderItems): array
@@ -476,27 +516,59 @@ class FulfillmentService
             return [];
         }
 
-        // Build a map of SKU => fulfilled_qty from Bob Go data
-        $fulfillmentQtyMap = [];
-        foreach ($orderItems as $item) {
-            $sku = $item['sku'] ?? '';
-            $qty = $item['fulfilled_qty'] ?? $item['qty'] ?? 0;
+        /** @var \Magento\Sales\Model\Order $order */
+        // Index order lines: by Bob Go order_item id (one row each) and by
+        // SKU (a list of rows, so duplicates are preserved).
+        $byBobgoItemId = [];
+        $bySku = [];
+        foreach ($order->getAllItems() as $orderItem) {
+            /** @var \Magento\Sales\Model\Order\Item $orderItem */
+            $bobgoItemId = (string) ($orderItem->getData('bobgo_order_item_id') ?? '');
+            if ($bobgoItemId !== '') {
+                $byBobgoItemId[$bobgoItemId] = $orderItem;
+            }
+            $sku = (string) $orderItem->getSku();
             if ($sku !== '') {
-                $fulfillmentQtyMap[$sku] = (int) $qty;
+                $bySku[$sku][] = $orderItem;
             }
         }
 
         $items = [];
-        /** @var \Magento\Sales\Model\Order $order */
-        foreach ($order->getAllItems() as $orderItem) {
-            /** @var \Magento\Sales\Model\Order\Item $orderItem */
-            $sku = $orderItem->getSku();
-            if (isset($fulfillmentQtyMap[$sku])) {
-                $shipmentItem = $this->itemCreationFactory->create();
-                $shipmentItem->setOrderItemId((int) $orderItem->getItemId());
-                $shipmentItem->setQty((float) $fulfillmentQtyMap[$sku]);
-                $items[] = $shipmentItem;
+        foreach ($orderItems as $payloadItem) {
+            if (!is_array($payloadItem)) {
+                continue;
             }
+            $qty = (int) ($payloadItem['fulfilled_qty'] ?? $payloadItem['qty'] ?? 0);
+            if ($qty <= 0) {
+                continue;
+            }
+
+            $matched = null;
+
+            // Preferred: explicit channel_ref_id / id linkback.
+            $bobgoItemId = (string) ($payloadItem['channel_ref_id'] ?? $payloadItem['id'] ?? '');
+            if ($bobgoItemId !== '' && isset($byBobgoItemId[$bobgoItemId])) {
+                $matched = $byBobgoItemId[$bobgoItemId];
+            }
+
+            // Fallback: pop the next not-yet-claimed SKU match. Using a
+            // queue preserves the ordering and prevents two payload lines
+            // for the same SKU from being collapsed onto one order line.
+            if ($matched === null) {
+                $sku = (string) ($payloadItem['sku'] ?? '');
+                if ($sku !== '' && !empty($bySku[$sku])) {
+                    $matched = array_shift($bySku[$sku]);
+                }
+            }
+
+            if ($matched === null) {
+                continue;
+            }
+
+            $shipmentItem = $this->itemCreationFactory->create();
+            $shipmentItem->setOrderItemId((int) $matched->getItemId());
+            $shipmentItem->setQty((float) $qty);
+            $items[] = $shipmentItem;
         }
 
         return $items;

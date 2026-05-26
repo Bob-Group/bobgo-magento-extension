@@ -50,8 +50,13 @@ class OrderPushService
 
     /**
      * Push a new order to Bob Go via POST /v2/orders.
+     *
+     * Returns true on success, false on a caught API/transient error.
+     * The observer at sales_order_save_after ignores the return value
+     * (order saving must never be blocked); the admin Resync controller
+     * uses it to decide whether to surface success or an error toast.
      */
-    public function pushOrder(OrderInterface $order): void
+    public function pushOrder(OrderInterface $order): bool
     {
         $payload = $this->orderMapper->mapOrderToPayload($order);
         $hash = $this->computeHash($payload);
@@ -71,6 +76,7 @@ class OrderPushService
                 'increment_id' => $order->getIncrementId(),
                 'bobgo_order_id' => $order->getData('bobgo_order_id'),
             ]);
+            return true;
         } catch (\Exception $e) {
             $this->applyFailure($order);
             $this->syncLogger->logOutbound(
@@ -85,6 +91,7 @@ class OrderPushService
                 'increment_id' => $order->getIncrementId(),
                 'error' => $e->getMessage(),
             ]);
+            return false;
         }
     }
 
@@ -92,16 +99,18 @@ class OrderPushService
      * Update an existing order in Bob Go via PATCH /v2/orders.
      *
      * Skipped entirely (no API call, no log entry) when the canonical payload
-     * hash matches the last successfully-synced hash on the order.
+     * hash matches the last successfully-synced hash on the order — returns
+     * true in that case (nothing went wrong; we just had nothing to send).
+     * Returns false on a caught API/transient error.
      */
-    public function updateOrder(OrderInterface $order): void
+    public function updateOrder(OrderInterface $order): bool
     {
         $payload = $this->orderMapper->mapOrderToUpdatePayload($order);
         $hash = $this->computeHash($payload);
 
         $lastHash = (string) ($order->getData('bobgo_sync_hash') ?? '');
         if ($lastHash !== '' && hash_equals($lastHash, $hash)) {
-            return;
+            return true;
         }
 
         try {
@@ -119,6 +128,7 @@ class OrderPushService
                 'increment_id' => $order->getIncrementId(),
                 'bobgo_order_id' => $order->getData('bobgo_order_id'),
             ]);
+            return true;
         } catch (\Exception $e) {
             $this->applyFailure($order);
             $this->syncLogger->logOutbound(
@@ -133,6 +143,7 @@ class OrderPushService
                 'increment_id' => $order->getIncrementId(),
                 'error' => $e->getMessage(),
             ]);
+            return false;
         }
     }
 
@@ -144,6 +155,13 @@ class OrderPushService
         $bobgoOrderId = $response['id'] ?? $order->getData('bobgo_order_id');
         if ($bobgoOrderId !== null && $bobgoOrderId !== '') {
             $order->setData('bobgo_order_id', $bobgoOrderId);
+        }
+
+        // Persist the immutable Bob Go reference when present — schema has
+        // a column for it; this is the first place it actually gets written.
+        $bobgoOrderRef = $response['reference'] ?? $response['order_ref'] ?? null;
+        if (is_scalar($bobgoOrderRef) && (string) $bobgoOrderRef !== '') {
+            $order->setData('bobgo_order_ref', (string) $bobgoOrderRef);
         }
 
         $order->setData('bobgo_sync_hash', $hash);

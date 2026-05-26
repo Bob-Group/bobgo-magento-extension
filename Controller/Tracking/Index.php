@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace BobGroup\BobGo\Controller\Tracking;
 
 use Magento\Framework\App\Action\Context;
+use Magento\Framework\Data\Form\FormKey\Validator as FormKeyValidator;
 use Magento\Framework\View\Result\PageFactory;
 use Magento\Framework\Registry;
 use Psr\Log\LoggerInterface;
@@ -53,18 +54,9 @@ class Index extends \Magento\Framework\App\Action\Action
     /** @var ApiConfig */
     private ApiConfig $apiConfig;
 
-    /**
-     * @param Context $context
-     * @param PageFactory $resultPageFactory
-     * @param JsonFactory $jsonFactory
-     * @param LoggerInterface $logger
-     * @param ScopeConfigInterface $scopeConfig
-     * @param RedirectFactory $redirectFactory
-     * @param StoreManagerInterface $storeManager
-     * @param BobGoApiClient $apiClient
-     * @param ApiConfig $apiConfig
-     * @param Registry $registry
-     */
+    /** @var FormKeyValidator */
+    private FormKeyValidator $formKeyValidator;
+
     public function __construct(
         Context $context,
         PageFactory $resultPageFactory,
@@ -75,7 +67,8 @@ class Index extends \Magento\Framework\App\Action\Action
         StoreManagerInterface $storeManager,
         BobGoApiClient $apiClient,
         ApiConfig $apiConfig,
-        Registry $registry
+        Registry $registry,
+        FormKeyValidator $formKeyValidator
     ) {
         $this->resultPageFactory = $resultPageFactory;
         $this->jsonFactory = $jsonFactory;
@@ -86,6 +79,7 @@ class Index extends \Magento\Framework\App\Action\Action
         $this->apiClient = $apiClient;
         $this->apiConfig = $apiConfig;
         $this->registry = $registry;
+        $this->formKeyValidator = $formKeyValidator;
         parent::__construct($context);
     }
 
@@ -109,7 +103,19 @@ class Index extends \Magento\Framework\App\Action\Action
             return $this->redirectFactory->create()->setPath('noroute');
         }
 
-        $trackingReference = $this->getRequest()->getParam('order_reference');
+        $request = $this->getRequest();
+
+        // Render the empty form on GET. Only honour a lookup when the request
+        // is a POST carrying a valid form_key — otherwise this endpoint is
+        // an unauthenticated proxy to the Bob Go tracking API (anyone with
+        // a tracking reference can fingerprint the merchant's API).
+        $trackingReference = null;
+        if ($request->isPost()) {
+            if (!$this->formKeyValidator->validate($request)) {
+                return $this->redirectFactory->create()->setPath('bobgo/tracking/index');
+            }
+            $trackingReference = $request->getParam('order_reference');
+        }
 
         if ($trackingReference && $this->apiConfig->isConfigured()) {
             try {

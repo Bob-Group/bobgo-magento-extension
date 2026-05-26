@@ -3,9 +3,11 @@ declare(strict_types=1);
 
 namespace BobGroup\BobGo\Controller\Webhook;
 
+use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Model\SyncLog;
 use BobGroup\BobGo\Service\FulfillmentService;
 use BobGroup\BobGo\Service\SyncLogger;
+use BobGroup\BobGo\Service\TransientWebhookException;
 use BobGroup\BobGo\Service\WebhookSignatureVerifier;
 use Magento\Framework\App\Action\Action;
 use Magento\Framework\App\Action\Context;
@@ -46,6 +48,7 @@ class Receive extends Action implements CsrfAwareActionInterface
     private LoggerInterface $logger;
     private WebhookSignatureVerifier $signatureVerifier;
     private SyncLogger $syncLogger;
+    private ApiConfig $apiConfig;
 
     public function __construct(
         Context $context,
@@ -53,7 +56,8 @@ class Receive extends Action implements CsrfAwareActionInterface
         JsonFactory $jsonFactory,
         LoggerInterface $logger,
         WebhookSignatureVerifier $signatureVerifier,
-        SyncLogger $syncLogger
+        SyncLogger $syncLogger,
+        ApiConfig $apiConfig
     ) {
         parent::__construct($context);
         $this->fulfillmentService = $fulfillmentService;
@@ -61,6 +65,7 @@ class Receive extends Action implements CsrfAwareActionInterface
         $this->logger = $logger;
         $this->signatureVerifier = $signatureVerifier;
         $this->syncLogger = $syncLogger;
+        $this->apiConfig = $apiConfig;
     }
 
     /** Cap on how much of a rejected body we persist — anyone who fails signature
@@ -102,6 +107,15 @@ class Receive extends Action implements CsrfAwareActionInterface
             return $result->setHttpResponseCode(400)->setData(['error' => 'Invalid JSON']);
         }
 
+        // After signature: gate on fulfillment_sync_enabled. If a merchant has
+        // disabled sync but a stale subscription is still firing, the body is
+        // authentic (signature passed) but we must not mutate orders. 200 so
+        // Bob Go doesn't retry — operator intent is "stop processing".
+        if (!$this->apiConfig->isFulfillmentSyncEnabled()) {
+            $this->logger->info('Bob Go webhook: fulfillment sync disabled, ignoring');
+            return $result->setHttpResponseCode(200)->setData(['message' => 'fulfillment sync disabled']);
+        }
+
         $topic = $this->resolveTopicFromHeaders($request) ?? $this->inferTopicFromPayload($data);
         $eventId = $this->getEventId($request) ?? ($data['event_id'] ?? null);
         if ($eventId !== null) {
@@ -126,8 +140,10 @@ class Receive extends Action implements CsrfAwareActionInterface
             return $result->setHttpResponseCode(400)->setData(['error' => 'Could not determine webhook topic']);
         }
 
-        // 3. Idempotency — already processed?
-        if ($this->syncLogger->wasEventIdProcessed($eventId)) {
+        // 3. Idempotency — atomic claim. claimEventId() writes a sentinel
+        // success row under a unique (event_id, direction) index; if a
+        // concurrent delivery already claimed it, we 200 without processing.
+        if (!$this->syncLogger->claimEventId($eventId, $topic)) {
             $this->logger->info('Bob Go webhook: duplicate event_id, acknowledging', [
                 'event_id' => $eventId,
                 'topic' => $topic,
@@ -153,8 +169,23 @@ class Receive extends Action implements CsrfAwareActionInterface
                     $this->syncLogger->logInbound(SyncLog::EVENT_WEBHOOK_UNKNOWN_TOPIC, $data, null, $eventId, 200, false);
                     return $result->setData(['message' => 'unknown topic, ignored']);
             }
-        } catch (\Exception $e) {
-            $this->logger->error('Bob Go webhook processing failed', [
+        } catch (TransientWebhookException $e) {
+            // Transient failure — release the dedup claim so Bob Go's retry
+            // can re-process the same event_id, and return 500 to trigger
+            // that retry.
+            $this->syncLogger->releaseEventIdClaim($eventId);
+            $this->logger->error('Bob Go webhook processing failed (transient, will retry)', [
+                'topic' => $topic,
+                'error' => $e->getMessage(),
+            ]);
+            $this->syncLogger->logInbound(SyncLog::EVENT_WEBHOOK_RECEIVED, $data, null, $eventId, 500, false);
+            return $result->setHttpResponseCode(500)->setData(['error' => 'Processing failed']);
+        } catch (\Throwable $e) {
+            // Permanent / unexpected — still release the claim so an operator
+            // who fixes the underlying data and replays the event isn't
+            // blocked, but return 200 because retrying won't help on its own.
+            $this->syncLogger->releaseEventIdClaim($eventId);
+            $this->logger->error('Bob Go webhook processing failed (permanent)', [
                 'topic' => $topic,
                 'error' => $e->getMessage(),
             ]);

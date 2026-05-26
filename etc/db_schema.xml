@@ -58,5 +58,19 @@
         <index referenceId="BOBGO_SYNC_LOG_CREATED_AT" indexType="btree">
             <column name="created_at"/>
         </index>
+        <!--
+            Race-safe webhook dedup. Two concurrent deliveries of the same
+            event_id can both pass the existing "have I seen this?" check
+            before either writes a success row. A UNIQUE constraint on
+            (event_id, direction) makes the INSERT itself the atomic claim:
+            the second concurrent worker hits a duplicate-key violation and
+            backs off cleanly. NULL event_ids are not part of the constraint
+            (MySQL treats NULLs as not-equal in unique indexes), so events
+            that arrive without an id still log without colliding.
+        -->
+        <constraint xsi:type="unique" referenceId="BOBGO_SYNC_LOG_EVENT_ID_DIRECTION_UNQ">
+            <column name="event_id"/>
+            <column name="direction"/>
+        </constraint>
     </table>
 </schema>

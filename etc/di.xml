@@ -11,6 +11,9 @@
     <type name="Magento\Sales\Api\OrderRepositoryInterface">
         <plugin name="bobgo_order_repository_plugin" type="BobGroup\BobGo\Plugin\OrderRepositoryPlugin" sortOrder="20" />
     </type>
+    <type name="Magento\Quote\Model\Quote\Address\ToOrderAddress">
+        <plugin name="bobgo_to_order_address_suburb" type="BobGroup\BobGo\Plugin\Quote\ToOrderAddressPlugin" />
+    </type>
 
     <type name="BobGroup\BobGo\Api\BobGoApiClient">
         <arguments>
