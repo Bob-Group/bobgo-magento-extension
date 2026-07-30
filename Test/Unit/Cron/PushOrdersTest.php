@@ -8,6 +8,7 @@ use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Service\OrderPushService;
 use BobGroup\BobGo\Service\OrderSyncPolicy;
 use BobGroup\BobGo\Service\OrderSyncQueue;
+use BobGroup\BobGo\Service\StoreScope;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
 use PHPUnit\Framework\TestCase;
@@ -44,8 +45,24 @@ class PushOrdersTest extends TestCase
             $this->orderPushService,
             new OrderSyncPolicy(),
             $this->apiConfig,
+            $this->passThroughStoreScope(),
             $this->logger
         );
+    }
+
+    /**
+     * The real StoreScope emulates the order's store around the push; for these
+     * tests it just needs to invoke the callback.
+     *
+     * @return \PHPUnit\Framework\MockObject\MockObject
+     */
+    private function passThroughStoreScope()
+    {
+        $scope = $this->createMock(StoreScope::class);
+        $scope->method('forOrder')->willReturnCallback(static function ($order, callable $callback) {
+            return $callback();
+        });
+        return $scope;
     }
 
     public function testDoesNothingWhenOrderPushIsDisabled(): void
@@ -219,6 +236,7 @@ class PushOrdersTest extends TestCase
     {
         $order = $this->createMock(Order::class);
         $order->method('getEntityId')->willReturn(42);
+        $order->method('getStoreId')->willReturn(1);
         $order->method('getState')->willReturn($state);
         $order->method('getIsVirtual')->willReturn(false);
         $order->method('getData')->willReturnCallback(static function ($key = null) use ($data) {

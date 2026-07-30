@@ -5,6 +5,7 @@ namespace BobGroup\BobGo\Service;
 
 use BobGroup\BobGo\Model\Config\ApiConfig;
 use Magento\Framework\Api\SearchCriteriaBuilder;
+use Magento\Framework\FlagManager;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
@@ -33,6 +34,12 @@ class ReconciliationService
     public const BATCH_SIZE = 100;
 
     /**
+     * Page cursor, so successive runs work through the whole population instead
+     * of re-scanning the same first page forever.
+     */
+    private const PAGE_FLAG = 'bobgo_reconcile_page';
+
+    /**
      * How far back to look for completed orders that may still receive
      * tracking updates from Bob Go. Catches late checkpoints (e.g. proof of
      * delivery uploaded a day after the order auto-completed) without
@@ -57,6 +64,8 @@ class ReconciliationService
     private FulfilmentSyncService $fulfilmentSync;
     private ApiConfig $apiConfig;
     private WebhookSubscriptionService $webhookSubscriptions;
+    private StoreScope $storeScope;
+    private FlagManager $flagManager;
     private LoggerInterface $logger;
 
     public function __construct(
@@ -65,6 +74,8 @@ class ReconciliationService
         FulfilmentSyncService $fulfilmentSync,
         ApiConfig $apiConfig,
         WebhookSubscriptionService $webhookSubscriptions,
+        StoreScope $storeScope,
+        FlagManager $flagManager,
         LoggerInterface $logger
     ) {
         $this->orderRepository = $orderRepository;
@@ -72,6 +83,8 @@ class ReconciliationService
         $this->fulfilmentSync = $fulfilmentSync;
         $this->apiConfig = $apiConfig;
         $this->webhookSubscriptions = $webhookSubscriptions;
+        $this->storeScope = $storeScope;
+        $this->flagManager = $flagManager;
         $this->logger = $logger;
     }
 
@@ -91,18 +104,36 @@ class ReconciliationService
         // tells us when that happens.
         $this->webhookSubscriptions->verifyAndRepair();
 
-        $orders = $this->loadCandidateOrders();
-        if (empty($orders)) {
+        $page = $this->currentPage();
+        $orderIds = $this->loadCandidateOrderIds($page);
+
+        if (empty($orderIds)) {
+            // Ran off the end of the population — start again from the top next
+            // hour rather than sitting on an empty page forever.
+            $this->setPage(1);
             return;
         }
 
         $this->logger->info('Bob Go reconciliation: starting batch', [
-            'count' => count($orders),
+            'count' => count($orderIds),
+            'page' => $page,
         ]);
 
-        foreach ($orders as $order) {
+        foreach ($orderIds as $orderId) {
+            // Load fresh inside the loop rather than reusing objects captured
+            // when the batch was built: a webhook can relink an order mid-run,
+            // and refreshing under a stale link would write another order's
+            // fulfilments onto this one.
+            try {
+                $order = $this->orderRepository->get($orderId);
+            } catch (\Throwable $e) {
+                continue;
+            }
             $this->reconcileOrder($order);
         }
+
+        // A short page means this was the last one.
+        $this->setPage(count($orderIds) < self::BATCH_SIZE ? 1 : $page + 1);
     }
 
     /**
@@ -112,11 +143,12 @@ class ReconciliationService
     public function reconcileOrder(OrderInterface $order): void
     {
         try {
-            // Re-read the link from the order we're about to touch rather than
-            // trusting a value captured when the batch was built: a webhook can
-            // relink an order mid-run, and refreshing under a stale link would
-            // write another order's fulfilments onto this one.
-            $this->fulfilmentSync->syncOrder($order);
+            // Emulate the order's store: cron has no store context, so the API
+            // key and channel identifier would otherwise come from the default
+            // store rather than the order's.
+            $this->storeScope->forOrder($order, function () use ($order) {
+                $this->fulfilmentSync->syncOrder($order);
+            });
         } catch (\Throwable $e) {
             // Per-order isolation: one bad order must not end the batch.
             $this->logger->error('Bob Go reconciliation: order failed', [
@@ -127,10 +159,7 @@ class ReconciliationService
     }
 
     /**
-     * @return OrderInterface[]
-     */
-    /**
-     * Build the reconciliation batch.
+     * Build the reconciliation batch, as order ids.
      *
      * Two scoped queries (rather than one with a date filter) because
      * SearchCriteriaBuilder ANDs filter groups together — putting
@@ -142,60 +171,92 @@ class ReconciliationService
      *   catch late tracking checkpoints (proof of delivery, etc.) without
      *   pulling in every historical order on every cron tick.
      *
-     * The two result sets are merged and deduped by entity id, then capped
-     * at BATCH_SIZE so the cron run stays bounded on busy stores.
+     * Both are paged by the same cursor so a store with more active orders than
+     * BATCH_SIZE works through all of them across successive runs instead of
+     * re-scanning the first page every hour and leaving the tail permanently
+     * stale. The two scopes share the cursor, which means the (much smaller,
+     * 14-day-bounded) complete set is only revisited when the cursor is back on
+     * page 1 — acceptable for a safety net, and far better than never reaching
+     * the active tail at all.
      *
-     * @return OrderInterface[]
+     * @return int[]
      */
-    private function loadCandidateOrders(): array
+    private function loadCandidateOrderIds(int $page): array
     {
-        $active = $this->loadOrdersForStates(self::ACTIVE_STATES);
-        $complete = $this->loadCompleteOrdersInLookback();
+        $active = $this->loadOrderIds($this->activeStatesCriteria($page));
+        $complete = $this->loadOrderIds($this->completeLookbackCriteria($page));
 
         $merged = [];
-        foreach (array_merge($active, $complete) as $order) {
-            $id = (int) $order->getEntityId();
-            if ($id <= 0 || isset($merged[$id])) {
+        foreach (array_merge($active, $complete) as $orderId) {
+            if ($orderId <= 0 || isset($merged[$orderId])) {
                 continue;
             }
-            $merged[$id] = $order;
+            $merged[$orderId] = true;
             if (count($merged) >= self::BATCH_SIZE) {
                 break;
             }
         }
-        return array_values($merged);
+        return array_keys($merged);
     }
 
     /**
-     * @param string[] $states
-     * @return OrderInterface[]
+     * @param \Magento\Framework\Api\SearchCriteriaInterface $criteria
+     * @return int[]
      */
-    private function loadOrdersForStates(array $states): array
+    private function loadOrderIds($criteria): array
     {
-        $criteria = $this->searchCriteriaBuilder
-            ->addFilter('bobgo_order_id', null, 'notnull')
-            ->addFilter('state', $states, 'in')
-            ->setPageSize(self::BATCH_SIZE)
-            ->create();
-
-        return $this->orderRepository->getList($criteria)->getItems();
+        $ids = [];
+        foreach ($this->orderRepository->getList($criteria)->getItems() as $order) {
+            $ids[] = (int) $order->getEntityId();
+        }
+        return $ids;
     }
 
     /**
-     * @return OrderInterface[]
+     * @return \Magento\Framework\Api\SearchCriteriaInterface
      */
-    private function loadCompleteOrdersInLookback(): array
+    private function activeStatesCriteria(int $page)
+    {
+        return $this->searchCriteriaBuilder
+            ->addFilter('bobgo_order_id', null, 'notnull')
+            ->addFilter('state', self::ACTIVE_STATES, 'in')
+            ->setPageSize(self::BATCH_SIZE)
+            ->setCurrentPage($page)
+            ->create();
+    }
+
+    /**
+     * @return \Magento\Framework\Api\SearchCriteriaInterface
+     */
+    private function completeLookbackCriteria(int $page)
     {
         $lookbackDate = gmdate('Y-m-d H:i:s', time() - (self::COMPLETE_LOOKBACK_DAYS * 86400));
 
-        $criteria = $this->searchCriteriaBuilder
+        return $this->searchCriteriaBuilder
             ->addFilter('bobgo_order_id', null, 'notnull')
             ->addFilter('state', Order::STATE_COMPLETE, 'eq')
             ->addFilter('updated_at', $lookbackDate, 'gteq')
             ->setPageSize(self::BATCH_SIZE)
+            ->setCurrentPage($page)
             ->create();
-
-        return $this->orderRepository->getList($criteria)->getItems();
     }
 
+    private function currentPage(): int
+    {
+        $stored = $this->flagManager->getFlagData(self::PAGE_FLAG);
+        $page = is_numeric($stored) ? (int) $stored : 1;
+        return $page > 0 ? $page : 1;
+    }
+
+    private function setPage(int $page): void
+    {
+        try {
+            $this->flagManager->saveFlag(self::PAGE_FLAG, max(1, $page));
+        } catch (\Throwable $e) {
+            // Worst case we re-scan the same page next hour.
+            $this->logger->warning('Bob Go reconciliation: could not persist the page cursor', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
 }

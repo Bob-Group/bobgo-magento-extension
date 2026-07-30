@@ -133,7 +133,7 @@ if (!class_exists(\Magento\Framework\Data\Form\Element\AbstractElement::class, f
 // --- Stub common Magento interfaces needed for mocking ---
 $stubs = [
     'interface' => [
-        'Magento\Sales\Api\Data\OrderInterface' => ['getEntityId', 'getIncrementId', 'getGrandTotal', 'getTotalDue', 'getDiscountAmount', 'getOrderCurrencyCode', 'getStatus', 'getShippingMethod', 'getShippingDescription', 'getCreatedAt', 'getUpdatedAt', 'getShippingAddress', 'getBillingAddress', 'getItems', 'getData', 'setData', 'getCustomerFirstname', 'getCustomerLastname', 'getCustomerEmail'],
+        'Magento\Sales\Api\Data\OrderInterface' => ['getEntityId', 'getIncrementId', 'getGrandTotal', 'getTotalDue', 'getDiscountAmount', 'getOrderCurrencyCode', 'getStatus', 'getShippingMethod', 'getShippingDescription', 'getCreatedAt', 'getUpdatedAt', 'getShippingAddress', 'getBillingAddress', 'getItems', 'getData', 'setData', 'getCustomerFirstname', 'getCustomerLastname', 'getCustomerEmail', 'getStoreId'],
         'Magento\Sales\Api\Data\OrderItemInterface' => ['getItemId', 'getParentItemId', 'getProductId', 'getProductType', 'getSku', 'getName', 'getPriceInclTax', 'getQtyOrdered', 'getWeight', 'setWeight', 'getData', 'setData'],
         'Magento\Sales\Api\Data\OrderAddressInterface' => ['getStreet', 'getCity', 'getPostcode', 'getRegion', 'getCountryId', 'getCompany', 'getFirstname', 'getLastname', 'getTelephone'],
         'Magento\Sales\Api\OrderRepositoryInterface' => ['save', 'get', 'getList', 'delete'],
@@ -153,7 +153,7 @@ $stubs = [
     'class' => [
         'Magento\Framework\HTTP\Client\Curl' => ['addHeader', 'get', 'post', 'getStatus', 'getBody', 'setOption'],
         'Magento\Framework\HTTP\Client\CurlFactory' => ['create'],
-        'Magento\Framework\Api\SearchCriteriaBuilder' => ['addFilter', 'setPageSize', 'create'],
+        'Magento\Framework\Api\SearchCriteriaBuilder' => ['addFilter', 'setPageSize', 'setCurrentPage', 'setSortOrders', 'create'],
         'Magento\Framework\Api\SearchCriteria' => [],
         // Note: Magento\Sales\Model\Order is defined separately below (implements OrderInterface)
 
@@ -214,7 +214,7 @@ foreach ($stubs['class'] as $fqcn => $methods) {
 
 // Magento\Sales\Model\Order must implement OrderInterface so mocks satisfy return type hints
 if (!class_exists(\Magento\Sales\Model\Order::class, false)) {
-    eval('namespace Magento\Sales\Model; class Order implements \Magento\Sales\Api\Data\OrderInterface { const STATE_NEW = "new"; const STATE_PROCESSING = "processing"; const STATE_HOLDED = "holded"; const STATE_COMPLETE = "complete"; const STATE_CLOSED = "closed"; const STATE_CANCELED = "canceled"; public function getEntityId() { return null; } public function getIncrementId() { return null; } public function getGrandTotal() { return null; } public function getTotalDue() { return null; } public function getDiscountAmount() { return null; } public function getOrderCurrencyCode() { return null; } public function getStatus() { return null; } public function getShippingMethod() { return null; } public function getShippingDescription() { return null; } public function getCreatedAt() { return null; } public function getUpdatedAt() { return null; } public function getShippingAddress() { return null; } public function getBillingAddress() { return null; } public function getItems() { return null; } public function getData($k = null) { return null; } public function setData($k = null, $v = null) { return null; } public function getCustomerFirstname() { return null; } public function getCustomerLastname() { return null; } public function getCustomerEmail() { return null; } public function getState() { return null; } public function canShip() { return null; } public function getShipmentsCollection() { return null; } public function getAllItems() { return null; } public function addCommentToStatusHistory($comment = null) { return null; } public function save() { return null; } public function getIsVirtual() { return null; } }');
+    eval('namespace Magento\Sales\Model; class Order implements \Magento\Sales\Api\Data\OrderInterface { const STATE_NEW = "new"; const STATE_PROCESSING = "processing"; const STATE_HOLDED = "holded"; const STATE_COMPLETE = "complete"; const STATE_CLOSED = "closed"; const STATE_CANCELED = "canceled"; public function getEntityId() { return null; } public function getIncrementId() { return null; } public function getGrandTotal() { return null; } public function getTotalDue() { return null; } public function getDiscountAmount() { return null; } public function getOrderCurrencyCode() { return null; } public function getStatus() { return null; } public function getShippingMethod() { return null; } public function getShippingDescription() { return null; } public function getCreatedAt() { return null; } public function getUpdatedAt() { return null; } public function getShippingAddress() { return null; } public function getBillingAddress() { return null; } public function getItems() { return null; } public function getData($k = null) { return null; } public function setData($k = null, $v = null) { return null; } public function getCustomerFirstname() { return null; } public function getCustomerLastname() { return null; } public function getCustomerEmail() { return null; } public function getState() { return null; } public function canShip() { return null; } public function getShipmentsCollection() { return null; } public function getAllItems() { return null; } public function addCommentToStatusHistory($comment = null) { return null; } public function save() { return null; } public function getIsVirtual() { return null; } public function getStoreId() { return null; } }');
 }
 
 // ShipmentCollection must implement IteratorAggregate so foreach works on mocks
@@ -284,6 +284,15 @@ if (!interface_exists(\Magento\Framework\App\Action\HttpPostActionInterface::cla
 }
 if (!interface_exists(\Magento\Sales\Api\ShipmentRepositoryInterface::class, false)) {
     eval('namespace Magento\Sales\Api; interface ShipmentRepositoryInterface { public function get($id); public function save($shipment); }');
+}
+if (!class_exists(\Magento\Store\Model\App\Emulation::class, false)) {
+    eval('namespace Magento\Store\Model\App; class Emulation { public function startEnvironmentEmulation($storeId, $area = "frontend", $force = false) { return $this; } public function stopEnvironmentEmulation() { return $this; } }');
+}
+if (!class_exists(\Magento\Framework\App\Area::class, false)) {
+    eval('namespace Magento\Framework\App; class Area { const AREA_FRONTEND = "frontend"; const AREA_ADMINHTML = "adminhtml"; }');
+}
+if (!interface_exists(\Magento\Framework\Api\SearchCriteriaInterface::class, false)) {
+    eval('namespace Magento\Framework\Api; interface SearchCriteriaInterface {}');
 }
 if (!interface_exists(\Magento\Framework\App\CacheInterface::class, false)) {
     eval('namespace Magento\Framework\App; interface CacheInterface { public function load($identifier); public function save($data, $identifier, $tags = [], $lifeTime = null); public function remove($identifier); public function clean($tags = []); }');

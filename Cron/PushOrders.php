@@ -7,6 +7,7 @@ use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Service\OrderPushService;
 use BobGroup\BobGo\Service\OrderSyncPolicy;
 use BobGroup\BobGo\Service\OrderSyncQueue;
+use BobGroup\BobGo\Service\StoreScope;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Psr\Log\LoggerInterface;
@@ -37,6 +38,7 @@ class PushOrders
     private OrderPushService $orderPushService;
     private OrderSyncPolicy $policy;
     private ApiConfig $apiConfig;
+    private StoreScope $storeScope;
     private LoggerInterface $logger;
 
     public function __construct(
@@ -45,6 +47,7 @@ class PushOrders
         OrderPushService $orderPushService,
         OrderSyncPolicy $policy,
         ApiConfig $apiConfig,
+        StoreScope $storeScope,
         LoggerInterface $logger
     ) {
         $this->queue = $queue;
@@ -52,6 +55,7 @@ class PushOrders
         $this->orderPushService = $orderPushService;
         $this->policy = $policy;
         $this->apiConfig = $apiConfig;
+        $this->storeScope = $storeScope;
         $this->logger = $logger;
     }
 
@@ -85,7 +89,15 @@ class PushOrders
         }
 
         try {
-            if ($this->push($order) && $this->forwardStatus($order)) {
+            // Cron has no store context, so without this the API key and the
+            // bobgo-channel-identifier header would come from the default store
+            // rather than the order's — pushing a multi-store order into the
+            // wrong Bob Go channel.
+            $ok = $this->storeScope->forOrder($order, function () use ($order) {
+                return $this->push($order) && $this->forwardStatus($order);
+            });
+
+            if ($ok) {
                 $this->queue->release($orderId);
                 return;
             }

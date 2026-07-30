@@ -8,6 +8,7 @@ use BobGroup\BobGo\Model\SyncLog;
 use BobGroup\BobGo\Service\FulfillmentService;
 use BobGroup\BobGo\Service\OrderResolution;
 use BobGroup\BobGo\Service\OrderResolver;
+use BobGroup\BobGo\Service\StoreScope;
 use BobGroup\BobGo\Service\SyncLogger;
 use BobGroup\BobGo\Service\TransientWebhookException;
 use BobGroup\BobGo\Service\WebhookSignatureVerifier;
@@ -104,6 +105,7 @@ class Receive extends Action implements CsrfAwareActionInterface
     private SyncLogger $syncLogger;
     private ApiConfig $apiConfig;
     private OrderResolver $orderResolver;
+    private StoreScope $storeScope;
 
     public function __construct(
         Context $context,
@@ -113,7 +115,8 @@ class Receive extends Action implements CsrfAwareActionInterface
         WebhookSignatureVerifier $signatureVerifier,
         SyncLogger $syncLogger,
         ApiConfig $apiConfig,
-        OrderResolver $orderResolver
+        OrderResolver $orderResolver,
+        StoreScope $storeScope
     ) {
         parent::__construct($context);
         $this->fulfillmentService = $fulfillmentService;
@@ -123,6 +126,7 @@ class Receive extends Action implements CsrfAwareActionInterface
         $this->syncLogger = $syncLogger;
         $this->apiConfig = $apiConfig;
         $this->orderResolver = $orderResolver;
+        $this->storeScope = $storeScope;
     }
 
     public function execute()
@@ -241,49 +245,15 @@ class Receive extends Action implements CsrfAwareActionInterface
             return $result->setHttpResponseCode(200)->setData(['message' => 'duplicate, ignored']);
         }
 
-        // 6. Route
+        // 6. Route, in the order's own store scope. Webhook subscriptions carry a
+        // single delivery URL, so every delivery arrives in whichever store that
+        // URL resolves to — not necessarily the store the order belongs to. Without
+        // this, a multi-store order would be refreshed using another store's API
+        // key and channel identifier.
         try {
-            switch ($topic) {
-                case OrderResolver::TOPIC_FULFILLMENT_CREATED:
-                    $this->fulfillmentService->processFulfillment($order, $data);
-                    $this->syncLogger->logInbound(
-                        SyncLog::EVENT_FULFILLMENT_RECEIVED,
-                        $data,
-                        $orderId,
-                        $eventId,
-                        200,
-                        true
-                    );
-                    return $result->setData(['message' => 'fulfillment processed']);
-
-                case OrderResolver::TOPIC_TRACKING_UPDATED:
-                    $this->fulfillmentService->processTrackingUpdate($order, $data);
-                    $this->syncLogger->logInbound(
-                        SyncLog::EVENT_TRACKING_UPDATED,
-                        $data,
-                        $orderId,
-                        $eventId,
-                        200,
-                        true
-                    );
-                    return $result->setData(['message' => 'tracking update processed']);
-
-                default:
-                    // order/updated — Bob Go sends the full order object and
-                    // re-fires on any relevant change, so the handler is
-                    // idempotent and acts only on cancellation. Other fields are
-                    // still left alone deliberately: the store owns the order.
-                    $this->fulfillmentService->processOrderUpdate($order, $data);
-                    $this->syncLogger->logInbound(
-                        SyncLog::EVENT_ORDER_UPDATED_INBOUND,
-                        $data,
-                        $orderId,
-                        $eventId,
-                        200,
-                        true
-                    );
-                    return $result->setData(['message' => 'order update acknowledged']);
-            }
+            return $this->storeScope->forOrder($order, function () use ($topic, $order, $data, $eventId, $result) {
+                return $this->route($topic, $order, $data, $eventId, $result);
+            });
         } catch (TransientWebhookException $e) {
             // Our fault or a race, and retrying can fix it: release the dedup
             // claim so Bob Go's retry can re-claim, and 500 so it retries.
@@ -325,6 +295,66 @@ class Receive extends Action implements CsrfAwareActionInterface
             );
             return $result->setHttpResponseCode(500)->setData(['error' => 'Processing failed']);
         }
+    }
+
+    /**
+     * Dispatch to the handler for this topic and record the outcome.
+     *
+     * @param array<string,mixed> $data
+     * @param mixed $result The JSON result to populate (Controller\Result\Json)
+     * @return mixed The same result, populated
+     * @throws TransientWebhookException
+     */
+    private function route(
+        string $topic,
+        \Magento\Sales\Api\Data\OrderInterface $order,
+        array $data,
+        ?string $eventId,
+        $result
+    ) {
+        $orderId = (int) $order->getEntityId();
+
+        switch ($topic) {
+                case OrderResolver::TOPIC_FULFILLMENT_CREATED:
+                    $this->fulfillmentService->processFulfillment($order, $data);
+                    $this->syncLogger->logInbound(
+                        SyncLog::EVENT_FULFILLMENT_RECEIVED,
+                        $data,
+                        $orderId,
+                        $eventId,
+                        200,
+                        true
+                    );
+                    return $result->setData(['message' => 'fulfillment processed']);
+
+                case OrderResolver::TOPIC_TRACKING_UPDATED:
+                    $this->fulfillmentService->processTrackingUpdate($order, $data);
+                    $this->syncLogger->logInbound(
+                        SyncLog::EVENT_TRACKING_UPDATED,
+                        $data,
+                        $orderId,
+                        $eventId,
+                        200,
+                        true
+                    );
+                    return $result->setData(['message' => 'tracking update processed']);
+
+                default:
+                    // order/updated — Bob Go sends the full order object and
+                    // re-fires on any relevant change, so the handler is
+                    // idempotent and acts only on cancellation. Other fields are
+                    // still left alone deliberately: the store owns the order.
+                    $this->fulfillmentService->processOrderUpdate($order, $data);
+                    $this->syncLogger->logInbound(
+                        SyncLog::EVENT_ORDER_UPDATED_INBOUND,
+                        $data,
+                        $orderId,
+                        $eventId,
+                        200,
+                        true
+                    );
+                    return $result->setData(['message' => 'order update acknowledged']);
+            }
     }
 
     /**

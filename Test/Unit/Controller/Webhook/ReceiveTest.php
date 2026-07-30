@@ -8,6 +8,7 @@ use BobGroup\BobGo\Model\SyncLog;
 use BobGroup\BobGo\Service\FulfillmentService;
 use BobGroup\BobGo\Service\OrderResolution;
 use BobGroup\BobGo\Service\OrderResolver;
+use BobGroup\BobGo\Service\StoreScope;
 use BobGroup\BobGo\Service\SyncLogger;
 use BobGroup\BobGo\Service\TransientWebhookException;
 use BobGroup\BobGo\Service\WebhookSignatureVerifier;
@@ -42,6 +43,7 @@ class ReceiveTest extends TestCase
     private $syncLogger;
     private $logger;
     private $orderResolver;
+    private $storeScope;
 
     protected function setUp(): void
     {
@@ -51,6 +53,15 @@ class ReceiveTest extends TestCase
         $this->syncLogger = $this->createMock(SyncLogger::class);
         $this->logger = $this->createMock(\Psr\Log\LoggerInterface::class);
         $this->orderResolver = $this->createMock(OrderResolver::class);
+
+        // The real StoreScope emulates the order's store around routing;
+        // here it just needs to invoke the callback.
+        $this->storeScope = $this->createMock(StoreScope::class);
+        $this->storeScope->method('forOrder')->willReturnCallback(
+            static function ($order, callable $callback) {
+                return $callback();
+            }
+        );
     }
 
     // ---------------------------------------------------------------- dedup slot
@@ -324,6 +335,7 @@ class ReceiveTest extends TestCase
         $order = $this->createMock(\Magento\Sales\Model\Order::class);
         $order->method('getEntityId')->willReturn(42);
         $order->method('getIncrementId')->willReturn('000000042');
+        $order->method('getStoreId')->willReturn(1);
         return $order;
     }
 
@@ -399,7 +411,8 @@ class ReceiveTest extends TestCase
             $this->signatureVerifier,
             $this->syncLogger,
             $this->apiConfig,
-            $this->orderResolver
+            $this->orderResolver,
+            $this->storeScope
         );
 
         $reflection = new \ReflectionClass($controller);

@@ -6,9 +6,11 @@ namespace BobGroup\BobGo\Test\Unit\Service;
 use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Service\FulfilmentSyncService;
 use BobGroup\BobGo\Service\ReconciliationService;
+use BobGroup\BobGo\Service\StoreScope;
 use BobGroup\BobGo\Service\WebhookSubscriptionService;
 use Magento\Framework\Api\SearchCriteria;
 use Magento\Framework\Api\SearchCriteriaBuilder;
+use Magento\Framework\FlagManager;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\Data\OrderSearchResultInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
@@ -28,6 +30,7 @@ class ReconciliationServiceTest extends TestCase
     private $fulfilmentSyncMock;
     private $apiConfigMock;
     private $webhookSubscriptionsMock;
+    private $flagManagerMock;
     private $loggerMock;
     /** @var ReconciliationService */
     private $service;
@@ -39,12 +42,19 @@ class ReconciliationServiceTest extends TestCase
         $this->fulfilmentSyncMock = $this->createMock(FulfilmentSyncService::class);
         $this->apiConfigMock = $this->createMock(ApiConfig::class);
         $this->webhookSubscriptionsMock = $this->createMock(WebhookSubscriptionService::class);
+        $this->flagManagerMock = $this->createMock(FlagManager::class);
         $this->loggerMock = $this->createMock(LoggerInterface::class);
 
         $this->searchCriteriaBuilderMock->method('addFilter')->willReturnSelf();
         $this->searchCriteriaBuilderMock->method('setPageSize')->willReturnSelf();
+        $this->searchCriteriaBuilderMock->method('setCurrentPage')->willReturnSelf();
         $this->searchCriteriaBuilderMock->method('create')
             ->willReturn($this->createMock(SearchCriteria::class));
+
+        $storeScope = $this->createMock(StoreScope::class);
+        $storeScope->method('forOrder')->willReturnCallback(static function ($order, callable $callback) {
+            return $callback();
+        });
 
         $this->service = new ReconciliationService(
             $this->orderRepositoryMock,
@@ -52,6 +62,8 @@ class ReconciliationServiceTest extends TestCase
             $this->fulfilmentSyncMock,
             $this->apiConfigMock,
             $this->webhookSubscriptionsMock,
+            $storeScope,
+            $this->flagManagerMock,
             $this->loggerMock
         );
     }
@@ -145,6 +157,22 @@ class ReconciliationServiceTest extends TestCase
         $searchResult = $this->createMock(OrderSearchResultInterface::class);
         $searchResult->method('getItems')->willReturn($orders);
         $this->orderRepositoryMock->method('getList')->willReturn($searchResult);
+
+        // run() collects ids from the queries and then loads each order fresh, so
+        // that a webhook relinking an order mid-run can't have us refresh under a
+        // stale link.
+        $byId = [];
+        foreach ($orders as $order) {
+            $byId[(int) $order->getEntityId()] = $order;
+        }
+        $this->orderRepositoryMock->method('get')->willReturnCallback(
+            static function ($id) use ($byId) {
+                if (!isset($byId[(int) $id])) {
+                    throw new \Magento\Framework\Exception\NoSuchEntityException(__('gone'));
+                }
+                return $byId[(int) $id];
+            }
+        );
     }
 
     /**
@@ -154,6 +182,52 @@ class ReconciliationServiceTest extends TestCase
     {
         $order = $this->createMock(OrderInterface::class);
         $order->method('getEntityId')->willReturn($entityId);
+        $order->method('getStoreId')->willReturn(1);
         return $order;
+    }
+
+    /**
+     * Without a cursor, a store with more active orders than BATCH_SIZE re-scanned
+     * the same first page every hour and left the tail permanently stale.
+     */
+    public function testAdvancesThePageCursorAfterAFullBatch(): void
+    {
+        $this->enable();
+        $orders = [];
+        for ($i = 1; $i <= ReconciliationService::BATCH_SIZE; $i++) {
+            $orders[] = $this->order($i);
+        }
+        $this->stubOrderList($orders);
+        $this->flagManagerMock->method('getFlagData')->willReturn(3);
+
+        $this->flagManagerMock->expects($this->once())->method('saveFlag')
+            ->with($this->anything(), 4);
+
+        $this->service->run();
+    }
+
+    public function testResetsThePageCursorAfterAShortBatch(): void
+    {
+        $this->enable();
+        $this->stubOrderList([$this->order(1)]);
+        $this->flagManagerMock->method('getFlagData')->willReturn(7);
+
+        $this->flagManagerMock->expects($this->once())->method('saveFlag')
+            ->with($this->anything(), 1);
+
+        $this->service->run();
+    }
+
+    public function testResetsThePageCursorWhenItRunsOffTheEnd(): void
+    {
+        $this->enable();
+        $this->stubOrderList([]);
+        $this->flagManagerMock->method('getFlagData')->willReturn(9);
+
+        $this->flagManagerMock->expects($this->once())->method('saveFlag')
+            ->with($this->anything(), 1);
+        $this->fulfilmentSyncMock->expects($this->never())->method('syncOrder');
+
+        $this->service->run();
     }
 }
