@@ -496,9 +496,137 @@ class OrderMapperTest extends TestCase
         $order->method('getData')->willReturnMap([
             ['shipping_incl_tax', $config['shippingInclTax']],
             ['bobgo_order_id', $config['bobgo_order_id']],
+            ['bobgo_shipments', $config['bobgo_shipments'] ?? null],
         ]);
 
         return $order;
+    }
+
+    // ------------------------------------------- PATCH must not touch fulfilled items
+
+    /**
+     * Bob Go reconciles a PATCH's order_items destructively — anything absent is
+     * deleted — and refuses to delete an item that has been fulfilled:
+     *
+     *   400 {"message":"Cannot delete order_item=18616, fulfilled quantity is
+     *        greater than 0."}
+     *
+     * That is a property of the order, not a transient fault, so before this fix
+     * the order could never be updated again: status changes, address corrections
+     * and payment updates all failed on the same item for the rest of its life.
+     * Two live orders were stuck in exactly that state, retrying hourly.
+     */
+    public function testUpdateOmitsItemsOnceBobGoHoldsAFulfilment(): void
+    {
+        $order = $this->createOrderMock([
+            'bobgo_order_id' => '15146',
+            'bobgo_shipments' => '[{"fulfillment_id":"2546","tracking_number":"UASS4ZW6"}]',
+        ]);
+
+        $payload = $this->mapper->mapOrderToUpdatePayload($order);
+
+        $this->assertArrayNotHasKey('order_items', $payload);
+        // The useful half of the PATCH still has to go out.
+        $this->assertSame(15146, $payload['id']);
+        $this->assertSame('000000001', $payload['channel_order_number']);
+        $this->assertArrayHasKey('payment_status', $payload);
+    }
+
+    /**
+     * The case that settled the design. Order 000000003 showed qty_shipped 0 on
+     * every Magento item while Bob Go reported a fulfilled quantity on the very
+     * item it refused to delete — the blob had been reconciled, Magento's
+     * shipment had not. Trusting Magento alone would have kept sending items and
+     * kept earning the 400.
+     */
+    public function testBobGoBlobCountsEvenWhenMagentoShowsNothingShipped(): void
+    {
+        $item = $this->createMock(OrderItemInterface::class);
+        $item->method('getItemId')->willReturn(1);
+        $item->method('getSku')->willReturn('SKU-001');
+        $item->method('getQtyOrdered')->willReturn(1.0);
+        $item->method('getQtyShipped')->willReturn(0.0);
+
+        $order = $this->createOrderMock([
+            'items' => [$item],
+            'bobgo_order_id' => '15146',
+            'bobgo_shipments' => '[{"fulfillment_id":"2546"}]',
+        ]);
+
+        $this->assertArrayNotHasKey('order_items', $this->mapper->mapOrderToUpdatePayload($order));
+    }
+
+    /**
+     * And the mirror: a fulfilment Magento knows about but the blob has not caught
+     * up on. Each view lags in a different direction, so either alone is enough.
+     */
+    public function testMagentoShippedQuantityCountsEvenWithAnEmptyBlob(): void
+    {
+        $item = $this->createMock(OrderItemInterface::class);
+        $item->method('getItemId')->willReturn(1);
+        $item->method('getSku')->willReturn('SKU-001');
+        $item->method('getQtyOrdered')->willReturn(1.0);
+        $item->method('getQtyShipped')->willReturn(1.0);
+
+        $order = $this->createOrderMock([
+            'items' => [$item],
+            'bobgo_order_id' => '15146',
+            'bobgo_shipments' => '[]',
+        ]);
+
+        $this->assertArrayNotHasKey('order_items', $this->mapper->mapOrderToUpdatePayload($order));
+    }
+
+    /**
+     * An unfulfilled order is the whole point of a PATCH carrying items — item
+     * changes before fulfilment are real and Bob Go will accept them.
+     */
+    public function testUpdateStillSendsItemsForAnUnfulfilledOrder(): void
+    {
+        $order = $this->createOrderMock(['bobgo_order_id' => '15889']);
+
+        $payload = $this->mapper->mapOrderToUpdatePayload($order);
+
+        $this->assertArrayHasKey('order_items', $payload);
+        $this->assertSame('SKU-001', $payload['order_items'][0]['sku']);
+    }
+
+    /**
+     * @dataProvider emptyBlobProvider
+     * @param mixed $blob
+     */
+    public function testAnEmptyOrUnreadableBlobIsNotAFulfilment($blob): void
+    {
+        $order = $this->createOrderMock(['bobgo_order_id' => '15889', 'bobgo_shipments' => $blob]);
+
+        $this->assertArrayHasKey('order_items', $this->mapper->mapOrderToUpdatePayload($order));
+    }
+
+    /**
+     * @return array<string,array{0:mixed}>
+     */
+    public function emptyBlobProvider(): array
+    {
+        return [
+            'never synced' => [null],
+            'empty string' => [''],
+            'whitespace' => ['   '],
+            'empty json array' => ['[]'],
+            'unreadable json' => ['{not json'],
+        ];
+    }
+
+    /**
+     * The POST creates the order, so it must always enumerate the items —
+     * a create with no items is rejected outright ("Field items is required.").
+     */
+    public function testCreateAlwaysSendsItemsEvenWhenFulfilmentsExist(): void
+    {
+        $order = $this->createOrderMock([
+            'bobgo_shipments' => '[{"fulfillment_id":"2546"}]',
+        ]);
+
+        $this->assertArrayHasKey('order_items', $this->mapper->mapOrderToPayload($order));
     }
 
     /**

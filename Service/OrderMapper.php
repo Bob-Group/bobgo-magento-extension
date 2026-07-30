@@ -77,7 +77,67 @@ class OrderMapper implements OrderMapperInterface
             $payload['id'] = (int) $bobgoOrderId;
         }
 
+        // Bob Go treats a PATCH's `order_items` as the authoritative list and
+        // reconciles destructively against it: anything absent is deleted. Once an
+        // item has been fulfilled it refuses the delete outright —
+        //
+        //   400 {"message":"Cannot delete order_item=18616, fulfilled quantity is
+        //        greater than 0."}
+        //
+        // — and because that is a property of the order rather than a transient
+        // fault, the order could never be updated again. Every later PATCH failed
+        // on the same item, so a status change, an address correction or a payment
+        // update all stopped flowing for the rest of the order's life.
+        //
+        // Items are dropped rather than repaired because there is nothing to
+        // repair: Bob Go will not accept item changes to a fulfilled order under
+        // any payload we can send. Dropping them keeps the useful half of the
+        // PATCH working instead of losing all of it.
+        if ($this->hasFulfilments($order)) {
+            unset($payload['order_items']);
+        }
+
         return $payload;
+    }
+
+    /**
+     * Whether Bob Go may already hold a fulfilment for this order — the condition
+     * under which sending items becomes destructive.
+     *
+     * Both views are consulted because each lags in a different direction, and
+     * either one being stale is enough to earn the 400:
+     *
+     *  - `bobgo_shipments` is Bob Go's own record, but only as of the last
+     *     reconcile or webhook.
+     *  - Magento's shipped quantities only exist for fulfilments we managed to
+     *     sync down.
+     *
+     * Order 000000003 is the case that settled the design: Magento showed
+     * qty_shipped 0 on every item while Bob Go reported a fulfilled quantity on
+     * the item it was refusing to delete. Magento's view alone would have kept
+     * sending items and kept 400ing.
+     *
+     * Cancelled fulfilments count too. Being wrong in this direction costs the
+     * forwarding of item changes on one order; being wrong in the other costs
+     * every future update to it, so the asymmetry decides it.
+     */
+    private function hasFulfilments(OrderInterface $order): bool
+    {
+        $shipments = $order->getData('bobgo_shipments');
+        if (is_string($shipments) && trim($shipments) !== '') {
+            $shipments = json_decode($shipments, true);
+        }
+        if (is_array($shipments) && $shipments !== []) {
+            return true;
+        }
+
+        foreach ($order->getItems() ?: [] as $item) {
+            if ((float) $item->getQtyShipped() > 0.0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
