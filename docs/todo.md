@@ -739,10 +739,35 @@ to show itself — the class of bug that code review structurally cannot reach.
 | 8 | `display_options` was empty for **configurable** products — the exact case it was built for | Magento keeps `attributes_info` on the parent; `mapItems()` sends the child | `308b9e6` |
 | 9 | Reconciliation saved the order without the inbound guard, so it queued an outbound PATCH of the state Bob Go had just sent us | The webhook path *did* guard, so the guard looked present. Six redundant 200 PATCHes in one cron run | `f74ef8d` |
 | 10 | A PATCH's `order_items` is authoritative to Bob Go and reconciled destructively; once an item is fulfilled it refuses the delete and 400s **permanently**, so the order could never be updated again | Needs a fulfilled order plus a second push to reproduce | `1f708cb` |
-| 11 | The sync log recorded the request and `"failed with status 400"` but never the response body, so the admin grid could not say *why* | Only visible when you actually need to diagnose a failure from the grid | this commit |
+| 11 | The sync log recorded the request and `"failed with status 400"` but never the response body, so the admin grid could not say *why* | Only visible when you actually need to diagnose a failure from the grid | `fd99452` |
+| 12 | Fulfilment-item matching read `sku` and `channel_ref_id` at row level, but both nest under `order_item`; the `$row['id']` fallback is a *fulfilment-item* id, a separate namespace. Zero items resolved, so a fulfilled order got no Magento shipment | This was Q9 — flagged as unverifiable by review and left tolerant of four key names. Every existing fixture used the flat shape the code assumed, so all tests passed against the broken matcher | see below |
+| 13 | A matched child of a configurable was shipped directly, but Magento treats it as a shipment dummy (`qty_to_ship` 0, `qty_shipped` on the parent) | The old SKU path took the parent by accident — parent and child share a SKU and `getAllItems()` yields the parent first | see below |
 
 `InboundGuard` was made re-entrant as part of #9: the scopes legitimately nest now, and a
 flag would have let the inner exit unguard the outer one. Same nesting trap as #3.
+
+**Q9 is answered** (#12): the list key is `order_fulfillments` and the item key is `items`,
+nested under the `order_fulfillment` wrapper — which `normaliseFulfilment()` already
+unwrapped correctly. The unverified part that mattered turned out to be the *row* shape,
+which nobody had thought to ask about:
+
+```
+{ "id": 3398,                 // fulfilment-item id — NOT an order-item id
+  "order_item_id": 19795,     // Bob Go's order-item id
+  "order_item": { "sku": "...", "channel_ref_id": 22, "fulfilled_qty": 1 },
+  "qty": 1 }
+```
+
+`order_item.fulfilled_qty` is the running total across every fulfilment, so only the row's
+own `qty` describes this one — using the nested value would over-ship on a second partial
+fulfilment. Matching now prefers the Magento item id Bob Go echoes back, then the Bob Go
+order-item id, then SKU, and resolves whatever matched to the shippable parent (#13).
+Verified live: a two-line fulfilment produced one Magento shipment against order items 21
+and 23 (the configurable parents) with tracking attached.
+
+The refusal-to-guess guard is what surfaced #12 rather than silently shipping the whole
+order — `skus: []` in the log was the tell. Its own SKU extraction read the wrong level
+too, which is why a real mismatch looked like an empty fulfilment.
 
 ### Residual, low severity — not fixed
 

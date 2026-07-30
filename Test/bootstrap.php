@@ -159,7 +159,10 @@ $stubs = [
         // Note: Magento\Sales\Model\Order is defined separately below (implements OrderInterface)
 
         'Magento\Sales\Model\Order\Shipment' => ['getTracks', 'getAllTracks', 'getEntityId', 'addTrack', 'save', 'getLastItem', 'getData', 'setData'],
-        'Magento\Sales\Model\Order\Item' => ['getItemId', 'getParentItemId', 'getProductId', 'getProductType', 'getSku', 'getName', 'getPriceInclTax', 'getQtyOrdered', 'getQtyToShip', 'getWeight', 'getData', 'setData'],
+        // getParentItem/isDummy matter: FulfilmentSyncService guards on
+        // method_exists, so omitting them makes the shippable-parent logic
+        // silently untested rather than merely unmockable.
+        'Magento\Sales\Model\Order\Item' => ['getItemId', 'getParentItem', 'getParentItemId', 'getProductId', 'getProductType', 'getSku', 'getName', 'getPriceInclTax', 'getQtyOrdered', 'getQtyShipped', 'getQtyToShip', 'isDummy', 'getWeight', 'getData', 'setData'],
         'Magento\Sales\Model\Order\Shipment\Track' => ['getTrackNumber', 'setTrackNumber', 'getTitle', 'setCarrierCode', 'setTitle', 'save'],
         'Magento\Sales\Model\Order\Shipment\TrackFactory' => ['create'],
         // Note: ShipmentCollection is defined separately below (implements IteratorAggregate)

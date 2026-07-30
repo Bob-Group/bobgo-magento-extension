@@ -304,9 +304,12 @@ class FulfilmentSyncService
             $this->logger->error('Bob Go fulfilment sync: record lists items that are not on the order', [
                 'order_id' => $order->getEntityId(),
                 'fulfillment_id' => $fulfilmentId,
+                // Read through the same identity helper: the SKU is nested under
+                // `order_item`, so a top-level lookup logged an empty list and made
+                // a real mismatch look like an empty fulfilment.
                 'skus' => array_values(array_filter(array_map(
-                    static function ($row) {
-                        return is_array($row) ? ($row['sku'] ?? null) : null;
+                    function ($row) {
+                        return is_array($row) ? ($this->itemRowIdentity($row)['sku'] ?: null) : null;
                     },
                     $itemRows
                 ))),
@@ -525,9 +528,9 @@ class FulfilmentSyncService
     /**
      * Build shipment items for a partial fulfilment.
      *
-     * Matches by Bob Go order_item id first (the canonical link we set on order
-     * push), then falls back to SKU, popping from a per-SKU queue so duplicate
-     * SKUs on an order don't collapse onto a single line.
+     * Matches on our own Magento item id where Bob Go echoes it back, then Bob
+     * Go's order-item id (the link we set on order push), then SKU — popping from
+     * a per-SKU queue so duplicate SKUs don't collapse onto one line.
      *
      * @param array<int,array<string,mixed>> $itemRows
      * @return array<\Magento\Sales\Api\Data\ShipmentItemCreationInterface>
@@ -539,10 +542,13 @@ class FulfilmentSyncService
         }
 
         /** @var \Magento\Sales\Model\Order $order */
+        $byItemId = [];
         $byBobgoItemId = [];
         $bySku = [];
         foreach ($order->getAllItems() as $orderItem) {
             /** @var \Magento\Sales\Model\Order\Item $orderItem */
+            $byItemId[(string) $orderItem->getItemId()] = $orderItem;
+
             $bobgoItemId = (string) ($orderItem->getData('bobgo_order_item_id') ?? '');
             if ($bobgoItemId !== '') {
                 $byBobgoItemId[$bobgoItemId] = $orderItem;
@@ -553,41 +559,147 @@ class FulfilmentSyncService
             }
         }
 
-        $items = [];
+        // Accumulated per resolved item, not appended per row: several rows can
+        // resolve to the same shippable line once a bundle's children collapse
+        // onto their parent, and appending would ship it twice.
+        $qtyByItemId = [];
+        $resolved = [];
+
         foreach ($itemRows as $row) {
             if (!is_array($row)) {
                 continue;
             }
-            $qty = (int) ($row['fulfilled_qty'] ?? $row['qty'] ?? $row['quantity'] ?? 0);
-            if ($qty <= 0) {
+
+            $identity = $this->itemRowIdentity($row);
+            if ($identity['qty'] <= 0) {
                 continue;
             }
 
             $matched = null;
-
-            $bobgoItemId = (string) ($row['channel_ref_id'] ?? $row['id'] ?? '');
-            if ($bobgoItemId !== '' && isset($byBobgoItemId[$bobgoItemId])) {
-                $matched = $byBobgoItemId[$bobgoItemId];
+            if ($identity['magento_item_id'] !== '' && isset($byItemId[$identity['magento_item_id']])) {
+                $matched = $byItemId[$identity['magento_item_id']];
             }
-
-            if ($matched === null) {
-                $sku = (string) ($row['sku'] ?? '');
-                if ($sku !== '' && !empty($bySku[$sku])) {
-                    $matched = array_shift($bySku[$sku]);
-                }
+            if ($matched === null && $identity['bobgo_item_id'] !== ''
+                && isset($byBobgoItemId[$identity['bobgo_item_id']])) {
+                $matched = $byBobgoItemId[$identity['bobgo_item_id']];
             }
-
+            if ($matched === null && $identity['sku'] !== '' && !empty($bySku[$identity['sku']])) {
+                $matched = array_shift($bySku[$identity['sku']]);
+            }
             if ($matched === null) {
                 continue;
             }
 
+            $matched = $this->shippableItem($matched);
+            $itemId = (string) $matched->getItemId();
+
+            $resolved[$itemId] = $matched;
+            $qtyByItemId[$itemId] = ($qtyByItemId[$itemId] ?? 0) + $identity['qty'];
+        }
+
+        $items = [];
+        foreach ($qtyByItemId as $itemId => $qty) {
+            // Clamp with Magento's own notion of what is left to ship, so a
+            // collapsed bundle cannot ask for more than the line holds.
+            $orderItem = $resolved[$itemId];
+            if (method_exists($orderItem, 'getQtyToShip')) {
+                $shippable = (float) $orderItem->getQtyToShip();
+                if ($shippable > 0.0 && $qty > $shippable) {
+                    $qty = $shippable;
+                }
+            }
+
             $shipmentItem = $this->itemCreationFactory->create();
-            $shipmentItem->setOrderItemId((int) $matched->getItemId());
+            $shipmentItem->setOrderItemId((int) $itemId);
             $shipmentItem->setQty((float) $qty);
             $items[] = $shipmentItem;
         }
 
         return $items;
+    }
+
+    /**
+     * Pull an item row's identifying fields out, wherever Bob Go nested them.
+     *
+     * GET /v2/order-fulfillments returns rows shaped like this — confirmed against
+     * the sandbox, because no amount of reading could settle it:
+     *
+     *   { "id": 3398,               // the FULFILMENT-item id, a separate namespace
+     *     "order_item_id": 19795,   // Bob Go's order-item id
+     *     "order_item": { "sku": "WS01-S-Green", "channel_ref_id": 22 },
+     *     "qty": 1 }
+     *
+     * So the SKU and our own item id both sit a level down, and the row's `id` is
+     * not an order-item id at all. Reading it as one matched nothing here and
+     * could just as easily have matched the wrong line on another order.
+     *
+     * Flat shapes are still accepted: the webhook body's items have historically
+     * carried these fields at the top level.
+     *
+     * @param array<string,mixed> $row
+     * @return array{magento_item_id:string,bobgo_item_id:string,sku:string,qty:int}
+     */
+    private function itemRowIdentity(array $row): array
+    {
+        $nested = is_array($row['order_item'] ?? null) ? $row['order_item'] : [];
+
+        return [
+            // Our own id, echoed back — the strongest signal there is.
+            'magento_item_id' => $this->firstNonEmpty([
+                $nested['channel_ref_id'] ?? null,
+                $row['channel_ref_id'] ?? null,
+            ]),
+            'bobgo_item_id' => $this->firstNonEmpty([
+                $row['order_item_id'] ?? null,
+                $nested['id'] ?? null,
+            ]),
+            'sku' => $this->firstNonEmpty([
+                $nested['sku'] ?? null,
+                $row['sku'] ?? null,
+            ]),
+            // Row-level only. `order_item.fulfilled_qty` is the total fulfilled
+            // across every fulfilment, so borrowing it would over-ship the moment
+            // a second partial fulfilment arrived.
+            'qty' => (int) ($row['fulfilled_qty'] ?? $row['qty'] ?? $row['quantity'] ?? 0),
+        ];
+    }
+
+    /**
+     * The line Magento can actually ship.
+     *
+     * A configurable's child row is a dummy for shipment purposes — Magento
+     * returns qty_to_ship 0 for it and records qty_shipped on the parent — so a
+     * fulfilment identifying the child has to ship the parent. Bob Go echoes the
+     * child's id, because the child is what we send as the order line.
+     *
+     * @param mixed $orderItem
+     * @return mixed
+     */
+    private function shippableItem($orderItem)
+    {
+        if (!method_exists($orderItem, 'getParentItem') || !method_exists($orderItem, 'isDummy')) {
+            return $orderItem;
+        }
+
+        $parent = $orderItem->getParentItem();
+        if ($parent !== null && $orderItem->isDummy(true)) {
+            return $parent;
+        }
+
+        return $orderItem;
+    }
+
+    /**
+     * @param array<int,mixed> $candidates
+     */
+    private function firstNonEmpty(array $candidates): string
+    {
+        foreach ($candidates as $candidate) {
+            if (is_scalar($candidate) && (string) $candidate !== '') {
+                return (string) $candidate;
+            }
+        }
+        return '';
     }
 
     /**

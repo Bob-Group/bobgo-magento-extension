@@ -51,6 +51,8 @@ class FulfilmentSyncServiceTest extends TestCase
     private $logger;
     /** @var InboundGuard */
     private $inboundGuard;
+    /** @var array<int,\stdClass> */
+    private $shipmentItems = [];
     /** @var FulfilmentSyncService */
     private $service;
 
@@ -77,9 +79,28 @@ class FulfilmentSyncServiceTest extends TestCase
             ->willReturnCallback(function () {
                 return $this->createMock(ShipmentTrackCreationInterface::class);
             });
+        // Recording mocks: the item id and qty actually requested is the whole
+        // question for the fulfilment-item matching tests.
+        $this->shipmentItems = [];
         $this->itemCreationFactory->method('create')
             ->willReturnCallback(function () {
-                return $this->createMock(ShipmentItemCreationInterface::class);
+                $captured = new \stdClass();
+                $captured->orderItemId = null;
+                $captured->qty = null;
+                $this->shipmentItems[] = $captured;
+
+                $item = $this->createMock(ShipmentItemCreationInterface::class);
+                $item->method('setOrderItemId')->willReturnCallback(
+                    static function ($id) use ($captured) {
+                        $captured->orderItemId = $id;
+                    }
+                );
+                $item->method('setQty')->willReturnCallback(
+                    static function ($qty) use ($captured) {
+                        $captured->qty = $qty;
+                    }
+                );
+                return $item;
             });
 
         $this->service = new FulfilmentSyncService(
@@ -438,6 +459,216 @@ class FulfilmentSyncServiceTest extends TestCase
         $this->service->syncOrder($order, [['sku' => 'SKU-A', 'fulfilled_qty' => 1]]);
     }
 
+    // ------------------------------------------- the real shape Bob Go returns
+    //
+    // Everything below is built from a response captured off the sandbox on
+    // 2026-07-30, after fulfilling a two-line order. It is the one thing in this
+    // service no amount of code review could settle, and the shape is not what the
+    // matching code assumed: the sku and our own item id sit under `order_item`,
+    // and the row's own `id` is a fulfilment-item id from a separate namespace.
+    //
+    // The tests already here all passed against the broken matcher, because every
+    // fixture used the flat shape the implementation expected.
+
+    public function testResolvesItemsFromTheRealNestedShape(): void
+    {
+        $order = $this->order(7, '15891');
+        $order->method('canShip')->willReturn(true);
+        $this->noShipmentsYet($order);
+        $order->method('getAllItems')->willReturn([
+            $this->orderItem(22, 'WS01-S-Green', '19795'),
+            $this->orderItem(24, 'WS01-XS-Black', '19796'),
+        ]);
+
+        $this->apiClient->method('get')->willReturn([
+            'order_fulfillments' => [$this->fulfilmentWithItems([
+                $this->realItemRow(3398, 19795, 22, 'WS01-S-Green'),
+                $this->realItemRow(3399, 19796, 24, 'WS01-XS-Black'),
+            ])],
+            'count' => 1,
+        ]);
+
+        $this->shipOrder->expects($this->once())->method('execute')->willReturn(55);
+
+        $this->service->syncOrder($order);
+
+        $this->assertSame([22, 24], array_column($this->shipmentItems, 'orderItemId'));
+        $this->assertSame([1.0, 1.0], array_column($this->shipmentItems, 'qty'));
+    }
+
+    /**
+     * The row's `id` (3398) is a fulfilment-item id. Reading it as an order-item id
+     * matched nothing on the order that exposed this, but nothing stops it
+     * colliding with a real bobgo_order_item_id on another order — and then the
+     * wrong line ships.
+     */
+    public function testNeverTreatsTheFulfilmentItemIdAsAnOrderItemId(): void
+    {
+        $order = $this->order(7, '15891');
+        $order->method('canShip')->willReturn(true);
+        $this->noShipmentsYet($order);
+        // A decoy whose Bob Go item id equals the row's fulfilment-item id.
+        $order->method('getAllItems')->willReturn([
+            $this->orderItem(99, 'DECOY', '3398'),
+            $this->orderItem(22, 'WS01-S-Green', '19795'),
+        ]);
+
+        $this->apiClient->method('get')->willReturn([
+            'order_fulfillments' => [$this->fulfilmentWithItems([
+                $this->realItemRow(3398, 19795, 22, 'WS01-S-Green'),
+            ])],
+        ]);
+
+        $this->shipOrder->expects($this->once())->method('execute')->willReturn(55);
+
+        $this->service->syncOrder($order);
+
+        $this->assertSame([22], array_column($this->shipmentItems, 'orderItemId'));
+    }
+
+    /**
+     * Bob Go echoes the child's id, because the child is what we send as the order
+     * line — but Magento cannot ship a configurable's child. isDummy(true) is true
+     * for it, qty_to_ship is 0, and qty_shipped is recorded on the parent.
+     *
+     * The old SKU-based matching got this right by accident: parent and child share
+     * a SKU, getAllItems() yields the parent first, and array_shift took it.
+     */
+    public function testShipsTheConfigurableParentWhenBobGoNamesTheChild(): void
+    {
+        $parent = $this->orderItem(21, 'WS01-S-Green');
+        $child = $this->orderItem(22, 'WS01-S-Green', '19795', $parent);
+
+        $order = $this->order(7, '15891');
+        $order->method('canShip')->willReturn(true);
+        $this->noShipmentsYet($order);
+        $order->method('getAllItems')->willReturn([$parent, $child]);
+
+        $this->apiClient->method('get')->willReturn([
+            'order_fulfillments' => [$this->fulfilmentWithItems([
+                $this->realItemRow(3398, 19795, 22, 'WS01-S-Green'),
+            ])],
+        ]);
+
+        $this->shipOrder->expects($this->once())->method('execute')->willReturn(55);
+
+        $this->service->syncOrder($order);
+
+        $this->assertSame([21], array_column($this->shipmentItems, 'orderItemId'), 'the parent ships, not the child');
+    }
+
+    /**
+     * `order_item.fulfilled_qty` is the running total across every fulfilment, so
+     * a second partial fulfilment would ship the whole line again if it were used.
+     * Only the row's own qty describes this fulfilment.
+     */
+    public function testUsesTheRowQtyNotTheRunningFulfilledTotal(): void
+    {
+        $order = $this->order(7, '15891');
+        $order->method('canShip')->willReturn(true);
+        $this->noShipmentsYet($order);
+        $order->method('getAllItems')->willReturn([$this->orderItem(22, 'SKU-A', '19795')]);
+
+        $this->apiClient->method('get')->willReturn([
+            'order_fulfillments' => [$this->fulfilmentWithItems([
+                // This fulfilment covers 1; 3 have been fulfilled in total.
+                $this->realItemRow(3398, 19795, 22, 'SKU-A', 1, 3),
+            ])],
+        ]);
+
+        $this->shipOrder->expects($this->once())->method('execute')->willReturn(55);
+
+        $this->service->syncOrder($order);
+
+        $this->assertSame([1.0], array_column($this->shipmentItems, 'qty'));
+    }
+
+    /**
+     * Webhook bodies have carried these fields flat, and that path still works.
+     */
+    public function testStillAcceptsAFlatItemShape(): void
+    {
+        $order = $this->order(7, '15891');
+        $order->method('canShip')->willReturn(true);
+        $this->noShipmentsYet($order);
+        $order->method('getAllItems')->willReturn([$this->orderItem(22, 'SKU-A', '19795')]);
+
+        $this->apiClient->method('get')->willReturn([
+            'order_fulfillments' => [$this->fulfilmentWithItems([
+                ['channel_ref_id' => 22, 'sku' => 'SKU-A', 'fulfilled_qty' => 2],
+            ])],
+        ]);
+
+        $this->shipOrder->expects($this->once())->method('execute')->willReturn(55);
+
+        $this->service->syncOrder($order);
+
+        $this->assertSame([22], array_column($this->shipmentItems, 'orderItemId'));
+        $this->assertSame([2.0], array_column($this->shipmentItems, 'qty'));
+    }
+
+    /**
+     * Two rows collapsing onto one shippable parent must not ship it twice, and the
+     * total is clamped by what Magento says is left on the line.
+     */
+    public function testCollapsedRowsAccumulateOnceAndAreClamped(): void
+    {
+        $parent = $this->orderItem(21, 'BUNDLE');   // getQtyToShip() => 5.0
+        $childA = $this->orderItem(22, 'PART-A', '19795', $parent);
+        $childB = $this->orderItem(23, 'PART-B', '19796', $parent);
+
+        $order = $this->order(7, '15891');
+        $order->method('canShip')->willReturn(true);
+        $this->noShipmentsYet($order);
+        $order->method('getAllItems')->willReturn([$parent, $childA, $childB]);
+
+        $this->apiClient->method('get')->willReturn([
+            'order_fulfillments' => [$this->fulfilmentWithItems([
+                $this->realItemRow(3398, 19795, 22, 'PART-A', 4),
+                $this->realItemRow(3399, 19796, 23, 'PART-B', 4),
+            ])],
+        ]);
+
+        $this->shipOrder->expects($this->once())->method('execute')->willReturn(55);
+
+        $this->service->syncOrder($order);
+
+        $this->assertCount(1, $this->shipmentItems, 'one line, not two');
+        $this->assertSame(21, $this->shipmentItems[0]->orderItemId);
+        $this->assertSame(5.0, $this->shipmentItems[0]->qty, 'clamped from 8 to what the line holds');
+    }
+
+    /**
+     * The refusal is still a refusal — but the log now names the SKUs, which it
+     * could not do while it read them from the wrong level. An empty list made a
+     * genuine mismatch look like an empty fulfilment.
+     */
+    public function testTheRefusalLogNamesTheSkusItCouldNotMatch(): void
+    {
+        $order = $this->order(7, '15891');
+        $order->method('canShip')->willReturn(true);
+        $this->noShipmentsYet($order);
+        $order->method('getAllItems')->willReturn([$this->orderItem(22, 'SOMETHING-ELSE', '11111')]);
+
+        $this->apiClient->method('get')->willReturn([
+            'order_fulfillments' => [$this->fulfilmentWithItems([
+                $this->realItemRow(3398, 19795, 88, 'NOT-ON-THIS-ORDER'),
+            ])],
+        ]);
+
+        $logged = null;
+        $this->logger->method('error')->willReturnCallback(
+            static function ($message, $context = []) use (&$logged) {
+                $logged = $context;
+            }
+        );
+        $this->shipOrder->expects($this->never())->method('execute');
+
+        $this->service->syncOrder($order);
+
+        $this->assertSame(['NOT-ON-THIS-ORDER'], $logged['skus']);
+    }
+
     public function testRefusesToShipWhenNamedItemsAreNotOnTheOrder(): void
     {
         $order = $this->order(7, '987');
@@ -541,13 +772,68 @@ class FulfilmentSyncServiceTest extends TestCase
     /**
      * @return \PHPUnit\Framework\MockObject\MockObject
      */
-    private function orderItem(int $itemId, string $sku)
+    private function orderItem(int $itemId, string $sku, ?string $bobgoItemId = null, $parent = null)
     {
         $item = $this->createMock(\Magento\Sales\Model\Order\Item::class);
         $item->method('getItemId')->willReturn($itemId);
         $item->method('getSku')->willReturn($sku);
-        $item->method('getData')->willReturn(null);
+        $item->method('getData')->willReturnCallback(
+            static function ($key = null) use ($bobgoItemId) {
+                return $key === 'bobgo_order_item_id' ? $bobgoItemId : null;
+            }
+        );
+        $item->method('getParentItem')->willReturn($parent);
+        // Magento's own rule: a child of a configurable is a dummy for shipment
+        // purposes, so qty_to_ship is 0 and qty_shipped lands on the parent.
+        $item->method('isDummy')->willReturn($parent !== null);
+        $item->method('getQtyToShip')->willReturn($parent !== null ? 0.0 : 5.0);
         return $item;
+    }
+
+    /**
+     * A fulfilment record carrying items, in the shape
+     * GET /v2/order-fulfillments actually returns — captured from the sandbox.
+     *
+     * @param array<int,array<string,mixed>> $itemRows
+     * @return array<string,mixed>
+     */
+    private function fulfilmentWithItems(array $itemRows, string $tracking = 'UASD9KL8', int $id = 2814): array
+    {
+        $record = $this->fulfilment($tracking, 'Demo Couriers', 'pending-collection', $id);
+        $record['order_fulfillment']['items'] = $itemRows;
+        return $record;
+    }
+
+    /**
+     * One fulfilment-item row, exactly as Bob Go returns it. Note that `id` is the
+     * fulfilment-item id — a different namespace from any order-item id — and that
+     * the sku and our own item id sit under `order_item`.
+     *
+     * @return array<string,mixed>
+     */
+    private function realItemRow(
+        int $fulfilmentItemId,
+        int $bobgoOrderItemId,
+        int $magentoItemId,
+        string $sku,
+        int $qty = 1,
+        int $totalFulfilledQty = 1
+    ): array {
+        return [
+            'id'                   => $fulfilmentItemId,
+            'order_fulfillment_id' => 2814,
+            'order_id'             => 15891,
+            'order_item_id'        => $bobgoOrderItemId,
+            'order_item'           => [
+                'id'            => $bobgoOrderItemId,
+                'sku'           => $sku,
+                'channel_ref_id' => $magentoItemId,
+                // The total across every fulfilment, not this one's share.
+                'fulfilled_qty' => $totalFulfilledQty,
+                'qty'           => 1,
+            ],
+            'qty'                  => $qty,
+        ];
     }
 
     /**

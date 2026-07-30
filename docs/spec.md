@@ -953,14 +953,32 @@ A fulfilment that *names* items none of which match the order is also refused
 (logged at error). Unlike the old webhook-payload path this is **not** transient:
 the authoritative record won't change on a retry.
 
-Items are matched to Magento lines by Bob Go `channel_ref_id` → stored
-`bobgo_order_item_id` → SKU, the SKU fallback popping from a per-SKU queue so
-duplicate SKUs on one order don't collapse onto a single line.
+Items are matched to Magento lines by Magento item id (which Bob Go echoes back as
+`channel_ref_id`) → stored `bobgo_order_item_id` → SKU, the SKU fallback popping
+from a per-SKU queue so duplicate SKUs on one order don't collapse onto a single
+line. Whatever matches, the result is resolved to the line Magento can actually
+ship: a configurable's child is a shipment dummy (`isDummy(true)`, `qty_to_ship`
+0), so a fulfilment naming the child ships the parent.
 
-> **Unverified:** which key the fulfilments response uses for its item array.
-> `ITEM_KEYS` tolerates `items` / `order_items` / `fulfillment_items` /
-> `line_items`. This is the first thing to confirm against a live sandbox — see
-> Known Limitations #15.
+**Verified against the sandbox, 2026-07-30.** The response nests a fulfilment's
+items one level below where a flat reading would look:
+
+```
+order_fulfillments[] -> order_fulfillment -> items[]
+{ "id": 3398,                 // fulfilment-item id — a SEPARATE namespace
+  "order_item_id": 19795,     // Bob Go's order-item id
+  "order_item": { "sku": "WS01-S-Green", "channel_ref_id": 22, "fulfilled_qty": 1 },
+  "qty": 1 }
+```
+
+Three consequences, each of which was wrong before it was checked:
+
+- The SKU and our own item id live under `order_item`, not at row level.
+- The row's `id` is **not** an order-item id. Reading it as one matched nothing
+  here and could match the wrong line elsewhere.
+- `order_item.fulfilled_qty` is the running total across every fulfilment; only
+  the row's own `qty` describes this one. Borrowing it would over-ship the moment
+  a second partial fulfilment arrived.
 
 ### Fulfillment Webhook Payload Structure
 
@@ -2446,11 +2464,15 @@ The script updates both `composer.json` and `etc/module.xml`.
    `bobgo_shipments`, so it is visible in the admin panel, but no order comment or
    notice is raised.
 
-10. **The fulfilments response item shape is unverified** — `FulfilmentSyncService`
-    tolerates four possible keys for a fulfilment's line items. When none is
-    present it refuses to guess the scope unless Bob Go reports exactly one live
-    fulfilment for the order. **This is the first thing to confirm against a live
-    sandbox.** → Appendix C, Q9.
+10. ~~**The fulfilments response item shape is unverified**~~ — **resolved
+    2026-07-30** against the sandbox by fulfilling a two-line order. The list key is
+    `order_fulfillments` and the item key is `items`, nested under the
+    `order_fulfillment` wrapper; `normaliseFulfilment()` already unwrapped that
+    correctly. What it got wrong was the *row* shape — sku and Magento item id sit
+    under `order_item`, and the row's `id` is a fulfilment-item id, not an
+    order-item id. See §11 for the verified shape. The refusal-to-guess behaviour
+    described here is unchanged and is what caught the mismatch rather than
+    over-shipping.
 
 11. **Rate payload sends zero dimensions** — the order payload reads dimensions
     from merchant-nominated product attributes, but the rate payload still sends
@@ -2658,7 +2680,7 @@ this extension hits all of them.
 | Q6 | Should 4xx count toward the three-day disable window? | "Malformed input" and "not my order" are very different signals |
 | Q7 | Should order-less / foreign-channel events reach channel endpoints at all? | Most of our inbound traffic may be events we can only acknowledge |
 | Q8 | Does `PATCH` support un-cancelling? | Blocks any reopen story |
-| Q9 | **Which key holds a fulfilment's line items in `GET /v2/order-fulfillments`?** | `FulfilmentSyncService` tolerates four; when none is present it refuses to guess the scope unless there is exactly one live fulfilment. First thing to confirm against a sandbox |
+| Q9 | ~~**Which key holds a fulfilment's line items in `GET /v2/order-fulfillments`?**~~ | **Answered 2026-07-30.** `order_fulfillments[].order_fulfillment.items[]`. The wrapper was already handled; the row shape was not — sku and Magento item id nest under `order_item`, and the row's `id` is a fulfilment-item id in a separate namespace. See §11 |
 
 ---
 
