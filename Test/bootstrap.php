@@ -133,15 +133,15 @@ if (!class_exists(\Magento\Framework\Data\Form\Element\AbstractElement::class, f
 // --- Stub common Magento interfaces needed for mocking ---
 $stubs = [
     'interface' => [
-        'Magento\Sales\Api\Data\OrderInterface' => ['getEntityId', 'getIncrementId', 'getGrandTotal', 'getTotalDue', 'getDiscountAmount', 'getOrderCurrencyCode', 'getStatus', 'getShippingMethod', 'getShippingDescription', 'getCreatedAt', 'getUpdatedAt', 'getShippingAddress', 'getBillingAddress', 'getItems', 'getData', 'setData', 'getCustomerFirstname', 'getCustomerLastname', 'getCustomerEmail', 'getStoreId'],
-        'Magento\Sales\Api\Data\OrderItemInterface' => ['getItemId', 'getParentItemId', 'getProductId', 'getProductType', 'getSku', 'getName', 'getPriceInclTax', 'getQtyOrdered', 'getWeight', 'setWeight', 'getData', 'setData'],
+        'Magento\Sales\Api\Data\OrderInterface' => ['getEntityId', 'getIncrementId', 'getGrandTotal', 'getTotalDue', 'getDiscountAmount', 'getOrderCurrencyCode', 'getStatus', 'getShippingMethod', 'getShippingDescription', 'getCreatedAt', 'getUpdatedAt', 'getShippingAddress', 'getBillingAddress', 'getItems', 'getData', 'setData', 'getCustomerFirstname', 'getCustomerLastname', 'getCustomerEmail', 'getStoreId', 'getCustomerNote', 'getTaxAmount', 'getTotalRefunded', 'getState'],
+        'Magento\Sales\Api\Data\OrderItemInterface' => ['getItemId', 'getParentItemId', 'getProductId', 'getProductType', 'getSku', 'getName', 'getPriceInclTax', 'getQtyOrdered', 'getWeight', 'setWeight', 'getData', 'setData', 'getProductOptions'],
         'Magento\Sales\Api\Data\OrderAddressInterface' => ['getStreet', 'getCity', 'getPostcode', 'getRegion', 'getCountryId', 'getCompany', 'getFirstname', 'getLastname', 'getTelephone'],
         'Magento\Sales\Api\OrderRepositoryInterface' => ['save', 'get', 'getList', 'delete'],
         'Magento\Sales\Api\OrderItemRepositoryInterface' => ['save', 'get', 'getList', 'delete'],
         'Magento\Framework\App\Config\ScopeConfigInterface' => ['getValue', 'isSetFlag'],
         'Magento\Framework\Message\ManagerInterface' => ['addSuccessMessage', 'addErrorMessage', 'addWarningMessage', 'addNoticeMessage'],
         'Magento\Catalog\Api\ProductRepositoryInterface' => ['getById', 'get', 'save', 'delete'],
-        'Magento\Catalog\Api\Data\ProductInterface' => ['getImage', 'getSku', 'getName', 'getId'],
+        'Magento\Catalog\Api\Data\ProductInterface' => ['getImage', 'getSku', 'getName', 'getId', 'getData'],
         'Magento\Store\Api\Data\StoreInterface' => ['getBaseUrl', 'getId', 'getCode'],
         'Magento\Sales\Api\Data\OrderSearchResultInterface' => ['getItems', 'getTotalCount'],
         'Magento\Sales\Api\ShipOrderInterface' => ['execute'],
@@ -192,7 +192,9 @@ foreach ($stubs['interface'] as $fqcn => $methods) {
         $className = array_pop($parts);
         $namespace = implode('\\', $parts);
         $methodDecls = '';
-        foreach ($methods as $method) {
+        // array_unique: a duplicate name in the list below is a typo, not a
+        // reason to fatal the whole suite with "cannot redeclare".
+        foreach (array_unique($methods) as $method) {
             $methodDecls .= "public function {$method}();\n";
         }
         eval("namespace {$namespace}; interface {$className} { {$methodDecls} }");
@@ -214,7 +216,7 @@ foreach ($stubs['class'] as $fqcn => $methods) {
 
 // Magento\Sales\Model\Order must implement OrderInterface so mocks satisfy return type hints
 if (!class_exists(\Magento\Sales\Model\Order::class, false)) {
-    eval('namespace Magento\Sales\Model; class Order implements \Magento\Sales\Api\Data\OrderInterface { const STATE_NEW = "new"; const STATE_PROCESSING = "processing"; const STATE_HOLDED = "holded"; const STATE_COMPLETE = "complete"; const STATE_CLOSED = "closed"; const STATE_CANCELED = "canceled"; public function getEntityId() { return null; } public function getIncrementId() { return null; } public function getGrandTotal() { return null; } public function getTotalDue() { return null; } public function getDiscountAmount() { return null; } public function getOrderCurrencyCode() { return null; } public function getStatus() { return null; } public function getShippingMethod() { return null; } public function getShippingDescription() { return null; } public function getCreatedAt() { return null; } public function getUpdatedAt() { return null; } public function getShippingAddress() { return null; } public function getBillingAddress() { return null; } public function getItems() { return null; } public function getData($k = null) { return null; } public function setData($k = null, $v = null) { return null; } public function getCustomerFirstname() { return null; } public function getCustomerLastname() { return null; } public function getCustomerEmail() { return null; } public function getState() { return null; } public function canShip() { return null; } public function getShipmentsCollection() { return null; } public function getAllItems() { return null; } public function addCommentToStatusHistory($comment = null) { return null; } public function save() { return null; } public function getIsVirtual() { return null; } public function getStoreId() { return null; } }');
+    eval('namespace Magento\Sales\Model; class Order implements \Magento\Sales\Api\Data\OrderInterface { const STATE_NEW = "new"; const STATE_PROCESSING = "processing"; const STATE_HOLDED = "holded"; const STATE_COMPLETE = "complete"; const STATE_CLOSED = "closed"; const STATE_CANCELED = "canceled"; public function getEntityId() { return null; } public function getIncrementId() { return null; } public function getGrandTotal() { return null; } public function getTotalDue() { return null; } public function getDiscountAmount() { return null; } public function getOrderCurrencyCode() { return null; } public function getStatus() { return null; } public function getShippingMethod() { return null; } public function getShippingDescription() { return null; } public function getCreatedAt() { return null; } public function getUpdatedAt() { return null; } public function getShippingAddress() { return null; } public function getBillingAddress() { return null; } public function getItems() { return null; } public function getData($k = null) { return null; } public function setData($k = null, $v = null) { return null; } public function getCustomerFirstname() { return null; } public function getCustomerLastname() { return null; } public function getCustomerEmail() { return null; } public function getState() { return null; } public function canShip() { return null; } public function getShipmentsCollection() { return null; } public function getAllItems() { return null; } public function addCommentToStatusHistory($comment = null) { return null; } public function save() { return null; } public function getIsVirtual() { return null; } public function getStoreId() { return null; } public function getCustomerNote() { return null; } public function getTaxAmount() { return null; } public function getTotalRefunded() { return null; } }');
 }
 
 // ShipmentCollection must implement IteratorAggregate so foreach works on mocks

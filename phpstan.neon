@@ -81,3 +81,6 @@ parameters:
         - '#Call to an undefined method Magento\\Sales\\Api\\ShipmentRepositoryInterface::#'
         # Order::STATE_COMPLETE referenced through the stub Order class
         - '#Access to undefined constant Magento\\Sales\\Model\\Order::STATE_COMPLETE#'
+        # ProductInterface is implemented by Product, which extends AbstractModel
+        # and so has getData(); our stub only stubs the interface.
+        - '#Call to an undefined method Magento\\Catalog\\Api\\Data\\ProductInterface::getData\(\)#'

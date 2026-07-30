@@ -62,6 +62,26 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <comment>When enabled, customers will receive an email notification when a shipment is created.</comment>
                 </field>
+                <field id="send_display_options" translate="label comment" type="select" sortOrder="11" showInDefault="1" showInWebsite="1">
+                    <label>Send product options to Bob Go</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>Forwards the variant, custom options and personalisation text the customer chose, so they appear on the Bob Go picking list.</comment>
+                </field>
+                <field id="display_options_blocklist" translate="label comment" type="textarea" sortOrder="12" showInDefault="1" showInWebsite="1">
+                    <label>Product options not to send</label>
+                    <comment>Comma- or newline-separated option keys to withhold, e.g. internal_note. Everything else is sent, so newly added product options flow without changing this.</comment>
+                    <depends><field id="send_display_options">1</field></depends>
+                </field>
+                <field id="dimension_attribute_length" translate="label comment" type="text" sortOrder="13" showInDefault="1" showInWebsite="1">
+                    <label>Length attribute code</label>
+                    <comment>Product attribute holding length in cm. Magento has no native dimension attributes; leave blank if you don't have one.</comment>
+                </field>
+                <field id="dimension_attribute_width" translate="label" type="text" sortOrder="14" showInDefault="1" showInWebsite="1">
+                    <label>Width attribute code</label>
+                </field>
+                <field id="dimension_attribute_height" translate="label" type="text" sortOrder="15" showInDefault="1" showInWebsite="1">
+                    <label>Height attribute code</label>
+                </field>
 <!-- Hidden: Track My Order feature not yet available -->
                 <field id="enable_track_order" translate="label" type="select" sortOrder="10" showInDefault="0" showInWebsite="0" showInStore="0">
                     <label>Enable Track my order</label>

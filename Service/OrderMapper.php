@@ -34,14 +34,26 @@ class OrderMapper implements OrderMapperInterface
     /** @var ScopeConfigInterface */
     private $scopeConfig;
 
+    /** @var DisplayOptionsMapper */
+    private $displayOptions;
+
+    /**
+     * Per-payload memo for product loads.
+     *
+     * @var array<int,mixed>
+     */
+    private $productCache = [];
+
     public function __construct(
         ProductRepositoryInterface $productRepository,
         StoreManagerInterface $storeManager,
-        ScopeConfigInterface $scopeConfig
+        ScopeConfigInterface $scopeConfig,
+        DisplayOptionsMapper $displayOptions
     ) {
         $this->productRepository = $productRepository;
         $this->storeManager = $storeManager;
         $this->scopeConfig = $scopeConfig;
+        $this->displayOptions = $displayOptions;
     }
     /**
      * @param OrderInterface $order
@@ -76,7 +88,7 @@ class OrderMapper implements OrderMapperInterface
     {
         $billingAddress = $order->getBillingAddress();
 
-        return [
+        $payload = [
             'channel_ref_id'                    => (string) $order->getEntityId(),
             'channel_order_number'              => $order->getIncrementId(),
             'customer_name'                     => $order->getCustomerFirstname() ?: ($billingAddress ? $billingAddress->getFirstname() : ''),
@@ -91,6 +103,48 @@ class OrderMapper implements OrderMapperInterface
             'delivery_address'                  => $this->mapShippingAddress($order),
             'order_items'                       => $this->mapItems($order),
         ];
+
+        // Omitted when empty or zero rather than sent as blanks, so the payload
+        // hash doesn't churn on fields the store doesn't populate.
+        $note = trim((string) ($order->getCustomerNote() ?? ''));
+        if ($note !== '') {
+            $payload['note'] = $note;
+        }
+
+        $tax = round((float) $order->getTaxAmount(), 2);
+        if ($tax > 0.0) {
+            $payload['total_tax'] = $tax;
+        }
+
+        // Magento records discounts as negative; Bob Go wants the magnitude.
+        $discount = round(abs((float) $order->getDiscountAmount()), 2);
+        if ($discount > 0.0) {
+            $payload['total_discount'] = $discount;
+        }
+
+        $placedAt = $this->toIso8601($order->getCreatedAt());
+        if ($placedAt !== null) {
+            $payload['date_placed_on_channel'] = $placedAt;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Magento stores created_at as a UTC 'Y-m-d H:i:s' string.
+     *
+     * @param mixed $value
+     */
+    private function toIso8601($value): ?string
+    {
+        if (!is_string($value) || trim($value) === '') {
+            return null;
+        }
+        try {
+            return (new \DateTimeImmutable($value, new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 
     /**
@@ -117,13 +171,19 @@ class OrderMapper implements OrderMapperInterface
      */
     private function mapPaymentStatus(OrderInterface $order): string
     {
-        $totalDue = (float) $order->getTotalDue();
-
-        if ($totalDue <= 0.0) {
-            return 'paid';
+        // Refunded wins: an order refunded in full is not "paid", and telling Bob
+        // Go it is invites a shipment for something the customer got money back for.
+        if ((float) $order->getTotalRefunded() > 0.0) {
+            return 'refunded';
         }
 
-        return 'unpaid';
+        // Awaiting an offline payment or a gateway review — genuinely different
+        // from a customer who simply hasn't paid.
+        if (in_array((string) $order->getState(), ['pending_payment', 'payment_review'], true)) {
+            return 'pending';
+        }
+
+        return (float) $order->getTotalDue() <= 0.0 ? 'paid' : 'unpaid';
     }
 
     /**
@@ -260,7 +320,66 @@ class OrderMapper implements OrderMapperInterface
             $mapped['id'] = (int) $bobgoItemId;
         }
 
+        // What the customer chose: variant attributes, custom options,
+        // personalisation text. This is what a picker in the warehouse needs.
+        $displayOptions = $this->displayOptions->map($item);
+        if (!empty($displayOptions)) {
+            $mapped['display_options'] = $displayOptions;
+        }
+
+        foreach ($this->itemDimensions($item) as $key => $value) {
+            $mapped[$key] = $value;
+        }
+
         return $mapped;
+    }
+
+    /**
+     * Per-item dimensions, when the merchant has told us which product attributes
+     * hold them.
+     *
+     * Magento has no native length/width/height attributes, so there is nothing to
+     * read by default — hence the config. Omitted entirely when unset or zero,
+     * because a zero is a claim about the parcel rather than an absence of one.
+     *
+     * @return array<string,float>
+     */
+    private function itemDimensions(OrderItemInterface $item): array
+    {
+        $codes = [
+            'unit_length_cm' => $this->dimensionAttribute('length'),
+            'unit_width_cm' => $this->dimensionAttribute('width'),
+            'unit_height_cm' => $this->dimensionAttribute('height'),
+        ];
+        if (array_filter($codes) === []) {
+            return [];
+        }
+
+        $product = $this->loadProduct($item);
+        if ($product === null) {
+            return [];
+        }
+
+        $dimensions = [];
+        foreach ($codes as $payloadKey => $attributeCode) {
+            if ($attributeCode === null) {
+                continue;
+            }
+            $value = $product->getData($attributeCode);
+            if (is_numeric($value) && (float) $value > 0.0) {
+                $dimensions[$payloadKey] = round((float) $value, 2);
+            }
+        }
+        return $dimensions;
+    }
+
+    private function dimensionAttribute(string $which): ?string
+    {
+        $code = $this->scopeConfig->getValue(
+            'carriers/bobgo/dimension_attribute_' . $which,
+            ScopeInterface::SCOPE_STORE
+        );
+        return is_string($code) && trim($code) !== '' ? trim($code) : null;
     }
 
     /**
@@ -295,19 +414,46 @@ class OrderMapper implements OrderMapperInterface
 
     private function getProductImageUrl(OrderItemInterface $item): ?string
     {
-        try {
-            $product = $this->productRepository->getById((int) $item->getProductId());
-            $imagePath = $product->getImage();
-
-            if (!$imagePath || $imagePath === 'no_selection') {
-                return null;
-            }
-
-            $mediaBaseUrl = $this->storeManager->getStore()->getBaseUrl(UrlInterface::URL_TYPE_MEDIA);
-
-            return rtrim($mediaBaseUrl, '/') . '/catalog/product' . $imagePath;
-        } catch (NoSuchEntityException $e) {
+        $product = $this->loadProduct($item);
+        if ($product === null) {
             return null;
         }
+
+        $imagePath = $product->getImage();
+        if (!$imagePath || $imagePath === 'no_selection') {
+            return null;
+        }
+
+        $mediaBaseUrl = $this->storeManager->getStore()->getBaseUrl(UrlInterface::URL_TYPE_MEDIA);
+
+        return rtrim($mediaBaseUrl, '/') . '/catalog/product' . $imagePath;
+    }
+
+    /**
+     * Load an item's product once per payload build.
+     *
+     * Both the image URL and the dimensions need it, and mapping an order calls
+     * this once per line — so without the memo a ten-line order did twenty
+     * product loads.
+     *
+     * @return \Magento\Catalog\Api\Data\ProductInterface|null
+     */
+    private function loadProduct(OrderItemInterface $item)
+    {
+        $productId = (int) $item->getProductId();
+        if ($productId <= 0) {
+            return null;
+        }
+        if (array_key_exists($productId, $this->productCache)) {
+            return $this->productCache[$productId];
+        }
+
+        try {
+            $this->productCache[$productId] = $this->productRepository->getById($productId);
+        } catch (NoSuchEntityException $e) {
+            $this->productCache[$productId] = null;
+        }
+
+        return $this->productCache[$productId];
     }
 }

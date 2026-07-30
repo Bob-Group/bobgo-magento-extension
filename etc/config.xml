@@ -13,6 +13,7 @@
                 <enable_fulfillment_sync>0</enable_fulfillment_sync>
                 <notify_customer_on_shipment>1</notify_customer_on_shipment>
                 <max_rates>20</max_rates>
+                <send_display_options>1</send_display_options>
             </bobgo>
         </carriers>
 

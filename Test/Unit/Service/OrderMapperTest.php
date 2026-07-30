@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace BobGroup\BobGo\Test\Unit\Service;
 
+use BobGroup\BobGo\Service\DisplayOptionsMapper;
 use BobGroup\BobGo\Service\OrderMapper;
 use Magento\Catalog\Api\Data\ProductInterface;
 use Magento\Catalog\Api\ProductRepositoryInterface;
@@ -57,7 +58,12 @@ class OrderMapperTest extends TestCase
         $this->productRepository->method('getById')
             ->willThrowException(new NoSuchEntityException());
 
-        $this->mapper = new OrderMapper($this->productRepository, $this->storeManager, $this->scopeConfig);
+        $this->mapper = new OrderMapper(
+            $this->productRepository,
+            $this->storeManager,
+            $this->scopeConfig,
+            new DisplayOptionsMapper($this->scopeConfig)
+        );
     }
 
     public function testMapOrderToPayload(): void
@@ -231,7 +237,10 @@ class OrderMapperTest extends TestCase
         $product->method('getImage')->willReturn('/t/e/test-product.jpg');
         $productRepo->method('getById')->willReturn($product);
 
-        $mapper = new OrderMapper($productRepo, $this->storeManager, $this->scopeConfig);
+        $mapper = new OrderMapper(
+            $productRepo, $this->storeManager, $this->scopeConfig,
+            new DisplayOptionsMapper($this->scopeConfig)
+        );
 
         $item = $this->createMock(OrderItemInterface::class);
         $item->method('getParentItemId')->willReturn(null);
@@ -266,7 +275,10 @@ class OrderMapperTest extends TestCase
         $product->method('getImage')->willReturn('no_selection');
         $productRepo->method('getById')->willReturn($product);
 
-        $mapper = new OrderMapper($productRepo, $this->storeManager, $this->scopeConfig);
+        $mapper = new OrderMapper(
+            $productRepo, $this->storeManager, $this->scopeConfig,
+            new DisplayOptionsMapper($this->scopeConfig)
+        );
 
         $order = $this->createOrderMock();
         $payload = $mapper->mapOrderToPayload($order);
@@ -345,7 +357,10 @@ class OrderMapperTest extends TestCase
         // Override scopeConfig with one that reports LBS.
         $lbsConfig = $this->createMock(\Magento\Framework\App\Config\ScopeConfigInterface::class);
         $lbsConfig->method('getValue')->willReturn('lbs');
-        $mapper = new OrderMapper($this->productRepository, $this->storeManager, $lbsConfig);
+        $mapper = new OrderMapper(
+            $this->productRepository, $this->storeManager, $lbsConfig,
+            new DisplayOptionsMapper($this->scopeConfig)
+        );
 
         $item = $this->createMock(OrderItemInterface::class);
         $item->method('getParentItemId')->willReturn(null);
@@ -483,6 +498,101 @@ class OrderMapperTest extends TestCase
             ['bobgo_order_id', $config['bobgo_order_id']],
         ]);
 
+        return $order;
+    }
+
+    // -------------------------------------------------------- payload completeness
+
+    /**
+     * Omitted rather than sent as zeros/blanks, so the sync hash doesn't churn on
+     * fields the store never populates.
+     */
+    public function testOptionalTotalsAndNoteAreOmittedWhenEmpty(): void
+    {
+        $payload = $this->mapper->mapOrderToPayload($this->orderWith([]));
+
+        $this->assertArrayNotHasKey('note', $payload);
+        $this->assertArrayNotHasKey('total_tax', $payload);
+        $this->assertArrayNotHasKey('total_discount', $payload);
+        $this->assertArrayNotHasKey('date_placed_on_channel', $payload);
+    }
+
+    public function testCarriesNoteTaxDiscountAndPlacedDate(): void
+    {
+        $payload = $this->mapper->mapOrderToPayload($this->orderWith([
+            'getCustomerNote' => '  Leave at the back door  ',
+            'getTaxAmount' => 19.5,
+            // Magento records discounts as negative; Bob Go wants the magnitude.
+            'getDiscountAmount' => -50.0,
+            'getCreatedAt' => '2026-07-30 09:15:00',
+        ]));
+
+        $this->assertSame('Leave at the back door', $payload['note']);
+        $this->assertSame(19.5, $payload['total_tax']);
+        $this->assertSame(50.0, $payload['total_discount']);
+        $this->assertSame('2026-07-30T09:15:00+00:00', $payload['date_placed_on_channel']);
+    }
+
+    /**
+     * A fully refunded order is not "paid" — telling Bob Go it is invites a
+     * shipment for something the customer got their money back for.
+     */
+    public function testRefundedBeatsPaid(): void
+    {
+        $payload = $this->mapper->mapOrderToPayload($this->orderWith([
+            'getTotalDue' => 0.0,
+            'getTotalRefunded' => 100.0,
+        ]));
+
+        $this->assertSame('refunded', $payload['payment_status']);
+    }
+
+    /**
+     * Awaiting an offline payment or a gateway review is genuinely different from
+     * a customer who simply hasn't paid.
+     */
+    public function testAwaitingPaymentIsPendingNotUnpaid(): void
+    {
+        $payload = $this->mapper->mapOrderToPayload($this->orderWith([
+            'getTotalDue' => 100.0,
+            'getState' => 'payment_review',
+        ]));
+
+        $this->assertSame('pending', $payload['payment_status']);
+    }
+
+    /**
+     * Build an order whose only interesting values are the ones named.
+     *
+     * PHPUnit keeps the first stub for a method, so overriding after the fact
+     * silently does nothing — every value a test cares about has to be set here.
+     *
+     * @param array<string,mixed> $values
+     * @return OrderInterface
+     */
+    private function orderWith(array $values): OrderInterface
+    {
+        $order = $this->createMock(OrderInterface::class);
+        $defaults = [
+            'getEntityId' => 100,
+            'getIncrementId' => '000000100',
+            'getTotalDue' => 0.0,
+            'getTotalRefunded' => 0.0,
+            'getState' => 'processing',
+            'getOrderCurrencyCode' => 'ZAR',
+            'getShippingMethod' => 'bobgo_standard',
+            'getShippingDescription' => 'Standard Delivery',
+            'getItems' => [],
+            'getShippingAddress' => null,
+            'getBillingAddress' => null,
+            'getCustomerNote' => null,
+            'getTaxAmount' => 0.0,
+            'getDiscountAmount' => 0.0,
+            'getCreatedAt' => null,
+        ];
+        foreach (array_merge($defaults, $values) as $method => $value) {
+            $order->method($method)->willReturn($value);
+        }
         return $order;
     }
 }
