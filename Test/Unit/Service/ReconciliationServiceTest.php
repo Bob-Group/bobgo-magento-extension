@@ -3,29 +3,32 @@ declare(strict_types=1);
 
 namespace BobGroup\BobGo\Test\Unit\Service;
 
-use BobGroup\BobGo\Api\BobGoApiClient;
-use BobGroup\BobGo\Api\BobGoApiException;
 use BobGroup\BobGo\Model\Config\ApiConfig;
+use BobGroup\BobGo\Service\FulfilmentSyncService;
 use BobGroup\BobGo\Service\ReconciliationService;
-use BobGroup\BobGo\Service\SyncLogger;
+use BobGroup\BobGo\Service\WebhookSubscriptionService;
 use Magento\Framework\Api\SearchCriteria;
 use Magento\Framework\Api\SearchCriteriaBuilder;
-use Magento\Framework\Stdlib\DateTime\DateTime;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\Data\OrderSearchResultInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Reconciliation now owns only the batch — which orders to look at and how many.
+ * The per-order work is FulfilmentSyncService, deliberately the same code path
+ * the webhook handlers use, which is what makes this a genuine safety net rather
+ * than a display refresh.
+ */
 class ReconciliationServiceTest extends TestCase
 {
     private $orderRepositoryMock;
     private $searchCriteriaBuilderMock;
-    private $apiClientMock;
+    private $fulfilmentSyncMock;
     private $apiConfigMock;
-    private $syncLoggerMock;
+    private $webhookSubscriptionsMock;
     private $loggerMock;
-    private $dateTimeMock;
     /** @var ReconciliationService */
     private $service;
 
@@ -33,12 +36,10 @@ class ReconciliationServiceTest extends TestCase
     {
         $this->orderRepositoryMock = $this->createMock(OrderRepositoryInterface::class);
         $this->searchCriteriaBuilderMock = $this->createMock(SearchCriteriaBuilder::class);
-        $this->apiClientMock = $this->createMock(BobGoApiClient::class);
+        $this->fulfilmentSyncMock = $this->createMock(FulfilmentSyncService::class);
         $this->apiConfigMock = $this->createMock(ApiConfig::class);
-        $this->syncLoggerMock = $this->createMock(SyncLogger::class);
+        $this->webhookSubscriptionsMock = $this->createMock(WebhookSubscriptionService::class);
         $this->loggerMock = $this->createMock(LoggerInterface::class);
-        $this->dateTimeMock = $this->createMock(DateTime::class);
-        $this->dateTimeMock->method('gmtDate')->willReturn('2026-05-19 12:00:00');
 
         $this->searchCriteriaBuilderMock->method('addFilter')->willReturnSelf();
         $this->searchCriteriaBuilderMock->method('setPageSize')->willReturnSelf();
@@ -48,11 +49,10 @@ class ReconciliationServiceTest extends TestCase
         $this->service = new ReconciliationService(
             $this->orderRepositoryMock,
             $this->searchCriteriaBuilderMock,
-            $this->apiClientMock,
+            $this->fulfilmentSyncMock,
             $this->apiConfigMock,
-            $this->syncLoggerMock,
-            $this->loggerMock,
-            $this->dateTimeMock
+            $this->webhookSubscriptionsMock,
+            $this->loggerMock
         );
     }
 
@@ -61,6 +61,7 @@ class ReconciliationServiceTest extends TestCase
         $this->apiConfigMock->method('isFulfillmentSyncEnabled')->willReturn(false);
         $this->apiConfigMock->expects($this->never())->method('isConfigured');
         $this->orderRepositoryMock->expects($this->never())->method('getList');
+        $this->webhookSubscriptionsMock->expects($this->never())->method('verifyAndRepair');
 
         $this->service->run();
     }
@@ -74,151 +75,71 @@ class ReconciliationServiceTest extends TestCase
         $this->service->run();
     }
 
-    public function testRunIteratesCandidateOrders(): void
+    /**
+     * The subscription health check rides along on this job. It is the only way
+     * we ever discover that Bob Go disabled our subscription after three days of
+     * failed deliveries — nothing notifies the integration.
+     */
+    public function testRunPerformsTheSubscriptionHealthCheck(): void
     {
-        $this->apiConfigMock->method('isFulfillmentSyncEnabled')->willReturn(true);
-        $this->apiConfigMock->method('isConfigured')->willReturn(true);
+        $this->enable();
+        $this->stubOrderList([]);
 
-        $order = $this->makeOrder(42, 'bobgo_ord_xyz', '');
-        $this->stubOrderList([$order]);
-
-        $this->apiClientMock->expects($this->once())
-            ->method('get')
-            ->with('order-fulfillments', ['order_id' => 'bobgo_ord_xyz'])
-            ->willReturn(['order_fulfillments' => [$this->bobGoFulfillment('UASDRTR3', 'Demo Couriers', 'collected')]]);
-
-        $this->orderRepositoryMock->expects($this->once())->method('save')->with($order);
-        $this->syncLoggerMock->expects($this->once())->method('logOutbound');
+        $this->webhookSubscriptionsMock->expects($this->once())->method('verifyAndRepair');
 
         $this->service->run();
     }
 
-    public function testReconcileOrderPersistsShipmentsWhenChanged(): void
+    public function testRunSyncsEachCandidateOrder(): void
     {
-        $writes = [];
-        $order = $this->makeOrder(7, 'bobgo_ord_a', '[]', $writes);
+        $this->enable();
+        $orders = [$this->order(41), $this->order(42)];
+        $this->stubOrderList($orders);
 
-        $this->apiClientMock->method('get')
-            ->willReturn(['order_fulfillments' => [$this->bobGoFulfillment('UASDRTR3', 'Demo Couriers', 'collected')]]);
+        $this->fulfilmentSyncMock->expects($this->exactly(2))->method('syncOrder');
 
-        $this->orderRepositoryMock->expects($this->once())->method('save');
-        $this->service->reconcileOrder($order);
-
-        $this->assertArrayHasKey('bobgo_shipments', $writes);
-        $decoded = json_decode((string) $writes['bobgo_shipments'], true);
-        $this->assertSame('UASDRTR3', $decoded[0]['tracking_number']);
-        $this->assertSame('Demo Couriers', $decoded[0]['courier']);
-        $this->assertSame('collected', $decoded[0]['status']);
-        $this->assertSame('2026-05-19 12:00:00', $writes['bobgo_last_synced']);
-    }
-
-    public function testReconcileOrderIsNoOpWhenShipmentsUnchanged(): void
-    {
-        $normalised = [[
-            'tracking_number'          => 'UASDRTR3',
-            'provider_tracking_number' => 'XK3VVL',
-            'courier'                  => 'Demo Couriers',
-            'provider_slug'            => 'demo',
-            'service_level'            => 'Bob Box',
-            'status'                   => 'collected',
-        ]];
-        $existing = (string) json_encode($normalised);
-        $order = $this->makeOrder(7, 'bobgo_ord_a', $existing);
-
-        $this->apiClientMock->method('get')
-            ->willReturn(['order_fulfillments' => [$this->bobGoFulfillment('UASDRTR3', 'Demo Couriers', 'collected')]]);
-
-        // Nothing changed → no write to the repository.
-        $this->orderRepositoryMock->expects($this->never())->method('save');
-        $this->syncLoggerMock->expects($this->once())->method('logOutbound');
-
-        $this->service->reconcileOrder($order);
-    }
-
-    public function testReconcileOrderSkipsWhenBobgoOrderIdMissing(): void
-    {
-        $order = $this->makeOrder(7, '', '');
-
-        $this->apiClientMock->expects($this->never())->method('get');
-        $this->orderRepositoryMock->expects($this->never())->method('save');
-
-        $this->service->reconcileOrder($order);
-    }
-
-    public function testReconcileOrderHandlesApiError(): void
-    {
-        $order = $this->makeOrder(7, 'bobgo_ord_a', '');
-
-        $this->apiClientMock->method('get')
-            ->willThrowException(new BobGoApiException('boom', 500, '', 'order-fulfillments'));
-
-        $this->loggerMock->expects($this->once())->method('warning');
-        $this->syncLoggerMock->expects($this->once())->method('logOutbound')
-            ->with($this->anything(), $this->anything(), $this->anything(), 500, false);
-
-        $this->service->reconcileOrder($order);
-    }
-
-    public function testExtractShipmentsHandlesPlainArrayResponse(): void
-    {
-        $this->apiConfigMock->method('isFulfillmentSyncEnabled')->willReturn(true);
-        $this->apiConfigMock->method('isConfigured')->willReturn(true);
-
-        $order = $this->makeOrder(42, 'bobgo_ord_xyz', '');
-        $this->stubOrderList([$order]);
-
-        // Response is itself the shipments list (no wrapper key).
-        $this->apiClientMock->method('get')
-            ->willReturn([['tracking_number' => 'A'], ['tracking_number' => 'B']]);
-
-        $this->orderRepositoryMock->expects($this->once())->method('save');
         $this->service->run();
     }
 
-    public function testNormalisesNestedBobGoShipmentFields(): void
+    public function testCandidateOrdersAreDedupedAcrossTheTwoQueries(): void
     {
-        $writes = [];
-        $order = $this->makeOrder(7, 'bobgo_ord_a', '[]', $writes);
+        $this->enable();
+        // Same order returned by both the active-state and complete-lookback
+        // queries; it must be synced once, not twice.
+        $order = $this->order(42);
+        $this->stubOrderList([$order]);
 
-        $this->apiClientMock->method('get')
-            ->willReturn(['order_fulfillments' => [$this->bobGoFulfillment('UASDRTR3', 'Demo Couriers', 'collected')]]);
+        $this->fulfilmentSyncMock->expects($this->once())->method('syncOrder');
 
+        $this->service->run();
+    }
+
+    /**
+     * One bad order must not end the batch.
+     */
+    public function testReconcileOrderIsolatesFailures(): void
+    {
+        $order = $this->order(42);
+        $this->fulfilmentSyncMock->method('syncOrder')
+            ->willThrowException(new \RuntimeException('shipment creation blew up'));
+
+        $this->loggerMock->expects($this->once())->method('error');
+
+        // Must not propagate.
         $this->service->reconcileOrder($order);
-
-        $decoded = json_decode((string) $writes['bobgo_shipments'], true);
-        $this->assertCount(1, $decoded);
-        $this->assertSame([
-            'tracking_number'          => 'UASDRTR3',
-            'provider_tracking_number' => 'XK3VVL',
-            'courier'                  => 'Demo Couriers',
-            'provider_slug'            => 'demo',
-            'service_level'            => 'Bob Box',
-            'status'                   => 'collected',
-        ], $decoded[0]);
     }
 
     // --- helpers ---------------------------------------------------------
 
-    /**
-     * @return array<string,mixed>
-     */
-    private function bobGoFulfillment(string $tracking, string $courier, string $status): array
+    private function enable(): void
     {
-        return [
-            'order_fulfillment' => ['id' => 2546, 'channel_ref_id' => ''],
-            'buyer_collection'  => null,
-            'shipment' => [
-                'tracking_reference'          => $tracking,
-                'provider_tracking_reference' => 'XK3VVL',
-                'provider_slug'               => 'demo',
-                'status'                      => $status,
-                'provider'      => ['name' => $courier, 'slug' => 'demo'],
-                'service_level' => ['name' => 'Bob Box', 'code' => 'BOXL-S'],
-            ],
-        ];
+        $this->apiConfigMock->method('isFulfillmentSyncEnabled')->willReturn(true);
+        $this->apiConfigMock->method('isConfigured')->willReturn(true);
     }
 
-
+    /**
+     * @param array<int,OrderInterface> $orders
+     */
     private function stubOrderList(array $orders): void
     {
         $searchResult = $this->createMock(OrderSearchResultInterface::class);
@@ -226,25 +147,13 @@ class ReconciliationServiceTest extends TestCase
         $this->orderRepositoryMock->method('getList')->willReturn($searchResult);
     }
 
-    private function makeOrder(int $entityId, string $bobgoOrderId, string $bobgoShipments, ?array &$writes = null): OrderInterface
+    /**
+     * @return OrderInterface
+     */
+    private function order(int $entityId): OrderInterface
     {
         $order = $this->createMock(OrderInterface::class);
         $order->method('getEntityId')->willReturn($entityId);
-
-        $store = [
-            'bobgo_order_id'  => $bobgoOrderId,
-            'bobgo_shipments' => $bobgoShipments,
-        ];
-        $order->method('getData')->willReturnCallback(function ($key = null) use (&$store) {
-            return $store[$key] ?? null;
-        });
-        $order->method('setData')->willReturnCallback(function ($k, $v = null) use (&$store, &$writes) {
-            $store[$k] = $v;
-            if ($writes !== null) {
-                $writes[$k] = $v;
-            }
-            return null;
-        });
         return $order;
     }
 }

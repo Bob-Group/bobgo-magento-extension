@@ -157,7 +157,8 @@ $stubs = [
         'Magento\Framework\Api\SearchCriteria' => [],
         // Note: Magento\Sales\Model\Order is defined separately below (implements OrderInterface)
 
-        'Magento\Sales\Model\Order\Shipment' => ['getTracks', 'getAllTracks', 'getEntityId', 'addTrack', 'save', 'getLastItem'],
+        'Magento\Sales\Model\Order\Shipment' => ['getTracks', 'getAllTracks', 'getEntityId', 'addTrack', 'save', 'getLastItem', 'getData', 'setData'],
+        'Magento\Sales\Model\Order\Item' => ['getItemId', 'getParentItemId', 'getProductId', 'getProductType', 'getSku', 'getName', 'getPriceInclTax', 'getQtyOrdered', 'getQtyToShip', 'getWeight', 'getData', 'setData'],
         'Magento\Sales\Model\Order\Shipment\Track' => ['getTrackNumber', 'setTrackNumber', 'getTitle', 'setCarrierCode', 'setTitle', 'save'],
         'Magento\Sales\Model\Order\Shipment\TrackFactory' => ['create'],
         // Note: ShipmentCollection is defined separately below (implements IteratorAggregate)
@@ -283,6 +284,12 @@ if (!interface_exists(\Magento\Framework\App\Action\HttpPostActionInterface::cla
 }
 if (!interface_exists(\Magento\Sales\Api\ShipmentRepositoryInterface::class, false)) {
     eval('namespace Magento\Sales\Api; interface ShipmentRepositoryInterface { public function get($id); public function save($shipment); }');
+}
+if (!interface_exists(\Magento\Sales\Api\OrderManagementInterface::class, false)) {
+    eval('namespace Magento\Sales\Api; interface OrderManagementInterface { public function cancel($id); public function hold($id); public function unHold($id); }');
+}
+if (!class_exists(\Magento\Framework\FlagManager::class, false)) {
+    eval('namespace Magento\Framework; class FlagManager { public function getFlagData($code) { return null; } public function saveFlag($code, $value) { return true; } public function deleteFlag($code) { return true; } }');
 }
 if (!interface_exists(\Magento\Framework\Api\AttributeInterface::class, false)) {
     eval('namespace Magento\Framework\Api; interface AttributeInterface { public function getAttributeCode(); public function getValue(); public function setAttributeCode($code); public function setValue($value); }');

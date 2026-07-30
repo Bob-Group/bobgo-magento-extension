@@ -3,317 +3,204 @@ declare(strict_types=1);
 
 namespace BobGroup\BobGo\Test\Unit\Service;
 
-use BobGroup\BobGo\Model\Config\ApiConfig;
+use BobGroup\BobGo\Service\FulfilmentSyncService;
 use BobGroup\BobGo\Service\FulfillmentService;
-use Magento\Sales\Api\Data\ShipmentItemCreationInterface;
-use Magento\Sales\Api\Data\ShipmentItemCreationInterfaceFactory;
-use Magento\Sales\Api\Data\ShipmentTrackCreationInterface;
-use Magento\Sales\Api\Data\ShipmentTrackCreationInterfaceFactory;
+use BobGroup\BobGo\Service\OrderPushService;
+use Magento\Framework\Stdlib\DateTime\DateTime;
+use Magento\Sales\Api\OrderManagementInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
-use Magento\Sales\Api\ShipOrderInterface;
-use Magento\Sales\Api\ShipmentRepositoryInterface;
-use Magento\Sales\Model\Order\Shipment;
-use Magento\Sales\Model\Order\Shipment\Track;
-use Magento\Sales\Model\ResourceModel\Order\Shipment\Collection as ShipmentCollection;
+use Magento\Sales\Model\Order;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
+/**
+ * The webhook handlers are now thin: stamp, refresh from the API, and apply the
+ * one thing that can only come from the webhook body (the human-readable
+ * tracking status, and cancellation).
+ *
+ * What these tests are really guarding is that the handlers do NOT patch local
+ * fulfilment state from the payload. That was the source of the race between
+ * fulfillment/created and tracking/updated, and of the "webhook is the only path
+ * that can ever ship an order" problem.
+ */
 class FulfillmentServiceTest extends TestCase
 {
-    /**
-     * @var FulfillmentService
-     */
+    private $orderRepository;
+    private $orderManagement;
+    private $fulfilmentSync;
+    private $orderPushService;
+    private $logger;
+    /** @var FulfillmentService */
     private $service;
-
-    /**
-     * @var \PHPUnit\Framework\MockObject\MockObject
-     */
-    private $orderRepositoryMock;
-
-    /**
-     * @var \PHPUnit\Framework\MockObject\MockObject
-     */
-    private $shipOrderMock;
-
-    /**
-     * @var \PHPUnit\Framework\MockObject\MockObject
-     */
-    private $trackCreationFactoryMock;
-
-    /**
-     * @var \PHPUnit\Framework\MockObject\MockObject
-     */
-    private $itemCreationFactoryMock;
-
-    /**
-     * @var \PHPUnit\Framework\MockObject\MockObject
-     */
-    private $apiConfigMock;
-
-    /**
-     * @var \PHPUnit\Framework\MockObject\MockObject
-     */
-    private $loggerMock;
 
     protected function setUp(): void
     {
-        $this->orderRepositoryMock = $this->createMock(OrderRepositoryInterface::class);
-        $this->shipOrderMock = $this->createMock(ShipOrderInterface::class);
-        $this->trackCreationFactoryMock = $this->createMock(ShipmentTrackCreationInterfaceFactory::class);
-        $this->itemCreationFactoryMock = $this->createMock(ShipmentItemCreationInterfaceFactory::class);
-        $this->apiConfigMock = $this->createMock(ApiConfig::class);
-        $this->loggerMock = $this->createMock(LoggerInterface::class);
-        $dateTimeMock = $this->createMock(\Magento\Framework\Stdlib\DateTime\DateTime::class);
-        $dateTimeMock->method('gmtDate')->willReturn('2026-05-19 12:00:00');
+        $this->orderRepository = $this->createMock(OrderRepositoryInterface::class);
+        $this->orderManagement = $this->createMock(OrderManagementInterface::class);
+        $this->fulfilmentSync = $this->createMock(FulfilmentSyncService::class);
+        $this->orderPushService = $this->createMock(OrderPushService::class);
+        $this->logger = $this->createMock(LoggerInterface::class);
 
-        $shipmentRepositoryMock = $this->createMock(ShipmentRepositoryInterface::class);
+        $dateTime = $this->createMock(DateTime::class);
+        $dateTime->method('gmtDate')->willReturn('2026-05-19 12:00:00');
 
         $this->service = new FulfillmentService(
-            $this->orderRepositoryMock,
-            $this->shipOrderMock,
-            $this->trackCreationFactoryMock,
-            $this->itemCreationFactoryMock,
-            $this->apiConfigMock,
-            $this->loggerMock,
-            $dateTimeMock,
-            $shipmentRepositoryMock
+            $this->orderRepository,
+            $this->orderManagement,
+            $this->fulfilmentSync,
+            $this->orderPushService,
+            $dateTime,
+            $this->logger
         );
     }
 
-    public function testProcessFulfillmentCreatesShipment(): void
+    // ------------------------------------------------------------ fulfillment/created
+
+    public function testFulfillmentStampsWebhookTimestampAndRefreshesFromApi(): void
     {
-        $orderId = 42;
-        $incrementId = '000000042';
-        $data = [
-            'channel_order_number' => $incrementId,
-            'id' => 'ful_123',
+        $writes = [];
+        $order = $this->order(42, $writes);
+
+        $this->fulfilmentSync->expects($this->once())
+            ->method('syncOrder')
+            ->with($order, [['sku' => 'SKU-A', 'fulfilled_qty' => 1]]);
+
+        $this->service->processFulfillment($order, [
+            'id' => 2546,
             'method_reference' => 'TRACK001',
-            'order_items' => [],
-        ];
+            'order_items' => [['sku' => 'SKU-A', 'fulfilled_qty' => 1]],
+        ]);
 
-        $orderMock = $this->createMock(\Magento\Sales\Model\Order::class);
-        $orderMock->method('getEntityId')->willReturn($orderId);
-        $orderMock->method('canShip')->willReturn(true);
-
-        // No existing shipments (for idempotency check)
-        $shipmentCollectionMock = $this->createMock(ShipmentCollection::class);
-        $shipmentCollectionMock->method('getSize')->willReturn(0);
-        $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
-        // Track creation
-        $trackMock = $this->createMock(ShipmentTrackCreationInterface::class);
-        $trackMock->expects($this->once())->method('setTrackNumber')->with('TRACK001');
-        $trackMock->expects($this->once())->method('setCarrierCode')->with('bobgo');
-        $trackMock->expects($this->once())->method('setTitle')->with('Bob Go');
-        $this->trackCreationFactoryMock->method('create')->willReturn($trackMock);
-
-        $this->apiConfigMock->method('shouldNotifyCustomer')->willReturn(false);
-
-        // Expect shipOrder to be called
-        $this->shipOrderMock->expects($this->once())
-            ->method('execute')
-            ->with($orderId, [], false, false, null, [$trackMock]);
-
-        $this->service->processFulfillment($orderMock, $data);
+        $this->assertSame('2026-05-19 12:00:00', $writes['bobgo_last_webhook']);
     }
 
-    public function testProcessFulfillmentSkipsWhenOrderNotShippable(): void
+    public function testFulfillmentPassesNoItemsWhenThePayloadHasNone(): void
     {
-        $orderId = 42;
-        $incrementId = '000000042';
-        $data = [
-            'channel_order_number' => $incrementId,
-            'id' => 'ful_123',
-            'method_reference' => '',
-            'order_items' => [],
-        ];
+        $order = $this->order(42);
 
-        $orderMock = $this->createMock(\Magento\Sales\Model\Order::class);
-        $orderMock->method('getEntityId')->willReturn($orderId);
-        $orderMock->method('getState')->willReturn('complete');
-        $orderMock->method('canShip')->willReturn(false);
+        $this->fulfilmentSync->expects($this->once())->method('syncOrder')->with($order, []);
 
-        // Warning, not info: canShip() is also false for held and
-        // payment-review orders, where the merchant HAS fulfilled in Bob Go and
-        // silently getting no Magento shipment is a real problem.
-        $this->loggerMock->expects($this->once())
-            ->method('warning')
-            ->with(
-                'Bob Go fulfillment: order cannot be shipped',
-                $this->callback(function ($context) use ($orderId) {
-                    return $context['order_id'] === $orderId && $context['state'] === 'complete';
-                })
-            );
-
-        // shipOrder should never be called
-        $this->shipOrderMock->expects($this->never())->method('execute');
-
-        $this->service->processFulfillment($orderMock, $data);
+        $this->service->processFulfillment($order, ['id' => 2546, 'method_reference' => 'TRACK001']);
     }
 
-    public function testProcessFulfillmentIdempotency(): void
+    // -------------------------------------------------------------- tracking/updated
+
+    public function testTrackingUpdateRefreshesThenCommentsTheStatus(): void
     {
-        $orderId = 42;
-        $incrementId = '000000042';
-        $data = [
-            'channel_order_number' => $incrementId,
-            'id' => 'ful_123',
-            'method_reference' => 'TRACK001',
-            'order_items' => [],
-        ];
+        $order = $this->order(42);
 
-        $orderMock = $this->createMock(\Magento\Sales\Model\Order::class);
-        $orderMock->method('getEntityId')->willReturn($orderId);
-        $orderMock->method('canShip')->willReturn(true);
-
-        // Existing shipment with matching tracking number
-        $existingTrackMock = $this->createMock(Track::class);
-        $existingTrackMock->method('getTrackNumber')->willReturn('TRACK001');
-
-        $shipmentMock = $this->createMock(Shipment::class);
-        $shipmentMock->method('getAllTracks')->willReturn([$existingTrackMock]);
-
-        $shipmentCollectionMock = $this->createMock(ShipmentCollection::class);
-        $shipmentCollectionMock->method('getSize')->willReturn(1);
-        $shipmentCollectionMock->method('getIterator')->willReturn(new \ArrayIterator([$shipmentMock]));
-
-        $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
-        // shipOrder should never be called (duplicate)
-        $this->shipOrderMock->expects($this->never())->method('execute');
-
-        $this->loggerMock->expects($this->once())
-            ->method('info')
-            ->with(
-                'Bob Go fulfillment: shipment already exists for tracking number',
-                $this->callback(function ($context) use ($orderId) {
-                    return $context['order_id'] === $orderId;
-                })
-            );
-
-        $this->service->processFulfillment($orderMock, $data);
-    }
-
-    // Payloads that carry no usable order reference no longer reach this
-    // service at all — the webhook controller acknowledges them with 200 and
-    // never resolves an order. See OrderResolverTest and ReceiveTest.
-
-    public function testProcessTrackingUpdateBackfillsPlaceholderTitle(): void
-    {
-        $orderId = 42;
-        $incrementId = '000000042';
-        $data = [
-            'channel_order_number' => $incrementId,
-            'shipment_tracking_reference' => 'TRACK002',
-            'status_friendly' => 'In Transit',
-            'courier_name' => 'Sandbox Couriers',
-        ];
-
-        $orderMock = $this->createMock(\Magento\Sales\Model\Order::class);
-        $orderMock->method('getEntityId')->willReturn($orderId);
-
-        // Matching track on the shipment, but with the generic "Bob Go"
-        // placeholder title left by fulfillment/created.
-        $existingTrackMock = $this->createMock(Track::class);
-        $existingTrackMock->method('getTrackNumber')->willReturn('TRACK002');
-        $existingTrackMock->method('getTitle')->willReturn('Bob Go');
-        $existingTrackMock->expects($this->once())->method('setTitle')->with('Sandbox Couriers');
-        $existingTrackMock->expects($this->once())->method('save');
-
-        $shipmentMock = $this->createMock(Shipment::class);
-        $shipmentMock->method('getAllTracks')->willReturn([$existingTrackMock]);
-
-        $shipmentCollectionMock = $this->createMock(ShipmentCollection::class);
-        $shipmentCollectionMock->method('getSize')->willReturn(1);
-        $shipmentCollectionMock->method('getIterator')
-            ->willReturn(new \ArrayIterator([$shipmentMock]));
-
-        $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
-        // Order comment with status should still be added.
-        $orderMock->expects($this->once())
+        $this->fulfilmentSync->expects($this->once())->method('syncOrder')->with($order);
+        $order->expects($this->once())
             ->method('addCommentToStatusHistory')
             ->with('Bob Go tracking update: In Transit (ref: TRACK002)');
-        $orderMock->expects($this->once())->method('save');
+        // Timestamp and comment land in ONE save — every order save re-fires the
+        // outbound push observer, so saving per concern made the webhook
+        // needlessly expensive.
+        $this->orderRepository->expects($this->once())->method('save')->with($order);
 
-        $this->service->processTrackingUpdate($orderMock, $data);
-    }
-
-    public function testProcessTrackingUpdateLeavesRealTitleAlone(): void
-    {
-        $orderId = 42;
-        $incrementId = '000000042';
-        $data = [
-            'channel_order_number' => $incrementId,
-            'shipment_tracking_reference' => 'EXISTING001',
-            'status_friendly' => 'Delivered',
-            'courier_name' => 'CourierCo',
-        ];
-
-        $orderMock = $this->createMock(\Magento\Sales\Model\Order::class);
-        $orderMock->method('getEntityId')->willReturn($orderId);
-
-        // Matching track already has a real courier title — backfill must not run.
-        $existingTrackMock = $this->createMock(Track::class);
-        $existingTrackMock->method('getTrackNumber')->willReturn('EXISTING001');
-        $existingTrackMock->method('getTitle')->willReturn('CourierCo');
-        $existingTrackMock->expects($this->never())->method('setTitle');
-        $existingTrackMock->expects($this->never())->method('save');
-
-        $shipmentMock = $this->createMock(Shipment::class);
-        $shipmentMock->method('getAllTracks')->willReturn([$existingTrackMock]);
-        $shipmentMock->expects($this->never())->method('addTrack');
-        $shipmentMock->expects($this->never())->method('save');
-
-        $shipmentCollectionMock = $this->createMock(ShipmentCollection::class);
-        $shipmentCollectionMock->method('getSize')->willReturn(1);
-        $shipmentCollectionMock->method('getIterator')
-            ->willReturn(new \ArrayIterator([$shipmentMock]));
-
-        $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
-        $orderMock->expects($this->once())
-            ->method('addCommentToStatusHistory')
-            ->with('Bob Go tracking update: Delivered (ref: EXISTING001)');
-        $orderMock->expects($this->once())->method('save');
-
-        $this->service->processTrackingUpdate($orderMock, $data);
-    }
-
-    public function testProcessTrackingUpdateThrowsTransientWhenNoMatchingShipment(): void
-    {
-        $orderId = 42;
-        $incrementId = '000000042';
-        $data = [
-            'channel_order_number' => $incrementId,
-            'shipment_tracking_reference' => 'UASS4ZW6',
+        $this->service->processTrackingUpdate($order, [
+            'shipment_tracking_reference' => 'TRACK002',
             'status_friendly' => 'In Transit',
-            'courier_name' => 'Sandbox Couriers',
-        ];
+        ]);
+    }
 
-        $orderMock = $this->createMock(\Magento\Sales\Model\Order::class);
-        $orderMock->method('getEntityId')->willReturn($orderId);
+    /**
+     * The refresh is the substantive work, so it must happen even when there is
+     * no human-readable status to comment.
+     */
+    public function testTrackingUpdateStillRefreshesWithoutAStatus(): void
+    {
+        $order = $this->order(42);
 
-        // Order already has a shipment, but for a DIFFERENT tracking number —
-        // simulates the race where tracking/updated for fulfillment #2 arrives
-        // before fulfillment/created for #2 has committed shipment #7.
-        $otherTrackMock = $this->createMock(Track::class);
-        $otherTrackMock->method('getTrackNumber')->willReturn('UASSCK7G');
+        $this->fulfilmentSync->expects($this->once())->method('syncOrder');
+        $order->expects($this->never())->method('addCommentToStatusHistory');
 
-        $otherShipmentMock = $this->createMock(Shipment::class);
-        $otherShipmentMock->method('getAllTracks')->willReturn([$otherTrackMock]);
-        // Critically: must NOT have anything added to it.
-        $otherShipmentMock->expects($this->never())->method('addTrack');
-        $otherShipmentMock->expects($this->never())->method('save');
+        $this->service->processTrackingUpdate($order, ['shipment_tracking_reference' => 'TRACK002']);
+    }
 
-        $shipmentCollectionMock = $this->createMock(ShipmentCollection::class);
-        $shipmentCollectionMock->method('getSize')->willReturn(1);
-        $shipmentCollectionMock->method('getIterator')
-            ->willReturn(new \ArrayIterator([$otherShipmentMock]));
+    // ----------------------------------------------------------------- order/updated
 
-        $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
-        // No comment should be added — we're throwing so Bob Go retries.
-        $orderMock->expects($this->never())->method('addCommentToStatusHistory');
+    public function testOrderUpdateIgnoresNonCancellationStatuses(): void
+    {
+        $order = $this->order(42);
 
-        $this->expectException(\BobGroup\BobGo\Service\TransientWebhookException::class);
-        $this->expectExceptionMessageMatches('/No shipment carries tracking UASS4ZW6 yet/');
+        $this->orderManagement->expects($this->never())->method('cancel');
 
-        $this->service->processTrackingUpdate($orderMock, $data);
+        $this->service->processOrderUpdate($order, ['status' => 'processing']);
+    }
+
+    public function testOrderUpdateCancelsAndRebaselinesTheSyncHash(): void
+    {
+        $order = $this->order(42);
+        $order->method('getState')->willReturn('processing');
+
+        $this->orderManagement->expects($this->once())->method('cancel')->with(42)->willReturn(true);
+
+        // Cancelling zeroes total_due, which flips the derived payment_status
+        // from unpaid to paid and so changes the outbound payload hash. Without
+        // re-baselining, the next save would PATCH that meaningless change
+        // straight back to Bob Go.
+        $fresh = $this->order(42);
+        $this->orderRepository->method('get')->with(42)->willReturn($fresh);
+        $this->orderPushService->expects($this->once())->method('refreshSyncHash')->with($fresh);
+
+        $this->service->processOrderUpdate($order, ['status' => 'cancelled']);
+    }
+
+    public function testOrderUpdateIsIdempotentForAnAlreadyCancelledOrder(): void
+    {
+        $order = $this->order(42);
+        $order->method('getState')->willReturn(Order::STATE_CANCELED);
+
+        $this->orderManagement->expects($this->never())->method('cancel');
+
+        $this->service->processOrderUpdate($order, ['status' => 'cancelled']);
+    }
+
+    /**
+     * Magento refuses to cancel once anything is invoiced or shipped. We can't
+     * fix that from here, but the operator has to know the two systems now
+     * disagree.
+     */
+    public function testOrderUpdateWarnsWhenMagentoRefusesToCancel(): void
+    {
+        $order = $this->order(42);
+        $order->method('getState')->willReturn('complete');
+
+        $this->orderManagement->method('cancel')->willReturn(false);
+        $this->logger->expects($this->once())->method('warning');
+        $this->orderPushService->expects($this->never())->method('refreshSyncHash');
+
+        $this->service->processOrderUpdate($order, ['status' => 'cancelled']);
+    }
+
+    public function testOrderUpdateAcceptsTheAmericanSpelling(): void
+    {
+        $order = $this->order(42);
+        $order->method('getState')->willReturn('processing');
+
+        $this->orderManagement->expects($this->once())->method('cancel')->willReturn(true);
+        $this->orderRepository->method('get')->willReturn($this->order(42));
+
+        $this->service->processOrderUpdate($order, ['status' => 'canceled']);
+    }
+
+    // ----------------------------------------------------------------------- helpers
+
+    /**
+     * @return \PHPUnit\Framework\MockObject\MockObject
+     */
+    private function order(int $entityId, ?array &$writes = null)
+    {
+        $order = $this->createMock(Order::class);
+        $order->method('getEntityId')->willReturn($entityId);
+        $order->method('getIncrementId')->willReturn('000000' . $entityId);
+        $order->method('setData')->willReturnCallback(function ($k, $v = null) use (&$writes) {
+            if ($writes !== null) {
+                $writes[$k] = $v;
+            }
+            return null;
+        });
+        return $order;
     }
 }

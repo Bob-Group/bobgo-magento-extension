@@ -3,10 +3,7 @@ declare(strict_types=1);
 
 namespace BobGroup\BobGo\Service;
 
-use BobGroup\BobGo\Api\BobGoApiClient;
-use BobGroup\BobGo\Api\BobGoApiException;
 use BobGroup\BobGo\Model\Config\ApiConfig;
-use BobGroup\BobGo\Model\SyncLog;
 use Magento\Framework\Api\SearchCriteriaBuilder;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
@@ -21,9 +18,13 @@ use Psr\Log\LoggerInterface;
  * persist it on the order. Webhooks remain the primary signal — this just
  * closes the gap when one is lost or delayed.
  *
- * Bob Go is the source of truth: we full-replace bobgo_shipments on the
- * order. We only mutate the order's own state (status, last_synced) when
- * something actually changed, so a quiet run is a no-op.
+ * Bob Go is the source of truth. The actual per-order work lives in
+ * FulfilmentSyncService, which is the exact same code path the webhook handlers
+ * use — that is what makes this a real safety net rather than a display refresh:
+ * a fulfilment whose webhook was never processed gets its Magento shipment
+ * created here, within the hour.
+ *
+ * This class owns only the batch: which orders to look at, and how many.
  *
  * Designed to be cron-driven (hourly) and batched (BATCH_SIZE per run).
  */
@@ -53,28 +54,25 @@ class ReconciliationService
 
     private OrderRepositoryInterface $orderRepository;
     private SearchCriteriaBuilder $searchCriteriaBuilder;
-    private BobGoApiClient $apiClient;
+    private FulfilmentSyncService $fulfilmentSync;
     private ApiConfig $apiConfig;
-    private SyncLogger $syncLogger;
+    private WebhookSubscriptionService $webhookSubscriptions;
     private LoggerInterface $logger;
-    private \Magento\Framework\Stdlib\DateTime\DateTime $dateTime;
 
     public function __construct(
         OrderRepositoryInterface $orderRepository,
         SearchCriteriaBuilder $searchCriteriaBuilder,
-        BobGoApiClient $apiClient,
+        FulfilmentSyncService $fulfilmentSync,
         ApiConfig $apiConfig,
-        SyncLogger $syncLogger,
-        LoggerInterface $logger,
-        \Magento\Framework\Stdlib\DateTime\DateTime $dateTime
+        WebhookSubscriptionService $webhookSubscriptions,
+        LoggerInterface $logger
     ) {
         $this->orderRepository = $orderRepository;
         $this->searchCriteriaBuilder = $searchCriteriaBuilder;
-        $this->apiClient = $apiClient;
+        $this->fulfilmentSync = $fulfilmentSync;
         $this->apiConfig = $apiConfig;
-        $this->syncLogger = $syncLogger;
+        $this->webhookSubscriptions = $webhookSubscriptions;
         $this->logger = $logger;
-        $this->dateTime = $dateTime;
     }
 
     /**
@@ -86,6 +84,12 @@ class ReconciliationService
         if (!$this->apiConfig->isFulfillmentSyncEnabled() || !$this->apiConfig->isConfigured()) {
             return;
         }
+
+        // Piggyback the webhook-subscription health check on this job. It is
+        // internally rate-limited to one conclusive check per day, and it is the
+        // only way to notice that Bob Go disabled our subscription — nothing
+        // tells us when that happens.
+        $this->webhookSubscriptions->verifyAndRepair();
 
         $orders = $this->loadCandidateOrders();
         if (empty($orders)) {
@@ -107,47 +111,15 @@ class ReconciliationService
      */
     public function reconcileOrder(OrderInterface $order): void
     {
-        $bobgoOrderId = $order->getData('bobgo_order_id');
-        if ($bobgoOrderId === null || $bobgoOrderId === '') {
-            return;
-        }
-
         try {
-            $response = $this->apiClient->get('order-fulfillments', ['order_id' => $bobgoOrderId]);
-            $shipments = $this->extractShipments($response);
-
-            $previous = (string) ($order->getData('bobgo_shipments') ?? '');
-            $next = (string) json_encode($shipments);
-
-            if ($previous !== $next) {
-                $order->setData('bobgo_shipments', $next);
-                $order->setData('bobgo_last_synced', $this->dateTime->gmtDate());
-                $this->orderRepository->save($order);
-            }
-
-            $this->syncLogger->logOutbound(
-                SyncLog::EVENT_RECONCILIATION_FETCHED,
-                ['order_id' => $bobgoOrderId, 'shipment_count' => count($shipments)],
-                (int) $order->getEntityId(),
-                200,
-                true
-            );
-        } catch (BobGoApiException $e) {
-            $this->logger->warning('Bob Go reconciliation: API error', [
-                'order_id' => $order->getEntityId(),
-                'bobgo_order_id' => $bobgoOrderId,
-                'status' => $e->getStatusCode(),
-                'error' => $e->getMessage(),
-            ]);
-            $this->syncLogger->logOutbound(
-                SyncLog::EVENT_RECONCILIATION_FETCHED,
-                ['order_id' => $bobgoOrderId, 'error' => $e->getMessage()],
-                (int) $order->getEntityId(),
-                $e->getStatusCode(),
-                false
-            );
+            // Re-read the link from the order we're about to touch rather than
+            // trusting a value captured when the batch was built: a webhook can
+            // relink an order mid-run, and refreshing under a stale link would
+            // write another order's fulfilments onto this one.
+            $this->fulfilmentSync->syncOrder($order);
         } catch (\Throwable $e) {
-            $this->logger->error('Bob Go reconciliation: unexpected error', [
+            // Per-order isolation: one bad order must not end the batch.
+            $this->logger->error('Bob Go reconciliation: order failed', [
                 'order_id' => $order->getEntityId(),
                 'error' => $e->getMessage(),
             ]);
@@ -226,58 +198,4 @@ class ReconciliationService
         return $this->orderRepository->getList($criteria)->getItems();
     }
 
-    /**
-     * Bob Go's response may put the shipments under various keys depending on
-     * the endpoint version. Normalise to a plain list of flat shipment objects
-     * the admin block can render directly.
-     *
-     * @param array<string,mixed> $response
-     * @return array<int,array<string,mixed>>
-     */
-    private function extractShipments(array $response): array
-    {
-        $raw = [];
-        foreach (['order_fulfillments', 'fulfillments', 'shipments', 'data'] as $key) {
-            if (isset($response[$key]) && is_array($response[$key])) {
-                $raw = array_values($response[$key]);
-                break;
-            }
-        }
-        if ($raw === [] && count($response) > 0 && array_keys($response) === range(0, count($response) - 1)) {
-            $raw = $response;
-        }
-
-        $normalised = [];
-        foreach ($raw as $entry) {
-            if (!is_array($entry)) {
-                continue;
-            }
-            $normalised[] = $this->normaliseShipment($entry);
-        }
-        return $normalised;
-    }
-
-    /**
-     * Flatten the Bob Go fulfillment entry shape
-     * ({order_fulfillment, shipment, buyer_collection}) into the keys the admin
-     * block reads. Tolerates already-flat entries from older response shapes.
-     *
-     * @param array<string,mixed> $entry
-     * @return array<string,mixed>
-     */
-    private function normaliseShipment(array $entry): array
-    {
-        $shipment = is_array($entry['shipment'] ?? null) ? $entry['shipment'] : $entry;
-        $provider = is_array($shipment['provider'] ?? null) ? $shipment['provider'] : [];
-        $serviceLevel = is_array($shipment['service_level'] ?? null) ? $shipment['service_level'] : [];
-
-        return [
-            'tracking_number'          => (string) ($shipment['tracking_reference'] ?? $entry['tracking_number'] ?? ''),
-            'provider_tracking_number' => (string) ($shipment['provider_tracking_reference'] ?? ''),
-            'courier'                  => (string) ($provider['name'] ?? $entry['courier'] ?? ''),
-            'provider_slug'            => (string) ($shipment['provider_slug'] ?? ''),
-            'service_level'            => (string) ($serviceLevel['name'] ?? ''),
-            'status'                   => (string) ($shipment['status'] ?? $entry['status'] ?? ''),
-        ];
-    }
 }

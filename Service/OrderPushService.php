@@ -165,6 +165,32 @@ class OrderPushService
     }
 
     /**
+     * Re-baseline the stored sync hash against the order's current payload,
+     * without calling Bob Go.
+     *
+     * For changes that Bob Go itself told us about: re-sending them would be a
+     * pointless echo, and in the cancellation case an actively misleading one
+     * (cancelling zeroes total_due, which flips the derived payment_status from
+     * unpaid to paid). Storing the post-change hash makes the dirty check
+     * recognise the order as already in sync.
+     */
+    public function refreshSyncHash(OrderInterface $order): void
+    {
+        try {
+            $hash = $this->computeHash($this->orderMapper->mapOrderToUpdatePayload($order));
+            $order->setData('bobgo_sync_hash', $hash);
+            $this->orderRepository->save($order);
+        } catch (\Throwable $e) {
+            // Worst case the next save sends a redundant PATCH. Not worth
+            // failing the caller over.
+            $this->logger->warning('Bob Go: failed to refresh sync hash', [
+                'order_id' => $order->getEntityId(),
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
      * The Bob Go order id to link this order to: preferring the one the API
      * just returned, falling back to the one already stored. Returns null when
      * neither yields a usable (positive, numeric) id.

@@ -269,10 +269,11 @@ class Receive extends Action implements CsrfAwareActionInterface
                     return $result->setData(['message' => 'tracking update processed']);
 
                 default:
-                    // order/updated — acknowledge-and-log only for now. The
-                    // dedup claim and success row are enough for visibility; we
-                    // don't mutate the local order until the field mapping has
-                    // been defined against real payloads (docs/todo.md P1-13).
+                    // order/updated — Bob Go sends the full order object and
+                    // re-fires on any relevant change, so the handler is
+                    // idempotent and acts only on cancellation. Other fields are
+                    // still left alone deliberately: the store owns the order.
+                    $this->fulfillmentService->processOrderUpdate($order, $data);
                     $this->syncLogger->logInbound(
                         SyncLog::EVENT_ORDER_UPDATED_INBOUND,
                         $data,
