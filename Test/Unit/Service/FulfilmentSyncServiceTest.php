@@ -342,8 +342,8 @@ class FulfilmentSyncServiceTest extends TestCase
 
         $this->apiClient->method('get')->willReturn([
             'order_fulfillments' => [
-                $this->fulfilment('TRACK-A', 'Demo Couriers', 'collected'),
-                $this->fulfilment('TRACK-B', 'Demo Couriers', 'collected'),
+                $this->fulfilment('TRACK-A', 'Demo Couriers', 'collected', 2546),
+                $this->fulfilment('TRACK-B', 'Demo Couriers', 'collected', 2547),
             ],
         ]);
 
@@ -362,8 +362,8 @@ class FulfilmentSyncServiceTest extends TestCase
 
         $this->apiClient->method('get')->willReturn([
             'order_fulfillments' => [
-                $this->fulfilment('TRACK-A', 'Demo Couriers', 'collected'),
-                $this->fulfilment('TRACK-B', 'Demo Couriers', 'collected'),
+                $this->fulfilment('TRACK-A', 'Demo Couriers', 'collected', 2546),
+                $this->fulfilment('TRACK-B', 'Demo Couriers', 'collected', 2547),
             ],
         ]);
 
@@ -413,10 +413,10 @@ class FulfilmentSyncServiceTest extends TestCase
     /**
      * @return array<string,mixed>
      */
-    private function fulfilment(string $tracking, string $courier, string $status): array
+    private function fulfilment(string $tracking, string $courier, string $status, int $id = 2546): array
     {
         return [
-            'order_fulfillment' => ['id' => 2546, 'channel_ref_id' => ''],
+            'order_fulfillment' => ['id' => $id, 'channel_ref_id' => ''],
             'buyer_collection'  => null,
             'shipment' => [
                 'tracking_reference'          => $tracking,
@@ -485,5 +485,33 @@ class FulfilmentSyncServiceTest extends TestCase
         $item->method('getSku')->willReturn($sku);
         $item->method('getData')->willReturn(null);
         return $item;
+    }
+
+    /**
+     * Magento loads and caches the order's shipment collection on first access, so
+     * a shipment created for the first record is invisible to the dedup check for
+     * the second. Two records sharing a tracking number would then produce two
+     * Magento shipments for one parcel.
+     */
+    public function testDoesNotCreateTwoShipmentsForRecordsSharingATrackingNumber(): void
+    {
+        $order = $this->order(7, '987');
+        $order->method('canShip')->willReturn(true);
+        $this->noShipmentsYet($order);
+
+        // Item detail on both, so the scope guard doesn't refuse them before the
+        // dedup check is even reached — that guard is a separate concern, covered
+        // above.
+        $order->method('getAllItems')->willReturn([$this->orderItem(11, 'SKU-A')]);
+        $first = $this->fulfilment('SAME-TRACK', 'Demo Couriers', 'collected', 2546);
+        $first['items'] = [['sku' => 'SKU-A', 'fulfilled_qty' => 1]];
+        $second = $this->fulfilment('SAME-TRACK', 'Demo Couriers', 'collected', 2547);
+        $second['items'] = [['sku' => 'SKU-A', 'fulfilled_qty' => 1]];
+
+        $this->apiClient->method('get')->willReturn(['order_fulfillments' => [$first, $second]]);
+
+        $this->shipOrder->expects($this->once())->method('execute')->willReturn(55);
+
+        $this->service->syncOrder($order);
     }
 }

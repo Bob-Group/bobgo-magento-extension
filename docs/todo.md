@@ -688,6 +688,44 @@ Verified in the CR; the Woo docs call these out as things that go wrong, and we'
 - **Link audit (Woo §6.2)** — only worth building if merchants ingest legacy or imported orders.
   Park it; revisit if P0-2 surfaces real mis-links in the wild.
 
+## Pre-test self-review findings (2026-07-30)
+
+Five issues found by reviewing the four tiers of work against Magento's actual source
+before handing over for testing. All fixed; recorded because four of them are the kind
+of thing that only shows up under load or on a second store, i.e. not during a happy-path
+test.
+
+| # | Issue | Impact if shipped |
+|---|-------|-------------------|
+| 1 | `insertOnDuplicate()`'s `$fields` was passed as `['col' => value]` with a `null`. Magento only emits an assoc entry when it can render the value as SQL, and a PHP null matches none of its branches, so `next_attempt_at` was silently dropped from the UPDATE clause | A deferred order kept its old backoff while its attempt count reset to zero — so an order that keeps being saved could never reach `MAX_ATTEMPTS` and never give up |
+| 2 | `StoreScope` passed `force = true` to `startEnvironmentEmulation()` | Magento's guard is `if ($storeId == current && !$force) return;`, so `true` only buys emulating a store we are already in — i.e. every order on a single-store install. Full theme/locale/translation reload per order in a 50-order batch, for nothing |
+| 3 | `StoreScope` called `stopEnvironmentEmulation()` unconditionally | Harmless today (nothing nests), but Magento allows one level only: a nested `start()` logs an error and returns leaving the outer state intact, which an unconditional `stop()` then restores out from under it. Now gated on whether the store id actually changed |
+| 4 | `ConnectionHealth::observe()` called `getState()` on every API response, and `FlagManager::getFlagData()` reloads from the database every call | An extra query per API call, including every rates-at-checkout request — a query added to the checkout hot path by a diagnostic feature |
+| 5 | `FailedSyncMessage` runs `COUNT(*) ... WHERE bobgo_sync_status = 'failed'` on every admin page load, against an unindexed varchar | Full scan of `sales_order` per admin page. Added `BOBGO_SALES_ORDER_BOBGO_SYNC_STATUS` |
+
+One of my own tests also turned out to be wrong twice over, which is worth recording:
+`OrderSyncQueueTest` asserted the exact (broken) argument shape, so it pinned the bug
+rather than catching it — a test written from the implementation instead of the contract.
+And a fixture gave every fulfilment the same id, which masked a real
+duplicate-shipment risk: Magento caches the order's shipment collection on first
+access, so a shipment created for the first record is invisible to the dedup check for
+the second, and two records sharing a tracking number would produce two shipments for
+one parcel. Guarded, with a test that actually reaches the path.
+
+Verified clean, for the record: all 13 XML files against Magento's real XSDs (with the
+`urn:magento:` includes resolved), the grid collection against the canonical core
+`SearchResult` subclass, the DI graph for cycles, and the API signatures for
+`MessageList`, `DataProvider`/`CollectionFactory`, `FlagManager`, `Emulation`,
+`UrlInterface` in adminhtml, and `resultFactory` on the backend controller.
+
+### Known, accepted, not fixed
+
+- After a create, the stored hash comes from the no-`id` payload while `updateOrder()`
+  hashes the with-`id` payload, so the first update after a POST always sends one
+  redundant PATCH. Pre-existing, harmless, one call per order lifecycle.
+
+---
+
 ## Open questions for the Bob Go backend team
 
 Woo's Part 2 lists open asks; these are ours, and the first three are new.

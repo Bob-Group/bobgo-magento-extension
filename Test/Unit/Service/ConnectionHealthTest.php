@@ -134,6 +134,27 @@ class ConnectionHealthTest extends TestCase
         $health->observe(200);
     }
 
+    /**
+     * FlagManager reloads from the database on every getFlagData() call, and
+     * observe() runs on every API response — including each rates-at-checkout
+     * call. Without the memo, health tracking would add a query to the checkout
+     * hot path.
+     */
+    public function testReadsTheStoredStateAtMostOncePerRequest(): void
+    {
+        $flagManager = $this->createMock(FlagManager::class);
+        $flagManager->expects($this->once())->method('getFlagData')->willReturn(null);
+        $flagManager->method('saveFlag')->willReturn(true);
+
+        $health = new ConnectionHealth($flagManager, $this->createMock(\Psr\Log\LoggerInterface::class));
+
+        // First call reads; the transition seeds the memo; the rest are free.
+        $health->observe(200);
+        $health->observe(200);
+        $health->observe(404);
+        $this->assertSame(ConnectionHealth::STATE_VALID, $health->getState());
+    }
+
     public function testRecoversFromInvalidToValid(): void
     {
         $this->health->observe(401);

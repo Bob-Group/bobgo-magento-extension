@@ -35,16 +35,25 @@ class OrderSyncQueueTest extends TestCase
         $this->queue = new OrderSyncQueue($this->resource, $this->logger);
     }
 
-    public function testEnqueueInsertsOnDuplicate(): void
+    /**
+     * The third argument must be a plain list of field names, not column => value.
+     *
+     * insertOnDuplicate() only emits an assoc entry when it can render the value as
+     * SQL, and a PHP null matches none of its branches — so
+     * `['next_attempt_at' => null]` was being dropped from the UPDATE clause
+     * entirely. A deferred order would then keep its old backoff while its attempt
+     * count reset to zero, which also meant MAX_ATTEMPTS could never be reached for
+     * an order that keeps being saved. The list form compiles to
+     * `col = VALUES(col)`.
+     */
+    public function testEnqueueUpdatesBothColumnsOnDuplicate(): void
     {
         $this->connection->expects($this->once())
             ->method('insertOnDuplicate')
             ->with(
                 OrderSyncQueue::TABLE,
                 ['order_id' => 42, 'attempts' => 0, 'next_attempt_at' => null],
-                // Re-queueing an order that was already waiting clears its
-                // backoff: the payload just changed again, so try promptly.
-                ['attempts' => 0, 'next_attempt_at' => null]
+                ['attempts', 'next_attempt_at']
             );
 
         $this->queue->enqueue(42);

@@ -323,45 +323,45 @@ class Receive extends Action implements CsrfAwareActionInterface
         $orderId = (int) $order->getEntityId();
 
         switch ($topic) {
-                case OrderResolver::TOPIC_FULFILLMENT_CREATED:
-                    $this->fulfillmentService->processFulfillment($order, $data);
-                    $this->syncLogger->logInbound(
-                        SyncLog::EVENT_FULFILLMENT_RECEIVED,
-                        $data,
-                        $orderId,
-                        $eventId,
-                        200,
-                        true
-                    );
-                    return $result->setData(['message' => 'fulfillment processed']);
+            case OrderResolver::TOPIC_FULFILLMENT_CREATED:
+                $this->fulfillmentService->processFulfillment($order, $data);
+                $this->syncLogger->logInbound(
+                    SyncLog::EVENT_FULFILLMENT_RECEIVED,
+                    $data,
+                    $orderId,
+                    $eventId,
+                    200,
+                    true
+                );
+                return $result->setData(['message' => 'fulfillment processed']);
 
-                case OrderResolver::TOPIC_TRACKING_UPDATED:
-                    $this->fulfillmentService->processTrackingUpdate($order, $data);
-                    $this->syncLogger->logInbound(
-                        SyncLog::EVENT_TRACKING_UPDATED,
-                        $data,
-                        $orderId,
-                        $eventId,
-                        200,
-                        true
-                    );
-                    return $result->setData(['message' => 'tracking update processed']);
+            case OrderResolver::TOPIC_TRACKING_UPDATED:
+                $this->fulfillmentService->processTrackingUpdate($order, $data);
+                $this->syncLogger->logInbound(
+                    SyncLog::EVENT_TRACKING_UPDATED,
+                    $data,
+                    $orderId,
+                    $eventId,
+                    200,
+                    true
+                );
+                return $result->setData(['message' => 'tracking update processed']);
 
-                default:
-                    // order/updated — Bob Go sends the full order object and
-                    // re-fires on any relevant change, so the handler is
-                    // idempotent and acts only on cancellation. Other fields are
-                    // still left alone deliberately: the store owns the order.
-                    $this->fulfillmentService->processOrderUpdate($order, $data);
-                    $this->syncLogger->logInbound(
-                        SyncLog::EVENT_ORDER_UPDATED_INBOUND,
-                        $data,
-                        $orderId,
-                        $eventId,
-                        200,
-                        true
-                    );
-                    return $result->setData(['message' => 'order update acknowledged']);
+            default:
+                // order/updated — Bob Go sends the full order object and
+                // re-fires on any relevant change, so the handler is
+                // idempotent and acts only on cancellation. Other fields are
+                // still left alone deliberately: the store owns the order.
+                $this->fulfillmentService->processOrderUpdate($order, $data);
+                $this->syncLogger->logInbound(
+                    SyncLog::EVENT_ORDER_UPDATED_INBOUND,
+                    $data,
+                    $orderId,
+                    $eventId,
+                    200,
+                    true
+                );
+                return $result->setData(['message' => 'order update acknowledged']);
             }
     }
 

@@ -9,6 +9,9 @@
             "bobgo_last_webhook": true,
             "bobgo_shipments": true,
             "bobgo_status_synced": true
+        },
+        "index": {
+            "BOBGO_SALES_ORDER_BOBGO_SYNC_STATUS": true
         }
     },
     "sales_order_item": {

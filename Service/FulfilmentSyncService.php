@@ -190,6 +190,12 @@ class FulfilmentSyncService
             }
         }
 
+        // Identifiers we create during this run. Magento loads and caches the
+        // order's shipment collection on first access, so a shipment created for
+        // fulfilment #1 is invisible to findShipment() when we get to #2 — and two
+        // records sharing a tracking number would then produce two shipments.
+        $created = [];
+
         foreach ($fulfilments as $fulfilment) {
             if ($this->isCancelled($fulfilment)) {
                 // Bob Go keeps cancelled fulfilment records. Creating a shipment
@@ -197,7 +203,7 @@ class FulfilmentSyncService
                 // pinned WooCommerce orders on "shipped" forever.
                 continue;
             }
-            $this->applyFulfilment($order, $fulfilment, $webhookItems, $liveCount);
+            $this->applyFulfilment($order, $fulfilment, $webhookItems, $liveCount, $created);
         }
     }
 
@@ -210,11 +216,20 @@ class FulfilmentSyncService
         OrderInterface $order,
         array $fulfilment,
         array $webhookItems,
-        int $liveFulfilmentCount
+        int $liveFulfilmentCount,
+        array &$created
     ): void {
         $fulfilmentId = (string) ($fulfilment['fulfillment_id'] ?? '');
         $trackingNumber = (string) ($fulfilment['tracking_number'] ?? '');
         $courier = (string) ($fulfilment['courier'] ?? '');
+
+        // Created moments ago in this same run — the cached shipment collection
+        // won't show it.
+        foreach ([$fulfilmentId, $trackingNumber] as $identifier) {
+            if ($identifier !== '' && isset($created[$identifier])) {
+                return;
+            }
+        }
 
         // Already have it? Then the only thing left to do is keep the courier
         // title fresh — fulfillment/created often lands before Bob Go knows
@@ -290,6 +305,12 @@ class FulfilmentSyncService
                 null,
                 $tracks
             );
+
+            foreach ([$fulfilmentId, $trackingNumber] as $identifier) {
+                if ($identifier !== '') {
+                    $created[$identifier] = true;
+                }
+            }
 
             if ($fulfilmentId !== '') {
                 $this->stampFulfilmentId((int) $shipmentId, $fulfilmentId);

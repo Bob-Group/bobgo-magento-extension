@@ -39,6 +39,16 @@ class ConnectionHealth
     private FlagManager $flagManager;
     private LoggerInterface $logger;
 
+    /**
+     * Per-request memo. FlagManager::getFlagData() reloads from the database on
+     * every call, and observe() runs on every API response — including each
+     * rates-at-checkout call — so without this the health tracking would add a
+     * query to the checkout hot path.
+     *
+     * @var string|null
+     */
+    private $state;
+
     public function __construct(FlagManager $flagManager, LoggerInterface $logger)
     {
         $this->flagManager = $flagManager;
@@ -69,10 +79,16 @@ class ConnectionHealth
 
     public function getState(): string
     {
-        $state = $this->flagManager->getFlagData(self::STATE_FLAG);
-        return in_array($state, [self::STATE_VALID, self::STATE_INVALID], true)
-            ? (string) $state
+        if ($this->state !== null) {
+            return $this->state;
+        }
+
+        $stored = $this->flagManager->getFlagData(self::STATE_FLAG);
+        $this->state = in_array($stored, [self::STATE_VALID, self::STATE_INVALID], true)
+            ? (string) $stored
             : self::STATE_UNKNOWN;
+
+        return $this->state;
     }
 
     /**
@@ -93,6 +109,7 @@ class ConnectionHealth
         try {
             $this->flagManager->saveFlag(self::STATE_FLAG, $state);
             $this->flagManager->saveFlag(self::CHECKED_FLAG, gmdate('Y-m-d H:i:s'));
+            $this->state = $state;
             $this->logger->info('Bob Go: connection state changed', ['state' => $state]);
         } catch (\Throwable $e) {
             $this->logger->warning('Bob Go: could not record the connection state', [

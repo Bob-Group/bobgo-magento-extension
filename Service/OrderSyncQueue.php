@@ -72,7 +72,16 @@ class OrderSyncQueue
                 ['order_id' => $orderId, 'attempts' => 0, 'next_attempt_at' => null],
                 // Re-queue an order that was already waiting: the payload just
                 // changed again, so clear any backoff and try promptly.
-                ['attempts' => 0, 'next_attempt_at' => null]
+                //
+                // The plain field-name list, NOT ['attempts' => 0, ... => null]:
+                // insertOnDuplicate() only emits an assoc entry when it can turn
+                // the value into SQL, and a PHP null matches none of its cases, so
+                // next_attempt_at would have been silently dropped from the UPDATE
+                // clause — leaving a deferred order sitting out its old backoff
+                // while attempts reset to 0, which also meant MAX_ATTEMPTS could
+                // never be reached for an order that keeps being saved. The list
+                // form compiles to `col = VALUES(col)`, which is exactly right.
+                ['attempts', 'next_attempt_at']
             );
         } catch (\Throwable $e) {
             $this->logger->error('Bob Go: failed to queue an order for push', [

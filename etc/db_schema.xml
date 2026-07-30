@@ -17,6 +17,14 @@
                 comment="JSON-encoded shipments array from Bob Go (authoritative)"/>
         <column xsi:type="varchar" name="bobgo_status_synced" nullable="true" length="32"
                 comment="Last order status forwarded to Bob Go (cancelled|completed)"/>
+        <!--
+            The failed-sync admin banner counts orders in this state on every admin
+            page load, and reconciliation/support both filter on it. Without an
+            index that COUNT is a full scan of sales_order.
+        -->
+        <index referenceId="BOBGO_SALES_ORDER_BOBGO_SYNC_STATUS" indexType="btree">
+            <column name="bobgo_sync_status"/>
+        </index>
     </table>
     <table name="sales_order_item" resource="sales" comment="Sales Order Item">
         <column xsi:type="varchar" name="bobgo_order_item_id" nullable="true" length="255"
