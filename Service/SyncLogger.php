@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace BobGroup\BobGo\Service;
 
+use BobGroup\BobGo\Api\BobGoApiException;
 use BobGroup\BobGo\Model\ResourceModel\SyncLog as SyncLogResource;
 use BobGroup\BobGo\Model\ResourceModel\SyncLog\CollectionFactory as SyncLogCollectionFactory;
 use BobGroup\BobGo\Model\SyncLog;
@@ -182,6 +183,84 @@ class SyncLogger
         bool $success = true
     ): void {
         $this->write(SyncLog::DIRECTION_OUTBOUND, $eventType, $payload, $orderId, null, $httpStatus, $success);
+    }
+
+    /**
+     * Record an outbound failure, keeping what the API actually said.
+     *
+     * The status code alone does not tell an operator anything actionable. Every
+     * diagnosis in practice needed the response body, and it only existed in
+     * system.log — so the admin grid could show a merchant that a sync had failed
+     * but never why. The one that made the case:
+     *
+     *   400 {"message":"Cannot delete order_item=18616, fulfilled quantity is
+     *        greater than 0."}
+     *
+     * versus what the grid actually held: "failed with status 400".
+     *
+     * The error and response are placed ahead of the caller's context because the
+     * whole payload is truncated to the column's byte limit, and the request is
+     * the bulky part. Put the diagnosis last and a large order's payload would
+     * push it out of the row precisely when it was needed.
+     *
+     * @param array<string,mixed> $context Whatever the caller wants recorded
+     *        alongside the failure — typically ['request' => $payload].
+     */
+    public function logOutboundFailure(
+        string $eventType,
+        array $context,
+        \Throwable $e,
+        ?int $orderId = null
+    ): void {
+        $detail = ['error' => $e->getMessage()];
+
+        $statusCode = null;
+        if ($e instanceof BobGoApiException) {
+            $statusCode = $e->getStatusCode();
+            $response = $this->decodeResponseBody($e->getResponseBody());
+            if ($response !== null) {
+                $detail['response'] = $response;
+            }
+        }
+
+        $this->logOutbound(
+            $eventType,
+            array_merge($detail, $context),
+            $orderId,
+            $statusCode,
+            false
+        );
+    }
+
+    /**
+     * Prepare an API response body for storage.
+     *
+     * Decoded rather than stored raw, because Bob Go's 4xx responses echo the
+     * offending payload back — email, phone, address — and redactPii() can only
+     * walk a structure, not a JSON string. Decoding is what subjects the response
+     * to the same redaction as everything else in this table.
+     *
+     * A body that is not JSON cannot be walked, so it is capped hard and kept as
+     * an opaque string; the same 512-byte limit BobGoApiClient already applies
+     * when it logs a snippet.
+     *
+     * @return array<mixed>|string|null
+     */
+    private function decodeResponseBody(string $body)
+    {
+        $body = trim($body);
+        if ($body === '') {
+            return null;
+        }
+
+        $decoded = json_decode($body, true);
+        if (is_array($decoded)) {
+            return $decoded;
+        }
+
+        return function_exists('mb_strcut')
+            ? mb_strcut($body, 0, 512, 'UTF-8')
+            : substr($body, 0, 512);
     }
 
     /**

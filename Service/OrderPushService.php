@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace BobGroup\BobGo\Service;
 
 use BobGroup\BobGo\Api\BobGoApiClient;
-use BobGroup\BobGo\Api\BobGoApiException;
 use BobGroup\BobGo\Api\OrderMapperInterface;
 use BobGroup\BobGo\Model\SyncLog;
 use Magento\Framework\Stdlib\DateTime\DateTime;
@@ -85,12 +84,11 @@ class OrderPushService
             return true;
         } catch (\Exception $e) {
             $this->applyFailure($order);
-            $this->syncLogger->logOutbound(
+            $this->syncLogger->logOutboundFailure(
                 SyncLog::EVENT_ORDER_CREATED,
-                ['request' => $payload, 'error' => $e->getMessage()],
-                (int) $order->getEntityId(),
-                $e instanceof BobGoApiException ? $e->getStatusCode() : null,
-                false
+                ['request' => $payload],
+                $e,
+                (int) $order->getEntityId()
             );
             $this->logger->error('Bob Go: Failed to push order', [
                 'order_id' => $order->getEntityId(),
@@ -148,12 +146,11 @@ class OrderPushService
             return true;
         } catch (\Exception $e) {
             $this->applyFailure($order);
-            $this->syncLogger->logOutbound(
+            $this->syncLogger->logOutboundFailure(
                 SyncLog::EVENT_ORDER_UPDATED_OUTBOUND,
-                ['request' => $payload, 'error' => $e->getMessage()],
-                (int) $order->getEntityId(),
-                $e instanceof BobGoApiException ? $e->getStatusCode() : null,
-                false
+                ['request' => $payload],
+                $e,
+                (int) $order->getEntityId()
             );
             $this->logger->error('Bob Go: Failed to update order', [
                 'order_id' => $order->getEntityId(),
@@ -212,12 +209,11 @@ class OrderPushService
             ]);
             return true;
         } catch (\Exception $e) {
-            $this->syncLogger->logOutbound(
+            $this->syncLogger->logOutboundFailure(
                 SyncLog::EVENT_STATUS_UPDATED,
-                ['request' => $payload, 'error' => $e->getMessage()],
-                (int) $order->getEntityId(),
-                $e instanceof BobGoApiException ? $e->getStatusCode() : null,
-                false
+                ['request' => $payload],
+                $e,
+                (int) $order->getEntityId()
             );
             $this->logger->error('Bob Go: failed to forward order status', [
                 'order_id' => $order->getEntityId(),

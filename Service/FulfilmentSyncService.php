@@ -156,12 +156,11 @@ class FulfilmentSyncService
                 'status' => $e->getStatusCode(),
                 'error' => $e->getMessage(),
             ]);
-            $this->syncLogger->logOutbound(
+            $this->syncLogger->logOutboundFailure(
                 SyncLog::EVENT_RECONCILIATION_FETCHED,
-                ['order_id' => $bobgoOrderId, 'error' => $e->getMessage()],
-                (int) $order->getEntityId(),
-                $e->getStatusCode(),
-                false
+                ['order_id' => $bobgoOrderId],
+                $e,
+                (int) $order->getEntityId()
             );
             return false;
         }

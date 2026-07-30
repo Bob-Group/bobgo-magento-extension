@@ -726,15 +726,59 @@ Verified clean, for the record: all 13 XML files against Magento's real XSDs (wi
 
 ---
 
+## Live-testing findings (2026-07-30, Bob Go sandbox)
+
+Found by placing real orders against the sandbox. Every one of these had survived the
+pre-test self-review, because each needed either a second request or a real API response
+to show itself — the class of bug that code review structurally cannot reach.
+
+| # | Issue | Why review missed it | Fix |
+|---|-------|----------------------|-----|
+| 6 | `suburb` was declared as an extension attribute with **no column anywhere**, so every write was silently dropped | The rate path reads the suburb from the request body, so rates were always correct — only the order that followed carried the city in `local_area` | `308b9e6` added the columns |
+| 7 | Nothing ever wrote the suburb onto the **quote** address, so the quote→order converter read an address that had never stored one | Extension attributes live only for the request that carried them, and order placement is a *later* request. Three of the four links in the chain existed | `48a58d0` |
+| 8 | `display_options` was empty for **configurable** products — the exact case it was built for | Magento keeps `attributes_info` on the parent; `mapItems()` sends the child | `308b9e6` |
+| 9 | Reconciliation saved the order without the inbound guard, so it queued an outbound PATCH of the state Bob Go had just sent us | The webhook path *did* guard, so the guard looked present. Six redundant 200 PATCHes in one cron run | `f74ef8d` |
+| 10 | A PATCH's `order_items` is authoritative to Bob Go and reconciled destructively; once an item is fulfilled it refuses the delete and 400s **permanently**, so the order could never be updated again | Needs a fulfilled order plus a second push to reproduce | `1f708cb` |
+| 11 | The sync log recorded the request and `"failed with status 400"` but never the response body, so the admin grid could not say *why* | Only visible when you actually need to diagnose a failure from the grid | this commit |
+
+`InboundGuard` was made re-entrant as part of #9: the scopes legitimately nest now, and a
+flag would have let the inner exit unguard the outer one. Same nesting trap as #3.
+
+### Residual, low severity — not fixed
+
+- **Stale item linkbacks on pre-existing orders.** Orders 3, 4 and 5 hold the Bob Go item
+  id on the *configurable parent*; `saveOrderItemIds()` skips configurables now, so orders
+  placed since are correct. All three are covered by #10 anyway (each has a fulfilment
+  blob or a shipped qty), so no migration is needed.
+- **A missing child linkback on an unfulfilled order** would send an item with no `id`, and
+  Bob Go would delete-and-recreate the real one rather than 400. Self-heals, because
+  `saveOrderItemIds()` re-stores ids from every response. Pre-existing.
+- **Free shipping suppresses locker choice.** A cart rule granting free shipping
+  short-circuits the carrier to one `bobgo_free` row, so the customer cannot pick a pickup
+  point — and the locker id is encoded *in* the service code, so the merchant cannot
+  recover the choice on Bob Go's side either. `serviceCode()` deliberately omits
+  `buyer_selected_service_code` for the sentinel. Worth deciding whether free shipping
+  should instead fetch rates and zero the prices, preserving service and locker selection;
+  if so, never cache the zeroed rates.
+
+---
+
 ## Open questions for the Bob Go backend team
 
 Woo's Part 2 lists open asks; these are ours, and the first three are new.
 
-- **Q1.** What exactly does `bobgo-channel-identifier` expect — full canonical URL (Woo) or
-  host+path with the scheme stripped (us)? Two shipped integrations disagree.
-- **Q2.** `bobgo_order_ref`: `OrderPushService::applySuccess` guesses `response['reference']`
-  then `response['order_ref']`. What is the real key? If neither, the column stays null forever
-  (known limitation #8).
+- ~~**Q1.** What exactly does `bobgo-channel-identifier` expect — full canonical URL (Woo) or
+  host+path with the scheme stripped (us)?~~ **Answered 2026-07-30 by live response:** ours is
+  correct. Bob Go echoed `channel.identifier: "app.bobgo-magento.test"`, matching the
+  scheme-stripped header exactly. Woo's full-URL claim does not apply.
+- ~~**Q2.** `bobgo_order_ref`: what is the real key?~~ **Answered 2026-07-30: there isn't one.**
+  The order response carries `id`, `channel_ref_id` and `channel_order_number` and nothing
+  reference-shaped. `bobgo_order_ref` can never be populated — reclassified from "verify against
+  sandbox" to "the field does not exist".
+- **Q2a.** *(new)* Confirmed by live test: `PATCH /v2/orders` **is accepted without
+  `order_items`** — it is genuinely partial. Worth having documented, since the whole fix for
+  finding #10 depends on it. Also worth asking whether Bob Go could ignore rather than
+  destructively reconcile an item list that omits already-fulfilled items.
 - **Q3.** Does `PATCH /v2/orders` echo enough to confirm a status change applied, or do we need
   a follow-up `GET /v2/orders?id=`?
 - **Q4.** **Channel-scoped webhook delivery, or a `channel_id` in payloads.** The root fix —

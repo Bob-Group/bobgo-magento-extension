@@ -215,12 +215,14 @@ class FulfilmentSyncServiceTest extends TestCase
     public function testApiErrorIsLoggedAndReported(): void
     {
         $order = $this->order(7, '987');
-        $this->apiClient->method('get')
-            ->willThrowException(new BobGoApiException('boom', 500, '', 'order-fulfillments'));
+        $exception = new BobGoApiException('boom', 500, '{"message":"upstream exploded"}', 'order-fulfillments');
+        $this->apiClient->method('get')->willThrowException($exception);
 
         $this->logger->expects($this->once())->method('warning');
-        $this->syncLogger->expects($this->once())->method('logOutbound')
-            ->with($this->anything(), $this->anything(), $this->anything(), 500, false);
+        // The exception is handed over whole, so the response body reaches the row
+        // instead of being flattened to "failed with status 500".
+        $this->syncLogger->expects($this->once())->method('logOutboundFailure')
+            ->with($this->anything(), ['order_id' => '987'], $exception, 7);
 
         $this->assertFalse($this->service->syncOrder($order));
     }

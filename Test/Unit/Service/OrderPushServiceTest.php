@@ -104,8 +104,10 @@ class OrderPushServiceTest extends TestCase
             ->willThrowException(new \Exception('API connection failed'));
 
         $this->loggerMock->expects($this->once())->method('error');
-        $this->syncLoggerMock->expects($this->once())->method('logOutbound')
-            ->with($this->anything(), $this->anything(), $this->anything(), $this->anything(), false);
+        // The throwable itself goes to the logger, which is what lets it record
+        // the API's response body rather than just "failed with status N".
+        $this->syncLoggerMock->expects($this->once())->method('logOutboundFailure')
+            ->with($this->anything(), $this->anything(), $this->isInstanceOf(\Throwable::class), 100);
 
         $this->service->pushOrder($order);
 
@@ -363,8 +365,8 @@ class OrderPushServiceTest extends TestCase
 
         $this->apiClientMock->method('patch')->willThrowException(new \Exception('400 Bad Request'));
         $this->loggerMock->expects($this->once())->method('error');
-        $this->syncLoggerMock->expects($this->once())->method('logOutbound')
-            ->with($this->anything(), $this->anything(), $this->anything(), $this->anything(), false);
+        $this->syncLoggerMock->expects($this->once())->method('logOutboundFailure')
+            ->with($this->anything(), $this->anything(), $this->isInstanceOf(\Throwable::class), 100);
 
         $this->assertFalse($this->service->pushStatus($order, 'completed'));
         $this->assertArrayNotHasKey('bobgo_status_synced', $writes);
