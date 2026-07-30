@@ -19,6 +19,9 @@ class ApiConfig
     /** @var string Config path for the encrypted Bob Go API key */
     const XML_PATH_API_KEY = 'carriers/bobgo/api_key';
 
+    /** @var string Config path for the encrypted webhook signing secret */
+    const XML_PATH_WEBHOOK_SECRET = 'carriers/bobgo/webhook_secret';
+
     /** @var string Config path for the environment selector (sandbox/production) */
     const XML_PATH_ENVIRONMENT = 'carriers/bobgo/environment';
 
@@ -33,6 +36,9 @@ class ApiConfig
 
     /** @var string Config path for the carrier active toggle (rates at checkout) */
     const XML_PATH_ACTIVE = 'carriers/bobgo/active';
+
+    /** @var string Config path for the track order feature toggle */
+    const XML_PATH_ENABLE_TRACK_ORDER = 'carriers/bobgo/enable_track_order';
 
     /** @var string Bob Go API v2 base URL for sandbox environment */
     const BASE_URL_SANDBOX = 'https://api.sandbox.bobgo.co.za/v2/';
@@ -84,6 +90,21 @@ class ApiConfig
     }
 
     /**
+     * Get the decrypted webhook signing secret used to verify inbound Bob Go webhooks.
+     *
+     * @return string|null The webhook secret, or null if not configured
+     */
+    public function getWebhookSecret(): ?string
+    {
+        $value = $this->scopeConfig->getValue(self::XML_PATH_WEBHOOK_SECRET, ScopeInterface::SCOPE_STORE);
+        if (!is_string($value) || $value === '') {
+            return null;
+        }
+        $decrypted = $this->encryptor->decrypt($value);
+        return is_string($decrypted) && $decrypted !== '' ? $decrypted : null;
+    }
+
+    /**
      * Get the selected API environment. Defaults to sandbox if not set or unrecognized.
      *
      * @return string Either 'sandbox' or 'production'
@@ -117,7 +138,7 @@ class ApiConfig
     }
 
     /**
-     * Check whether fulfillment sync (webhooks + cron polling) is enabled.
+     * Check whether fulfillment sync (webhooks) is enabled.
      *
      * @return bool
      */

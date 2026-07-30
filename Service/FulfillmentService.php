@@ -3,336 +3,186 @@ declare(strict_types=1);
 
 namespace BobGroup\BobGo\Service;
 
+use Magento\Sales\Api\Data\OrderInterface;
+use Magento\Sales\Api\OrderManagementInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
-use Magento\Sales\Api\ShipOrderInterface;
-use Magento\Sales\Api\Data\ShipmentTrackCreationInterfaceFactory;
-use Magento\Sales\Api\Data\ShipmentItemCreationInterfaceFactory;
-use Magento\Framework\Api\SearchCriteriaBuilder;
-use Magento\Sales\Model\Order\Shipment\TrackFactory;
-use BobGroup\BobGo\Model\Config\ApiConfig;
+use Magento\Framework\Stdlib\DateTime\DateTime;
 use Psr\Log\LoggerInterface;
 
 /**
- * Creates Magento shipments from Bob Go fulfillment data.
+ * Webhook-facing side effects for inbound Bob Go events.
  *
- * Handles two types of incoming data:
- * - Fulfillment creation: Creates a new shipment with items and tracking numbers.
- *   Includes idempotency checks to prevent duplicate shipments.
- * - Tracking updates: Adds new tracking numbers to the latest existing shipment.
+ * Deliberately thin. Webhooks are treated as *triggers*, not as data: each
+ * handler stamps the last-webhook timestamp, then hands off to
+ * FulfilmentSyncService, which re-fetches authoritative state from Bob Go and
+ * reconciles against it. Nothing here patches local fulfilment state from the
+ * webhook body, which is what makes duplicate and out-of-order deliveries safe.
  *
- * Called by both the webhook receiver (real-time) and cron service (polling fallback).
+ * The one exception is the payload's own line items: they are passed through as
+ * a fallback for the rare case where the authoritative record doesn't enumerate
+ * which items a fulfilment covers.
+ *
+ * Every entry point takes an already-resolved order — see OrderResolver for why
+ * resolution is neither trivial nor safe to do here.
  */
 class FulfillmentService
 {
-    /**
-     * @var OrderRepositoryInterface
-     */
     private OrderRepositoryInterface $orderRepository;
-
-    /**
-     * @var ShipOrderInterface
-     */
-    private ShipOrderInterface $shipOrder;
-
-    /**
-     * @var ShipmentTrackCreationInterfaceFactory
-     */
-    private ShipmentTrackCreationInterfaceFactory $trackCreationFactory;
-
-    /**
-     * @var ShipmentItemCreationInterfaceFactory
-     */
-    private ShipmentItemCreationInterfaceFactory $itemCreationFactory;
-
-    /**
-     * @var SearchCriteriaBuilder
-     */
-    private SearchCriteriaBuilder $searchCriteriaBuilder;
-
-    /**
-     * @var TrackFactory
-     */
-    private TrackFactory $trackFactory;
-
-    /**
-     * @var ApiConfig
-     */
-    private ApiConfig $apiConfig;
-
-    /**
-     * @var LoggerInterface
-     */
+    private OrderManagementInterface $orderManagement;
+    private FulfilmentSyncService $fulfilmentSync;
+    private OrderPushService $orderPushService;
+    private DateTime $dateTime;
     private LoggerInterface $logger;
 
     public function __construct(
         OrderRepositoryInterface $orderRepository,
-        ShipOrderInterface $shipOrder,
-        ShipmentTrackCreationInterfaceFactory $trackCreationFactory,
-        ShipmentItemCreationInterfaceFactory $itemCreationFactory,
-        SearchCriteriaBuilder $searchCriteriaBuilder,
-        TrackFactory $trackFactory,
-        ApiConfig $apiConfig,
+        OrderManagementInterface $orderManagement,
+        FulfilmentSyncService $fulfilmentSync,
+        OrderPushService $orderPushService,
+        DateTime $dateTime,
         LoggerInterface $logger
     ) {
         $this->orderRepository = $orderRepository;
-        $this->shipOrder = $shipOrder;
-        $this->trackCreationFactory = $trackCreationFactory;
-        $this->itemCreationFactory = $itemCreationFactory;
-        $this->searchCriteriaBuilder = $searchCriteriaBuilder;
-        $this->trackFactory = $trackFactory;
-        $this->apiConfig = $apiConfig;
+        $this->orderManagement = $orderManagement;
+        $this->fulfilmentSync = $fulfilmentSync;
+        $this->orderPushService = $orderPushService;
+        $this->dateTime = $dateTime;
         $this->logger = $logger;
     }
 
     /**
-     * Process a fulfillment from Bob Go - creates a shipment in Magento
+     * Handle `fulfillment/created`.
      *
-     * @param array<string,mixed> $data Fulfillment data from Bob Go
+     * @param array<string,mixed> $data
+     * @throws TransientWebhookException
      */
-    public function processFulfillment(array $data): void
+    public function processFulfillment(OrderInterface $order, array $data): void
     {
-        $channelRefId = $data['channel_ref_id'] ?? null;
-        $fulfillmentId = $data['fulfillment_id'] ?? null;
-        $trackingNumbers = $data['tracking_numbers'] ?? [];
-        $lineItems = $data['line_items'] ?? [];
+        $this->recordWebhook($order);
 
-        if ($channelRefId === null) {
-            $this->logger->error('Bob Go fulfillment missing channel_ref_id', ['data' => $data]);
+        $webhookItems = is_array($data['order_items'] ?? null) ? $data['order_items'] : [];
+        $this->fulfilmentSync->syncOrder($order, $webhookItems);
+    }
+
+    /**
+     * Handle `tracking/updated`.
+     *
+     * The refresh does the substantive work — the shipment and its tracking row
+     * come from the authoritative fetch, so this no longer depends on
+     * fulfillment/created having landed first. The status comment is added from
+     * the payload because it is the human-readable checkpoint text and putting
+     * it in order history is what gives the merchant a timeline.
+     *
+     * @param array<string,mixed> $data
+     * @throws TransientWebhookException
+     */
+    public function processTrackingUpdate(OrderInterface $order, array $data): void
+    {
+        // On this topic the top-level `id` is the tracking-reference string, not
+        // an id of anything — Bob Go sends no order id here at all.
+        $trackingNumber = (string) ($data['shipment_tracking_reference'] ?? ($data['id'] ?? ''));
+        $statusFriendly = (string) ($data['status_friendly'] ?? ($data['status'] ?? ''));
+
+        $comment = null;
+        if ($statusFriendly !== '') {
+            $comment = $trackingNumber !== ''
+                ? sprintf('Bob Go tracking update: %s (ref: %s)', $statusFriendly, $trackingNumber)
+                : sprintf('Bob Go tracking update: %s', $statusFriendly);
+        }
+
+        $this->recordWebhook($order, $comment);
+        $this->fulfilmentSync->syncOrder($order);
+    }
+
+    /**
+     * Handle `order/updated`.
+     *
+     * Bob Go sends the full order object here, and re-fires on any relevant
+     * change including bulk operations, so this must be idempotent. Only
+     * cancellation is acted on: it is the one state transition Bob Go owns that
+     * the store cannot infer for itself.
+     *
+     * @param array<string,mixed> $data
+     */
+    public function processOrderUpdate(OrderInterface $order, array $data): void
+    {
+        $this->recordWebhook($order);
+
+        $status = strtolower(trim((string) ($data['status'] ?? '')));
+        if ($status !== 'cancelled' && $status !== 'canceled') {
+            return;
+        }
+
+        $this->cancelOrder($order);
+    }
+
+    /**
+     * Cancel the Magento order because Bob Go says it was cancelled.
+     */
+    private function cancelOrder(OrderInterface $order): void
+    {
+        $orderId = (int) $order->getEntityId();
+
+        /** @var \Magento\Sales\Model\Order $order */
+        if ($order->getState() === \Magento\Sales\Model\Order::STATE_CANCELED) {
             return;
         }
 
         try {
-            $order = $this->findOrderByEntityId((int) $channelRefId);
-        } catch (\Exception $e) {
-            $this->logger->error('Bob Go fulfillment: order not found', [
-                'channel_ref_id' => $channelRefId,
+            if (!$this->orderManagement->cancel($orderId)) {
+                // Magento refuses to cancel once anything is invoiced or
+                // shipped. Nothing we can do about that from here, but the
+                // operator needs to know Bob Go and Magento now disagree.
+                $this->logger->warning('Bob Go: Magento refused to cancel an order cancelled on Bob Go', [
+                    'order_id' => $orderId,
+                    'state' => $order->getState(),
+                ]);
+                return;
+            }
+
+            $this->logger->info('Bob Go: order cancelled from inbound webhook', ['order_id' => $orderId]);
+
+            // Cancelling flips the derived payment_status (total_due drops to
+            // zero, so unpaid -> paid), which changes the outbound payload hash
+            // and would make the next save PATCH that meaningless change straight
+            // back to Bob Go. Re-baseline the hash against the post-cancel
+            // payload so the dirty check stays quiet.
+            $this->orderPushService->refreshSyncHash($this->orderRepository->get($orderId));
+        } catch (\Throwable $e) {
+            $this->logger->error('Bob Go: failed to cancel order from inbound webhook', [
+                'order_id' => $orderId,
                 'error' => $e->getMessage(),
             ]);
-            return;
         }
+    }
 
-        if (!$order->canShip()) {
-            $this->logger->info('Bob Go fulfillment: order cannot be shipped', [
-                'order_id' => $order->getEntityId(),
-                'state' => $order->getState(),
-                'fulfillment_id' => $fulfillmentId,
-            ]);
-            return;
-        }
-
-        // Idempotency check - don't create duplicate shipments
-        if ($this->hasExistingFulfillment($order, $trackingNumbers)) {
-            $this->logger->info('Bob Go fulfillment: shipment already exists', [
-                'order_id' => $order->getEntityId(),
-                'fulfillment_id' => $fulfillmentId,
-            ]);
-            return;
-        }
-
-        // Build items array for partial fulfillments
-        $items = $this->buildShipmentItems($order, $lineItems);
-
-        // Build tracking entries
-        $tracks = [];
-        foreach ($trackingNumbers as $tracking) {
-            $track = $this->trackCreationFactory->create();
-            $track->setTrackNumber($tracking['number'] ?? '');
-            $track->setCarrierCode('bobgo');
-            $track->setTitle($tracking['carrier'] ?? 'Bob Go');
-            $tracks[] = $track;
-        }
-
+    /**
+     * Record that Bob Go contacted us about this order, plus any order-history
+     * comment the event warrants — in a single save.
+     *
+     * One save rather than one per concern: every order save re-fires
+     * sales_order_save_after, which runs the outbound push observer, so a
+     * handler that saved three times made the webhook three times as expensive
+     * for no benefit.
+     *
+     * Failures are swallowed. Neither the timestamp nor the comment is worth
+     * failing a delivery over — the substantive work is the API refresh, and a
+     * 500 here would make Bob Go retry the whole thing.
+     */
+    private function recordWebhook(OrderInterface $order, ?string $comment = null): void
+    {
         try {
-            $notifyCustomer = $this->apiConfig->shouldNotifyCustomer();
-            $this->shipOrder->execute(
-                (int) $order->getEntityId(),
-                $items,
-                $notifyCustomer,
-                false,
-                null,
-                $tracks
-            );
-
-            $this->logger->info('Bob Go fulfillment: shipment created', [
+            $order->setData('bobgo_last_webhook', $this->dateTime->gmtDate());
+            if ($comment !== null && $comment !== '') {
+                /** @var \Magento\Sales\Model\Order $order */
+                $order->addCommentToStatusHistory($comment);
+            }
+            $this->orderRepository->save($order);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Bob Go: failed to record inbound webhook on the order', [
                 'order_id' => $order->getEntityId(),
-                'fulfillment_id' => $fulfillmentId,
-            ]);
-        } catch (\Exception $e) {
-            $this->logger->error('Bob Go fulfillment: failed to create shipment', [
-                'order_id' => $order->getEntityId(),
-                'fulfillment_id' => $fulfillmentId,
                 'error' => $e->getMessage(),
             ]);
         }
-    }
-
-    /**
-     * Process a tracking update - updates tracking info on existing shipments
-     *
-     * @param array<string,mixed> $data Tracking update data from Bob Go
-     */
-    public function processTrackingUpdate(array $data): void
-    {
-        $channelRefId = $data['channel_ref_id'] ?? null;
-        $trackingNumbers = $data['tracking_numbers'] ?? [];
-
-        if ($channelRefId === null) {
-            $this->logger->error('Bob Go tracking update missing channel_ref_id', ['data' => $data]);
-            return;
-        }
-
-        try {
-            $order = $this->findOrderByEntityId((int) $channelRefId);
-        } catch (\Exception $e) {
-            $this->logger->error('Bob Go tracking update: order not found', [
-                'channel_ref_id' => $channelRefId,
-                'error' => $e->getMessage(),
-            ]);
-            return;
-        }
-
-        /** @var \Magento\Sales\Model\Order $order */
-        $shipments = $order->getShipmentsCollection();
-        if ($shipments === false || $shipments->getSize() === 0) {
-            $this->logger->info('Bob Go tracking update: no shipments found for order', [
-                'order_id' => $order->getEntityId(),
-            ]);
-            return;
-        }
-
-        /** @var \Magento\Sales\Model\Order\Shipment $shipment */
-        $shipment = $shipments->getLastItem();
-
-        // Collect existing tracking numbers to avoid duplicates
-        $existingNumbers = [];
-        foreach ($shipment->getAllTracks() as $existingTrack) {
-            $existingNumbers[] = $existingTrack->getTrackNumber();
-        }
-
-        $tracksAdded = false;
-        foreach ($trackingNumbers as $tracking) {
-            $number = $tracking['number'] ?? '';
-            if ($number === '' || in_array($number, $existingNumbers, true)) {
-                continue;
-            }
-
-            try {
-                /** @var \Magento\Sales\Model\Order\Shipment\Track $trackModel */
-                $trackModel = $this->trackFactory->create();
-                $trackModel->setTrackNumber($number);
-                $trackModel->setCarrierCode('bobgo');
-                $trackModel->setTitle($tracking['carrier'] ?? 'Bob Go');
-                $shipment->addTrack($trackModel);
-                $tracksAdded = true;
-            } catch (\Exception $e) {
-                $this->logger->error('Bob Go tracking update: failed to add track', [
-                    'order_id' => $order->getEntityId(),
-                    'tracking_number' => $number,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
-        if ($tracksAdded) {
-            try {
-                $shipment->save();
-                $this->logger->info('Bob Go tracking update: tracks updated', [
-                    'order_id' => $order->getEntityId(),
-                ]);
-            } catch (\Exception $e) {
-                $this->logger->error('Bob Go tracking update: failed to save shipment', [
-                    'order_id' => $order->getEntityId(),
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-    }
-
-    /**
-     * @param int $entityId
-     * @return \Magento\Sales\Api\Data\OrderInterface|\Magento\Sales\Model\Order
-     * @throws \Magento\Framework\Exception\NoSuchEntityException
-     */
-    private function findOrderByEntityId(int $entityId): \Magento\Sales\Api\Data\OrderInterface
-    {
-        return $this->orderRepository->get($entityId);
-    }
-
-    /**
-     * Check if a shipment with the given tracking numbers already exists on the order
-     *
-     * @param \Magento\Sales\Api\Data\OrderInterface $order
-     * @param array<int,array<string,string>> $trackingNumbers
-     * @return bool
-     */
-    private function hasExistingFulfillment(\Magento\Sales\Api\Data\OrderInterface $order, array $trackingNumbers): bool
-    {
-        /** @var \Magento\Sales\Model\Order $order */
-        $shipments = $order->getShipmentsCollection();
-        if ($shipments === false || $shipments->getSize() === 0) {
-            return false;
-        }
-
-        $incomingNumbers = [];
-        foreach ($trackingNumbers as $tracking) {
-            if (!empty($tracking['number'])) {
-                $incomingNumbers[] = $tracking['number'];
-            }
-        }
-
-        if (empty($incomingNumbers)) {
-            return false;
-        }
-
-        foreach ($shipments as $shipment) {
-            /** @var \Magento\Sales\Model\Order\Shipment $shipment */
-            foreach ($shipment->getAllTracks() as $track) {
-                if (in_array($track->getTrackNumber(), $incomingNumbers, true)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Build shipment items array from fulfillment line items.
-     * Returns empty array for full fulfillment (ShipOrderInterface ships all when items is empty).
-     *
-     * @param \Magento\Sales\Api\Data\OrderInterface $order
-     * @param array<int,array<string,mixed>> $lineItems
-     * @return array<\Magento\Sales\Api\Data\ShipmentItemCreationInterface>
-     */
-    private function buildShipmentItems(\Magento\Sales\Api\Data\OrderInterface $order, array $lineItems): array
-    {
-        if (empty($lineItems)) {
-            return [];
-        }
-
-        // Build a map of channel_ref_id => quantity from fulfillment data
-        $fulfillmentQtyMap = [];
-        foreach ($lineItems as $lineItem) {
-            $itemRefId = $lineItem['channel_ref_id'] ?? null;
-            $qty = $lineItem['quantity'] ?? 0;
-            if ($itemRefId !== null) {
-                $fulfillmentQtyMap[(string) $itemRefId] = (int) $qty;
-            }
-        }
-
-        $items = [];
-        /** @var \Magento\Sales\Model\Order $order */
-        foreach ($order->getAllItems() as $orderItem) {
-            /** @var \Magento\Sales\Model\Order\Item $orderItem */
-            $itemId = (string) $orderItem->getItemId();
-            if (isset($fulfillmentQtyMap[$itemId])) {
-                $shipmentItem = $this->itemCreationFactory->create();
-                $shipmentItem->setOrderItemId((int) $orderItem->getItemId());
-                $shipmentItem->setQty((float) $fulfillmentQtyMap[$itemId]);
-                $items[] = $shipmentItem;
-            }
-        }
-
-        return $items;
     }
 }

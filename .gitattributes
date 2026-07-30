@@ -1,9 +1,10 @@
-# Exclude specific files and directories from archives
-/.husky export-ignore
-/.distignore export-ignore
+# Exclude development files from git archive distribution
+/Test export-ignore
+/phpunit.xml.dist export-ignore
+/docs export-ignore
+/CLAUDE.md export-ignore
 /.gitignore export-ignore
-/.gitlab-ci.yml export-ignore
-/make-zip.sh export-ignore
-/update-version.js export-ignore
 /.gitattributes export-ignore
-/scripts export-ignore
+/bump-version.sh export-ignore
+/phpstan.neon export-ignore
+/.claude export-ignore

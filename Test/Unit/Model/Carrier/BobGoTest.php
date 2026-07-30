@@ -8,6 +8,7 @@ use BobGroup\BobGo\Model\Carrier\AdditionalInfo;
 use BobGroup\BobGo\Api\BobGoApiClient;
 use BobGroup\BobGo\Api\BobGoApiException;
 use BobGroup\BobGo\Model\Config\ApiConfig;
+use BobGroup\BobGo\Service\RateCache;
 use Magento\Catalog\Model\ResourceModel\Product\CollectionFactory;
 use Magento\CatalogInventory\Api\StockRegistryInterface;
 use Magento\Directory\Helper\Data;
@@ -54,6 +55,9 @@ class BobGoTest extends TestCase
     /** @var AdditionalInfo|\PHPUnit\Framework\MockObject\MockObject */
     private $additionalInfoMock;
 
+    /** @var RateCache|\PHPUnit\Framework\MockObject\MockObject */
+    private $rateCacheMock;
+
     protected function setUp(): void
     {
         $this->storeManagerMock = $this->createMock(StoreManagerInterface::class);
@@ -63,6 +67,7 @@ class BobGoTest extends TestCase
         $this->resultFactoryMock = $this->createMock(ResultFactory::class);
         $this->methodFactoryMock = $this->createMock(MethodFactory::class);
         $this->additionalInfoMock = $this->createMock(AdditionalInfo::class);
+        $this->rateCacheMock = $this->createMock(RateCache::class);
 
         $rateErrorFactoryMock = $this->createMock(ErrorFactory::class);
         $loggerMock = $this->createMock(LoggerInterface::class);
@@ -100,6 +105,7 @@ class BobGoTest extends TestCase
             $requestMock,
             $this->apiClientMock,
             $this->apiConfigMock,
+            $this->rateCacheMock,
             []
         );
 
@@ -205,40 +211,6 @@ class BobGoTest extends TestCase
         $this->assertInstanceOf(BobGo::class, $result);
     }
 
-    public function testTriggerRatesTestUsesApiClient(): void
-    {
-        $this->scopeConfigMock->method('getValue')
-            ->willReturnMap([
-                ['carriers/bobgo/active', ScopeInterface::SCOPE_STORE, null, '1'],
-            ]);
-
-        $this->apiClientMock->method('post')
-            ->with('rates-at-checkout', $this->anything())
-            ->willReturn([
-                'rates' => [['id' => 'rate-1', 'service_name' => 'Standard']],
-            ]);
-
-        $result = $this->bobGo->triggerRatesTest();
-
-        $this->assertIsArray($result);
-        $this->assertNotFalse($result);
-    }
-
-    public function testTriggerRatesTestReturnsFalseOnApiError(): void
-    {
-        $this->scopeConfigMock->method('getValue')
-            ->willReturnMap([
-                ['carriers/bobgo/active', ScopeInterface::SCOPE_STORE, null, '1'],
-            ]);
-
-        $this->apiClientMock->method('post')
-            ->willThrowException(new BobGoApiException('API error', 401));
-
-        $result = $this->bobGo->triggerRatesTest();
-
-        $this->assertFalse($result);
-    }
-
     public function testCollectRatesPayloadHasNoIdentifier(): void
     {
         $this->scopeConfigMock->method('getValue')
@@ -256,12 +228,15 @@ class BobGoTest extends TestCase
         $resultMock = $this->createMock(\Magento\Shipping\Model\Rate\Result::class);
         $this->resultFactoryMock->method('create')->willReturn($resultMock);
 
+        $methodMock = $this->createMock(\Magento\Quote\Model\Quote\Address\RateResult\Method::class);
+        $this->methodFactoryMock->method('create')->willReturn($methodMock);
+
         // Capture the payload sent to apiClient
         $capturedPayload = null;
         $this->apiClientMock->method('post')
             ->willReturnCallback(function ($endpoint, $payload) use (&$capturedPayload) {
                 $capturedPayload = $payload;
-                return ['rates' => []];
+                return ['rates' => [['service_name' => 'Standard', 'service_code' => 'STD', 'total_price' => 100.00, 'min_delivery_date' => '', 'max_delivery_date' => '']]];
             });
 
         $rateRequest = new RateRequest();
@@ -274,10 +249,389 @@ class BobGoTest extends TestCase
 
         $this->bobGo->collectRates($rateRequest);
 
-        // Verify the payload does NOT contain 'identifier'
-        if ($capturedPayload !== null) {
-            $this->assertArrayNotHasKey('identifier', $capturedPayload);
-            $this->assertArrayHasKey('rate', $capturedPayload);
+        // Verify the v2 payload structure does NOT contain 'identifier'
+        $this->assertNotNull($capturedPayload, 'API should have been called with a payload');
+        $this->assertArrayNotHasKey('identifier', $capturedPayload);
+        $this->assertArrayHasKey('collection_address', $capturedPayload);
+        $this->assertArrayHasKey('delivery_address', $capturedPayload);
+        $this->assertArrayHasKey('items', $capturedPayload);
+    }
+
+    /**
+     * Fail soft. Magento invokes collectRates() with no try/catch of its own
+     * (Shipping::collectCarrierRates), so anything escaping here 500s the
+     * checkout shipping step and the cart estimator for every customer —
+     * including stores that also offer other carriers. Whatever goes wrong, the
+     * carrier must simply not appear.
+     *
+     * @dataProvider thrownFromApiProvider
+     */
+    public function testCollectRatesHidesCarrierWhenSomethingThrows(\Throwable $thrown): void
+    {
+        $this->scopeConfigMock->method('getValue')->willReturn('test_value');
+        $this->scopeConfigMock->method('isSetFlag')->willReturn(true);
+
+        $this->additionalInfoMock->method('getDestComp')->willReturn('Test Co');
+        $this->additionalInfoMock->method('getSuburb')->willReturn('Test Suburb');
+
+        $storeMock = $this->createMock(\Magento\Store\Model\Store::class);
+        $storeMock->method('getBaseUrl')->willReturn('https://example.com/');
+        $this->storeManagerMock->method('getStore')->willReturn($storeMock);
+
+        $this->resultFactoryMock->method('create')
+            ->willReturn($this->createMock(\Magento\Shipping\Model\Rate\Result::class));
+
+        $this->apiClientMock->method('post')->willReturnCallback(
+            static function () use ($thrown) {
+                throw $thrown;
+            }
+        );
+
+        $rateRequest = new RateRequest();
+        $rateRequest->setDestPostcode('2196');
+        $rateRequest->setDestCountryId('ZA');
+        $rateRequest->setDestCity('Sandton');
+        $rateRequest->setDestStreet('1 Test St');
+        $rateRequest->setAllItems([]);
+
+        $this->assertFalse($this->bobGo->collectRates($rateRequest));
+    }
+
+    /**
+     * @return array<string,array{0:\Throwable}>
+     */
+    public function thrownFromApiProvider(): array
+    {
+        return [
+            // What Magento's Curl client throws on a timeout or DNS failure.
+            'bare exception' => [new \Exception('Operation timed out')],
+            // And a hard error, so the guard is genuinely \Throwable-wide.
+            'error' => [new \TypeError('unexpected null')],
+        ];
+    }
+
+    // ------------------------------------------------------- rate payload money fields
+
+    /**
+     * declared_value and order_total_price are different numbers and both are
+     * required. Merchants configure free-shipping-over-X on Bob Go against the
+     * POST-discount total; sending only the pre-discount value gave WooCommerce
+     * shoppers free shipping they hadn't earned and denied it to those who had.
+     * We used to send a hardcoded declared_value of 0 and no total at all.
+     */
+    public function testRatePayloadCarriesPreAndPostDiscountValues(): void
+    {
+        $captured = $this->captureRatePayload(function (RateRequest $request) {
+            $request->setPackagePhysicalValue(500.00);
+            $request->setPackageValue(500.00);
+            $request->setPackageValueWithDiscount(450.00);
+        });
+
+        $this->assertSame(500.00, $captured['declared_value']);
+        $this->assertSame(450.00, $captured['order_total_price']);
+        $this->assertArrayHasKey('handling_time', $captured);
+    }
+
+    /**
+     * A 100%-off shipping promo legitimately produces a zero total, and zero is
+     * meaningfully different from "not supplied".
+     */
+    public function testPostDiscountTotalOfZeroIsSentAsZero(): void
+    {
+        $captured = $this->captureRatePayload(function (RateRequest $request) {
+            $request->setPackageValue(500.00);
+            $request->setPackageValueWithDiscount(0.0);
+        });
+
+        $this->assertSame(0.0, $captured['order_total_price']);
+    }
+
+    public function testDeclaredValueFallsBackToSummingTheItems(): void
+    {
+        $quoteItem = $this->createMock(\Magento\Quote\Model\Quote\Item::class);
+        $quoteItem->method('getName')->willReturn('Widget');
+        $quoteItem->method('getQty')->willReturn(2);
+        $quoteItem->method('getPrice')->willReturn(125.00);
+        $quoteItem->method('getWeight')->willReturn(1.0);
+
+        $captured = $this->captureRatePayload(
+            static function (RateRequest $request) {
+                // Neither package value populated — some flows don't set them.
+            },
+            [$quoteItem]
+        );
+
+        $this->assertSame(250.00, $captured['declared_value']);
+    }
+
+    // ------------------------------------------------------------------ free shipping
+
+    /**
+     * A cart rule already granted free shipping, so there is nothing to price.
+     *
+     * The short-circuit must happen before the cache is consulted: the
+     * free-shipping flag is not part of the cache key, so zeroing a *cached* rate
+     * would leak free shipping to the next cart with the same basket and address
+     * and no coupon.
+     */
+    public function testFreeShippingSkipsTheApiAndTheCacheEntirely(): void
+    {
+        $this->scopeConfigMock->method('isSetFlag')->willReturn(true);
+        $this->scopeConfigMock->method('getValue')->willReturn('test_value');
+
+        $resultMock = $this->createMock(\Magento\Shipping\Model\Rate\Result::class);
+        $this->resultFactoryMock->method('create')->willReturn($resultMock);
+
+        $method = $this->createMock(\Magento\Quote\Model\Quote\Address\RateResult\Method::class);
+        $method->expects($this->once())->method('setMethod')->with(BobGo::FREE_SHIPPING_METHOD);
+        $method->expects($this->once())->method('setPrice')->with(0.0);
+        $this->methodFactoryMock->method('create')->willReturn($method);
+
+        $this->apiClientMock->expects($this->never())->method('post');
+        $this->rateCacheMock->expects($this->never())->method('load');
+        $this->rateCacheMock->expects($this->never())->method('save');
+
+        $resultMock->expects($this->once())->method('append')->with($method);
+
+        $request = new RateRequest();
+        $request->setDestCountryId('ZA');
+        $request->setDestPostcode('2196');
+        $request->setAllItems([]);
+        $request->setFreeShipping(true);
+
+        $this->bobGo->collectRates($request);
+    }
+
+    // ------------------------------------------------------------------------ caching
+
+    public function testCachedRatesAreServedWithoutCallingTheApi(): void
+    {
+        $this->rateCacheMock->method('load')->willReturn(['rates' => [['service_name' => 'Cached']]]);
+        $this->rateCacheMock->method('isNegative')->willReturn(false);
+        $this->apiClientMock->expects($this->never())->method('post');
+
+        $this->assertSame(
+            ['rates' => [['service_name' => 'Cached']]],
+            $this->bobGo->getRates(['any' => 'payload'])
+        );
+    }
+
+    public function testANegativeCacheEntryMeansNoRatesWithoutCallingTheApi(): void
+    {
+        $this->rateCacheMock->method('load')->willReturn(['__bobgo' => 'no_rates']);
+        $this->rateCacheMock->method('isNegative')->willReturn(true);
+        $this->apiClientMock->expects($this->never())->method('post');
+
+        $this->assertEmpty($this->bobGo->getRates(['any' => 'payload']));
+    }
+
+    public function testAFailedCallIsCachedBrieflySoAnOutageIsNotHammered(): void
+    {
+        $this->rateCacheMock->method('load')->willReturn(null);
+        $this->apiClientMock->method('post')
+            ->willThrowException(new BobGoApiException('timeout', 0, '', 'rates-at-checkout'));
+
+        $this->rateCacheMock->expects($this->once())->method('saveFailure');
+        $this->rateCacheMock->expects($this->never())->method('save');
+
+        $this->assertEmpty($this->bobGo->getRates(['any' => 'payload']));
+    }
+
+    public function testSuccessfulRatesAreCached(): void
+    {
+        $this->rateCacheMock->method('load')->willReturn(null);
+        $this->apiClientMock->method('post')->willReturn(['rates' => [['service_name' => 'Standard']]]);
+
+        $this->rateCacheMock->expects($this->once())->method('save');
+
+        $this->bobGo->getRates(['any' => 'payload']);
+    }
+
+    // ----------------------------------------------------------------------- helpers
+
+    /**
+     * Run collectRates() and hand back the payload that reached the API.
+     *
+     * @param callable $prepare Receives the RateRequest before collection
+     * @param array<int,object> $items
+     * @return array<string,mixed>
+     */
+    private function captureRatePayload(callable $prepare, array $items = []): array
+    {
+        $this->scopeConfigMock->method('getValue')->willReturn('test_value');
+        $this->scopeConfigMock->method('isSetFlag')->willReturn(true);
+        $this->additionalInfoMock->method('getDestComp')->willReturn('Test Co');
+        $this->additionalInfoMock->method('getSuburb')->willReturn('Sandton');
+
+        $storeMock = $this->createMock(\Magento\Store\Model\Store::class);
+        $storeMock->method('getBaseUrl')->willReturn('https://example.com/');
+        $this->storeManagerMock->method('getStore')->willReturn($storeMock);
+
+        $this->resultFactoryMock->method('create')
+            ->willReturn($this->createMock(\Magento\Shipping\Model\Rate\Result::class));
+        $this->methodFactoryMock->method('create')
+            ->willReturn($this->createMock(\Magento\Quote\Model\Quote\Address\RateResult\Method::class));
+
+        $this->rateCacheMock->method('load')->willReturn(null);
+
+        $captured = [];
+        $this->apiClientMock->method('post')
+            ->willReturnCallback(function ($endpoint, $payload) use (&$captured) {
+                $captured = $payload;
+                return ['rates' => [['service_name' => 'Standard', 'total_price' => 100.0]]];
+            });
+
+        $request = new RateRequest();
+        $request->setDestCountryId('ZA');
+        $request->setDestPostcode('2196');
+        $request->setDestCity('Sandton');
+        $request->setDestStreet('1 Test St');
+        $request->setAllItems($items);
+        $prepare($request);
+
+        $this->bobGo->collectRates($request);
+
+        return $captured;
+    }
+
+    // ----------------------------------------------------------- rate list hygiene
+
+    /**
+     * A checkout with forty shipping options is worse than one with five.
+     */
+    public function testRateListIsCappedForDisplay(): void
+    {
+        $rates = [];
+        for ($i = 0; $i < 25; $i++) {
+            $rates[] = ['service_name' => 'Option ' . $i, 'service_code' => 'bobgo_' . $i, 'total_price' => 10 + $i];
         }
+
+        $appended = 0;
+        $resultMock = $this->createMock(\Magento\Shipping\Model\Rate\Result::class);
+        $resultMock->method('append')->willReturnCallback(function () use (&$appended) {
+            $appended++;
+        });
+        $this->resultFactoryMock->method('create')->willReturn($resultMock);
+        $this->methodFactoryMock->method('create')->willReturnCallback(function () {
+            return $this->createMock(\Magento\Quote\Model\Quote\Address\RateResult\Method::class);
+        });
+
+        $this->scopeConfigMock->method('getValue')->willReturn(null);
+        $this->rateCacheMock->method('load')->willReturn(null);
+        $this->apiClientMock->method('post')->willReturn(['rates' => $rates]);
+
+        $this->invokeFormatRates(['rates' => $rates], $resultMock);
+
+        $this->assertSame(20, $appended);
+    }
+
+    /**
+     * No rates and nothing configured to say about it: appending an Error with an
+     * empty message and no carrier code rendered as a blank row at checkout.
+     */
+    public function testNoRatesAppendsNothingWhenThereIsNoMessageToShow(): void
+    {
+        $this->scopeConfigMock->method('getValue')->willReturn(null);
+
+        $resultMock = $this->createMock(\Magento\Shipping\Model\Rate\Result::class);
+        $resultMock->expects($this->never())->method('append');
+
+        $this->invokeFormatRates(['rates' => []], $resultMock);
+    }
+
+    /**
+     * Configurable parents carry the price but no weight; the simple child
+     * carries the variant and the weight. Sending both gave Bob Go a duplicate
+     * zero-weight line for every configurable in the cart, and disagreed with
+     * what OrderMapper sends on push.
+     */
+    public function testRatePayloadSkipsConfigurableParents(): void
+    {
+        $parent = $this->createMock(\Magento\Quote\Model\Quote\Item::class);
+        $parent->method('getProductType')->willReturn('configurable');
+        $parent->method('getName')->willReturn('Hoodie');
+        $parent->method('getQty')->willReturn(1);
+        $parent->method('getPrice')->willReturn(500.00);
+        $parent->method('getWeight')->willReturn(0.0);
+
+        $child = $this->createMock(\Magento\Quote\Model\Quote\Item::class);
+        $child->method('getProductType')->willReturn('simple');
+        $child->method('getName')->willReturn('Hoodie-M-Blue');
+        $child->method('getQty')->willReturn(1);
+        $child->method('getPrice')->willReturn(0.0);
+        $child->method('getWeight')->willReturn(1.5);
+
+        $captured = $this->captureRatePayload(static function (RateRequest $request) {
+        }, [$parent, $child]);
+
+        $this->assertCount(1, $captured['items']);
+        $this->assertSame('Hoodie-M-Blue', $captured['items'][0]['description']);
+    }
+
+    /**
+     * Products sold by weight or length have fractional quantities; casting to int
+     * shipped 2.5 kg of something as 2.
+     */
+    public function testRatePayloadKeepsFractionalQuantities(): void
+    {
+        $item = $this->createMock(\Magento\Quote\Model\Quote\Item::class);
+        $item->method('getProductType')->willReturn('simple');
+        $item->method('getName')->willReturn('Biltong');
+        $item->method('getQty')->willReturn(2.5);
+        $item->method('getPrice')->willReturn(100.00);
+        $item->method('getWeight')->willReturn(0.5);
+
+        $captured = $this->captureRatePayload(static function (RateRequest $request) {
+        }, [$item]);
+
+        $this->assertSame(2.5, $captured['items'][0]['quantity']);
+    }
+
+    /**
+     * @param array<string,mixed> $rates
+     * @param object $result
+     */
+    private function invokeFormatRates(array $rates, $result): void
+    {
+        $method = new \ReflectionMethod($this->bobGo, '_formatRates');
+        if (PHP_VERSION_ID < 80100) {
+            // Required on the 7.4 end of our supported range; a no-op and
+            // deprecated from 8.1 onwards.
+            $method->setAccessible(true);
+        }
+        $method->invoke($this->bobGo, $rates, $result);
+    }
+
+    // ------------------------------------------------------------- collection address
+
+    /**
+     * Goods rarely ship from the address on the invoice.
+     *
+     * A partially-filled override still falls back to Store Information field by
+     * field, rather than sending the gaps.
+     */
+    public function testCollectionAddressOverridesStoreInformationFieldByField(): void
+    {
+        $config = [
+            'carriers/bobgo/origin/city' => 'Midrand',
+            'carriers/bobgo/origin/suburb' => 'Halfway House',
+            'general/store_information/city' => 'Cape Town',
+            'general/store_information/suburb' => 'Gardens',
+            'general/store_information/postcode' => '8001',
+            'general/store_information/country_id' => 'ZA',
+        ];
+        $this->scopeConfigMock->method('getValue')->willReturnCallback(
+            static function ($path) use ($config) {
+                return $config[$path] ?? null;
+            }
+        );
+        $this->scopeConfigMock->method('isSetFlag')->willReturn(true);
+
+        [$postcode, , $country, $city, , , , $suburb] = $this->bobGo->storeInformation();
+
+        $this->assertSame('Midrand', $city, 'overridden');
+        $this->assertSame('Halfway House', $suburb, 'overridden');
+        $this->assertSame('8001', $postcode, 'falls back to Store Information');
+        $this->assertSame('ZA', $country, 'falls back to Store Information');
     }
 }

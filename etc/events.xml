@@ -3,7 +3,6 @@
     <event name="sales_order_save_after">
         <observer name="bobgo_order_save_observer" instance="BobGroup\BobGo\Observer\OrderSaveObserver"/>
     </event>
-    <!-- app/code/Vendor/Module/etc/events.xml -->
     <event name="sales_order_place_before">
         <observer name="modify_shipping_description" instance="BobGroup\BobGo\Observer\ModifyShippingDescription"/>
     </event>

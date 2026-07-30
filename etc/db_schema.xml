@@ -3,5 +3,149 @@
         xsi:noNamespaceSchemaLocation="urn:magento:framework:Setup/Declaration/Schema/etc/schema.xsd">
     <table name="sales_order" resource="sales" comment="Sales Order">
         <column xsi:type="varchar" name="bobgo_order_id" nullable="true" length="255" comment="Bob Go Order ID"/>
+        <column xsi:type="varchar" name="bobgo_order_ref" nullable="true" length="255"
+                comment="Bob Go immutable order reference"/>
+        <column xsi:type="varchar" name="bobgo_sync_status" nullable="true" length="32"
+                comment="pending|success|failed"/>
+        <column xsi:type="varchar" name="bobgo_sync_hash" nullable="true" length="64"
+                comment="MD5 of last-synced payload for dirty-checking"/>
+        <column xsi:type="timestamp" name="bobgo_last_synced" nullable="true"
+                comment="Timestamp of last successful outbound sync"/>
+        <column xsi:type="timestamp" name="bobgo_last_webhook" nullable="true"
+                comment="Timestamp of last inbound Bob Go webhook"/>
+        <column xsi:type="text" name="bobgo_shipments" nullable="true"
+                comment="JSON-encoded shipments array from Bob Go (authoritative)"/>
+        <column xsi:type="varchar" name="bobgo_status_synced" nullable="true" length="32"
+                comment="Last order status forwarded to Bob Go (cancelled|completed)"/>
+        <!--
+            The failed-sync admin banner counts orders in this state on every admin
+            page load, and reconciliation/support both filter on it. Without an
+            index that COUNT is a full scan of sales_order.
+        -->
+        <index referenceId="BOBGO_SALES_ORDER_BOBGO_SYNC_STATUS" indexType="btree">
+            <column name="bobgo_sync_status"/>
+        </index>
+    </table>
+    <!--
+        Storage for the suburb captured at checkout.
+
+        `suburb` was declared as an extension attribute in
+        extension_attributes.xml but never given a column, so every write was
+        silently dropped: Magento only persists fields that exist in the table.
+        The value therefore survived only in memory, within a single request.
+
+        That made it fail in two places at once. The quote address is saved during
+        set-shipping-information but the order is placed in a *later* request, so
+        ToOrderAddressPlugin found nothing to carry across. And once order push
+        moved to a background job (1.2.0), OrderMapper read the order back from a
+        database that had never stored it. Both fell back to `city`, which is what
+        Bob Go was receiving as `local_area`.
+
+        Rate requests were unaffected — AdditionalInfo reads the suburb straight
+        out of the request body — which is why this went unnoticed.
+    -->
+    <table name="quote_address" resource="checkout" comment="Quote Address">
+        <column xsi:type="varchar" name="suburb" nullable="true" length="255"
+                comment="Suburb / local area captured at checkout"/>
+    </table>
+    <table name="sales_order_address" resource="sales" comment="Sales Order Address">
+        <column xsi:type="varchar" name="suburb" nullable="true" length="255"
+                comment="Suburb / local area, carried from the quote address"/>
+    </table>
+
+    <table name="sales_order_item" resource="sales" comment="Sales Order Item">
+        <column xsi:type="varchar" name="bobgo_order_item_id" nullable="true" length="255"
+                comment="Bob Go Order Item ID"/>
+    </table>
+    <table name="sales_shipment" resource="sales" comment="Sales Shipment">
+        <column xsi:type="varchar" name="bobgo_fulfillment_id" nullable="true" length="128"
+                comment="Bob Go fulfilment id (idempotency)"/>
+    </table>
+
+    <!--
+        Outbox for order pushes. The observer on sales_order_save_after only
+        writes a row here; the actual POST/PATCH happens on a cron a moment
+        later. Keeping the HTTP call off the request thread matters because that
+        observer fires on checkout, on every admin order save, and on invoice
+        and shipment creation.
+
+        A dedicated table rather than a flag on sales_order, because the observer
+        runs *inside* the order's own save: setting a column would mean saving the
+        order again from within its afterSave, and re-entering every other
+        module's observers with it. One tiny insert avoids all of that.
+
+        UNIQUE on order_id makes enqueueing idempotent — an order saved ten times
+        in one request is pushed once.
+    -->
+    <table name="bobgo_order_sync_queue" resource="default" engine="innodb"
+           comment="Bob Go pending order pushes">
+        <column xsi:type="int" name="entity_id" identity="true" nullable="false" unsigned="true"
+                comment="Entity ID"/>
+        <column xsi:type="int" name="order_id" nullable="false" unsigned="true"
+                comment="Magento sales_order entity_id"/>
+        <column xsi:type="smallint" name="attempts" nullable="false" default="0" unsigned="true"
+                comment="Failed attempts so far, drives the backoff"/>
+        <column xsi:type="timestamp" name="next_attempt_at" nullable="true"
+                comment="Do not attempt before this time (null = immediately)"/>
+        <column xsi:type="timestamp" name="created_at" nullable="false" default="CURRENT_TIMESTAMP"
+                comment="Queued at"/>
+        <constraint xsi:type="primary" referenceId="PRIMARY">
+            <column name="entity_id"/>
+        </constraint>
+        <constraint xsi:type="unique" referenceId="BOBGO_ORDER_SYNC_QUEUE_ORDER_ID_UNQ">
+            <column name="order_id"/>
+        </constraint>
+        <index referenceId="BOBGO_ORDER_SYNC_QUEUE_NEXT_ATTEMPT_AT" indexType="btree">
+            <column name="next_attempt_at"/>
+        </index>
+    </table>
+
+    <table name="bobgo_sync_log" resource="default" engine="innodb" comment="Bob Go inbound/outbound sync log">
+        <column xsi:type="int" name="entity_id" identity="true" nullable="false" unsigned="true"
+                comment="Entity ID"/>
+        <column xsi:type="int" name="order_id" nullable="true" unsigned="true"
+                comment="Magento sales_order entity_id (null for non-order events)"/>
+        <column xsi:type="varchar" name="event_type" nullable="false" length="64"
+                comment="webhook_received|webhook_rejected|order_created|order_updated_outbound|...="/>
+        <column xsi:type="varchar" name="direction" nullable="false" length="16"
+                comment="inbound|outbound"/>
+        <column xsi:type="varchar" name="event_id" nullable="true" length="128"
+                comment="Provider-issued event id for dedup"/>
+        <column xsi:type="text" name="payload" nullable="true"
+                comment="JSON-encoded request or response body"/>
+        <column xsi:type="smallint" name="http_status" nullable="true" unsigned="true"
+                comment="HTTP status returned/observed"/>
+        <column xsi:type="boolean" name="success" nullable="false" default="false"
+                comment="Outcome flag"/>
+        <column xsi:type="smallint" name="retry_count" nullable="false" default="0" unsigned="true"
+                comment="Number of retries observed"/>
+        <column xsi:type="timestamp" name="created_at" nullable="false" default="CURRENT_TIMESTAMP"
+                comment="Created at"/>
+        <constraint xsi:type="primary" referenceId="PRIMARY">
+            <column name="entity_id"/>
+        </constraint>
+        <index referenceId="BOBGO_SYNC_LOG_EVENT_ID" indexType="btree">
+            <column name="event_id"/>
+        </index>
+        <index referenceId="BOBGO_SYNC_LOG_ORDER_ID" indexType="btree">
+            <column name="order_id"/>
+        </index>
+        <index referenceId="BOBGO_SYNC_LOG_CREATED_AT" indexType="btree">
+            <column name="created_at"/>
+        </index>
+        <!--
+            Race-safe webhook dedup. Two concurrent deliveries of the same
+            event_id can both pass the existing "have I seen this?" check
+            before either writes a success row. A UNIQUE constraint on
+            (event_id, direction) makes the INSERT itself the atomic claim:
+            the second concurrent worker hits a duplicate-key violation and
+            backs off cleanly. NULL event_ids are not part of the constraint
+            (MySQL treats NULLs as not-equal in unique indexes), so events
+            that arrive without an id still log without colliding.
+        -->
+        <constraint xsi:type="unique" referenceId="BOBGO_SYNC_LOG_EVENT_ID_DIRECTION_UNQ">
+            <column name="event_id"/>
+            <column name="direction"/>
+        </constraint>
     </table>
 </schema>
