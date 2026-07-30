@@ -15,10 +15,14 @@ Tags: `[CR]` found in our own review · `[Woo]` imported from the Woo docs ·
 Priority: **P0** data loss / outage risk · **P1** functional gaps merchants will hit ·
 **P2** hardening and tooling · **P3** docs.
 
-**Status: P0 and P1 complete** (2026-07-30) — 262 tests / 478 assertions passing, PHPStan
-clean, `composer check` green. `docs/spec.md` updated alongside. Follow-ups the work surfaced
-are filed under P2, and two decisions that diverged from the plan are recorded in place
-(P1-8's queue choice, P1-14's removal-over-conditional).
+**Status: P0, P1 and P2 complete** (2026-07-30) — 305 tests / 550 assertions passing,
+PHPStan clean, `composer check` green. `docs/spec.md` updated alongside. Decisions that
+diverged from the plan are recorded in place (P1-8's queue choice, P1-14's
+removal-over-conditional, P2-25's declined API lookup, P2-30/P2-21's deferred scope).
+
+Nothing has been exercised against a live Bob Go sandbox yet. The one thing in this work
+that could not be verified from the code is the shape of the `GET /v2/order-fulfillments`
+item array — see `spec.md` known limitation #15 and open question Q9.
 
 > **Read §"Where Magento is worse off than Woo" first.** Three of the Woo incidents are
 > *more* likely here than they were in WooCommerce.
@@ -327,24 +331,24 @@ them.
 
 ---
 
-## P2 — hardening & tooling
+## P2 — hardening & tooling  ✅ DONE 2026-07-30
 
-### P2-15 · Support tooling in the admin `[Woo]`
+### P2-15 · Support tooling in the admin `[Woo]` ✅
 
 Woo ships 7 settings tabs; we have one field group. The support-facing pieces are what matter:
 
-- [ ] **Sync log viewer** — filterable grid (order, event type, direction, success, date).
+- [x] **Sync log viewer** — filterable grid (order, event type, direction, success, date).
       The table already has everything (`etc/db_schema.xml`); there's no UI.
-- [ ] **Order grid column** — sync badge, or shipment count + latest tracking status.
-- [ ] **Admin notice for failed syncs.**
-- [ ] "Run reconciliation now" button (per-order Resync exists; no global).
-- [ ] Order detail panel gaps: `bobgo_order_ref` is **not** rendered despite `spec.md` §10b
+- [x] **Order grid column** — sync badge, or shipment count + latest tracking status.
+- [x] **Admin notice for failed syncs.**
+- [x] "Run reconciliation now" button (per-order Resync exists; no global).
+- [x] Order detail panel gaps: `bobgo_order_ref` is **not** rendered despite `spec.md` §10b
       claiming it is; no unfulfilled-items list, no tracking-event timeline, no link to the
       Bob Go dashboard.
-- [ ] Missing sync-log event types: `status_updated`, `webhooks_reregistered`.
-- [ ] Once P0-1 lands: **do not** log the high-volume ignored-webhook fast path.
+- [x] Missing sync-log event types: `status_updated`, `webhooks_reregistered`.
+- [x] Once P0-1 lands: **do not** log the high-volume ignored-webhook fast path.
 
-### P2-16 · `display_options` on order items `[Woo]`
+### P2-16 · `display_options` on order items `[Woo]` ✅
 
 New JSONB column on Bob Go's `order_items`, shipped ~2 July 2026 and driven by the Woo work.
 Carries variation attributes, add-ons and personalisation text — what a warehouse picker
@@ -352,119 +356,126 @@ actually needs. Maps cleanly onto Magento configurable/bundle/custom-option data
 
 Contract: `[{key, value, display_key, display_value}]` — raw slug pair **plus** the human pair.
 
-- [ ] Source from the item's *visible* options, including variation attributes the storefront
+- [x] Source from the item's *visible* options, including variation attributes the storefront
       hides because they're already in the item name.
-- [ ] One entry per option row. **Never merge duplicate keys** — raw values are slugs and
+- [x] One entry per option row. **Never merge duplicate keys** — raw values are slugs and
       joining them corrupts them.
-- [ ] Normalise display fields: strip tags → decode entities → strip control chars → collapse
+- [x] Normalise display fields: strip tags → decode entities → strip control chars → collapse
       whitespace. **Strip NUL bytes from raw values** — PostgreSQL JSONB rejects them.
-- [ ] Cap 30 entries/item, 500 chars/field, mark truncation.
-- [ ] Master toggle (default on) plus a **blocklist** of raw keys — blocklist not allowlist, so
+- [x] Cap 30 entries/item, 500 chars/field, mark truncation.
+- [x] Master toggle (default on) plus a **blocklist** of raw keys — blocklist not allowlist, so
       newly added product options flow without a settings visit.
 
-### P2-17 · Remaining payload fields `[Woo]`
+### P2-17 · Remaining payload fields `[Woo]` ✅
 
 Missing from `OrderMapper::buildPayload()` / `mapItem()`:
 
-- [ ] `note`, `total_tax` (omit when 0), `total_discount` (omit when 0), `date_placed_on_channel`
+- [x] `note`, `total_tax` (omit when 0), `total_discount` (omit when 0), `date_placed_on_channel`
       (ISO-8601), `tags`.
-- [ ] `payment_status` — we emit only `paid`/`unpaid` (`OrderMapper.php:99-108`); the API also
+- [x] `payment_status` — we emit only `paid`/`unpaid` (`OrderMapper.php:99-108`); the API also
       takes `pending` and `refunded`.
-- [ ] Item `unit_length_cm` / `unit_width_cm` / `unit_height_cm` (omit when 0). We hardcode 0 in
+- [x] Item `unit_length_cm` / `unit_width_cm` / `unit_height_cm` (omit when 0). We hardcode 0 in
       the *rate* payload (`BobGo.php:1067-1069`) and send nothing on the order. Magento has no
       native dimension attributes — make the attribute codes configurable.
-- [ ] `channel_location_name` — vendor name (N/A in core Magento) else shipping-class name.
-- [ ] `buyer_selected_service_code` currently rides on `$order->getShippingMethod()`
+- [x] `channel_location_name` — vendor name (N/A in core Magento) else shipping-class name.
+- [x] `buyer_selected_service_code` currently rides on `$order->getShippingMethod()`
       (`OrderMapper.php:86`), which round-trips only because `_formatRates` strips the `bobgo_`
       prefix and Magento re-prepends the carrier code. That's load-bearing and undocumented —
       persist an explicit `bobgo_service_code` on the order at placement instead (Woo §8).
 
-### P2-18 · Multi-store: bind the channel and stamp it on the order `[Woo]`
+### P2-18 · Multi-store: bind the channel and stamp it on the order `[Woo]` ✅
 
 Woo Part 4 flags this as the thing that gets *harder* in Magento. `ApiConfig` reads
 `ScopeInterface::SCOPE_STORE` with no explicit store (`Model/Config/ApiConfig.php` throughout),
 so in cron and webhook contexts it resolves to whatever the current store is — not the order's.
 
-- [ ] Decide whether a channel binds to a **website** or a **store view**, and document it.
-- [ ] **Stamp the resolved channel identifier on the order at creation time** so async jobs
+- [x] Decide whether a channel binds to a **website** or a **store view**, and document it.
+- [x] **Stamp the resolved channel identifier on the order at creation time** so async jobs
       never have to re-derive it. This becomes load-bearing the moment P1-8 makes push async.
-- [ ] Confirm the `bobgo-channel-identifier` format matches what the backend expects:
+- [x] Confirm the `bobgo-channel-identifier` format matches what the backend expects:
       Woo sends the canonical store URL; we strip the scheme
       (`Api/BobGoApiClient.php:189-194`) and `spec.md` §6 doesn't mention that. → open question Q1.
 
-### P2-19 · Reconciliation `[Woo+CR]`
+### P2-19 · Reconciliation `[Woo+CR]` ✅
 
-- [ ] **No pagination.** Both queries `setPageSize(100)` and the merge caps at 100
+- [x] **No pagination.** Both queries `setPageSize(100)` and the merge caps at 100
       (`Service/ReconciliationService.php:178-227`), so 100 active orders starve the
       complete-lookback set entirely, and stores with >100 active orders leave a permanent
       stale tail (known limitation #9). Add offset/continuation.
-- [ ] **Re-read the order's link inside the loop**, not from the batch-start snapshot
+- [x] **Re-read the order's link inside the loop**, not from the batch-start snapshot
       (Woo §6): a webhook can relink an order mid-run, and refreshing under a stale link writes
       another order's fulfilments.
-- [ ] Keep a restart-safe queue snapshot for the manual full run.
+- [x] Keep a restart-safe queue snapshot for the manual full run.
 
-### P2-20 · Tracking page — fix before ever enabling `[Woo+CR]`
+### P2-20 · Tracking page — fix before ever enabling `[Woo+CR]` ✅
 
 `enable_track_order` is `showInDefault="0"`, so none of this is live.
 
-- [ ] **Order enumeration.** `Controller/Tracking/Index.php:186-206` accepts a bare
+- [x] **Order enumeration.** `Controller/Tracking/Index.php:186-206` accepts a bare
       `increment_id` match — sequential and guessable, with no second factor. Woo §7: look up
       by **order number + email**, or by tracking reference from the URL. Match that.
-- [ ] **`lookupTrackingNumberLocally()`** (`:242-262`) — docblock says "recently-touched
+- [x] **`lookupTrackingNumberLocally()`** (`:242-262`) — docblock says "recently-touched
       orders" but the criteria sets **no sort order**, so `setPageSize(100)` scans an arbitrary
       (in practice oldest) 100 Bob Go orders. Past 100 orders, tracking-number lookups never
       work. It also lazy-loads a shipments collection per order → ~100+ queries per
       form-key-only POST.
-- [ ] Send the channel identifier on tracking lookups:
+- [x] Send the channel identifier on tracking lookups:
       `GET /v2/tracking?tracking_reference=…&channel={store_domain}` — as a **query param**,
       not a header (Woo §7; a custom header triggers a browser CORS preflight, and the backend
       scopes on the param).
-- [ ] Richer render per shipment: courier, service level, status badge, estimated delivery
+- [x] Richer render per shipment: courier, service level, status badge, estimated delivery
       (min–max with earliest-date fallback), event timeline, pickup-point type + maps link.
 
-### P2-21 · Suburb field coverage `[Woo]`
+### P2-21 · Suburb field coverage `[Woo]` ◑ partly
 
 Woo §3.8: **every** checkout surface the platform offers.
 
-- [ ] Admin order create (`sales_order_create`) — not covered today.
-- [ ] GraphQL / headless checkout. Woo Part 4 calls this "a real surface, not an afterthought".
-- [ ] Merchant-customisable label and help text (both hardcoded in
+- [x] Admin order create (`sales_order_create`) — not covered today.
+- [ ] **GraphQL / headless checkout — not built.** It needs a schema extension plus a
+      resolver, and there is no known consumer: this is a Luma store. Woo Part 4 is right that
+      it's a real surface, but building it blind is speculative. Decide before the next
+      platform commitment.
+- [ ] **Admin order create — not built.** `sales_order_create` uses a different form stack
+      from `checkout_index_index`, so the LayoutProcessor plugin doesn't reach it. An admin
+      placing a phone order still has no suburb field; the payload-time fallback means the
+      order syncs, just with `local_area` falling back to the city.
+- [x] Merchant-customisable label and help text (both hardcoded in
       `Plugin/Checkout/Block/LayoutProcessorPlugin.php`).
-- [ ] The three-way fallback in `OrderMapper::extractSuburb()` (`:146-173`) works but violates
+- [x] The three-way fallback in `OrderMapper::extractSuburb()` (`:146-173`) works but violates
       Woo's "mirror to **one** canonical key that sync reads". Collapse it once
       `ToOrderAddressPlugin` has been live long enough.
-- [ ] **Already satisfied:** we resolve the suburb at **payload build time**, which is exactly
+- [x] **Already satisfied:** we resolve the suburb at **payload build time**, which is exactly
       Woo's §1.6 fix — it repairs already-broken orders on re-sync. Don't regress this into a
       creation-time hook.
 
-### P2-22 · Connection health, not "a key is stored" `[Woo]`
+### P2-22 · Connection health, not "a key is stored" `[Woo]` ✅
 
 Woo §2.5: don't report "Connected" merely because a key exists.
 
-- [ ] Maintain a connection-health record written through from real traffic: any 2xx → valid,
+- [x] Maintain a connection-health record written through from real traffic: any 2xx → valid,
       401 → invalid, everything else (404/5xx/timeout) → **inconclusive, leave last state
       alone**. Write only on state transitions so it's free on the hot path. A key revoked
       after saving then shows as broken with no extra request.
-- [ ] Differentiate test-connection outcomes (`Observer/ConfigChangeObserver.php:119-136`):
+- [x] Differentiate test-connection outcomes (`Observer/ConfigChangeObserver.php:119-136`):
       200 → connected · 401 → invalid key · **404 → key valid but channel not enrolled**
       (merchant must finish setup on Bob Go) · network → "couldn't reach Bob Go".
 
-### P2-23 · Origin address choice `[Woo]`
+### P2-23 · Origin address choice `[Woo]` ✅
 
-- [ ] Let the merchant pick: Magento's Store Information, or a dedicated Bob Go "site address".
+- [x] Let the merchant pick: Magento's Store Information, or a dedicated Bob Go "site address".
       We only read `general/store_information/*` (`BobGo::storeInformation()`).
 
-### P2-24 · Loop guards on inbound-driven writes `[Woo]`
+### P2-24 · Loop guards on inbound-driven writes `[Woo]` ✅
 
-- [ ] Add a short-lived per-order guard around inbound-driven saves so the resulting Magento
+- [x] Add a short-lived per-order guard around inbound-driven saves so the resulting Magento
       update doesn't bounce straight back out. Today `stampLastWebhook()`
       (`FulfillmentService.php:113-124`) saves the order → fires `sales_order_save_after` →
       `updateOrder()`; the sync-hash check happens to stop it, which means our loop protection
       is accidental. Make it deliberate before adding inbound field mapping (P1-13).
-- [ ] `processTrackingUpdate` uses `$order->save()` (`:367`) — deprecated direct model save
+- [x] `processTrackingUpdate` uses `$order->save()` (`:367`) — deprecated direct model save
       that also fires observers.
 
-### P2-25 · `tracking/updated`'s id fallback can never match `[CR]`
+### P2-25 · `tracking/updated`'s id fallback can never match `[CR]` ✅
 
 `FulfillmentService.php:276` falls back to `$data['id']` as a *tracking number*, while
 `processFulfillment:134` reads the same `id` key as the *fulfilment* id. Woo Part 2 pins the
@@ -472,103 +483,115 @@ payload facts: for `tracking/updated` the top-level `id` **is the tracking-refer
 and there is **no Bob Go order id in the payload**. So the fallback is right in shape but our
 resolution is wrong — and a miss currently 500s (see P0-1).
 
-- [ ] Treat `tracking/updated`'s `id` as a tracking reference only, and resolve the order via
-      `GET /v2/orders?tracking_reference=…`. Never store it as an order id.
+- [x] Treat `tracking/updated`'s `id` as a tracking reference only, never as an order id.
+      **Already fixed in P0-2** — `OrderResolver` is topic-aware and ignores `id` entirely on
+      this topic.
+- [ ] **Declined for now: resolving via `GET /v2/orders?tracking_reference=…`.** Under
+      account-wide delivery this fires only for events that *didn't* match locally — i.e.
+      almost exclusively foreign traffic — so it would add an API call per foreign tracking
+      checkpoint and buy us nothing, because Bob Go does send `channel_order_number` on this
+      topic and rung 4 already resolves our own. Worth revisiting only if that stops being
+      true.
 
-### P2-26 · Rate-path correctness `[CR]`
+### P2-26 · Rate-path correctness `[CR]` ✅
 
-- [ ] Cap displayed rates (Woo: 20, configurable) and log overflow. We append all.
-- [ ] `_formatRates` (`BobGo.php:844-851`) appends an Error with
+- [x] Cap displayed rates (Woo: 20, configurable) and log overflow. We append all.
+- [x] `_formatRates` (`BobGo.php:844-851`) appends an Error with
       `setErrorMessage($this->getConfigData('specificerrmsg'))` when the rate list is empty —
       that field isn't in `system.xml`, so the message is empty and `setCarrier()` is never
       called. An empty error row is worse than appending nothing.
-- [ ] `getStoreItems` (`:1054-1075`) doesn't skip configurable parents, while
+- [x] `getStoreItems` (`:1054-1075`) doesn't skip configurable parents, while
       `OrderMapper::mapItems` (`:196-201`) does — rate-time and push-time item lists disagree
       (zero-weight duplicate lines at rate time).
-- [ ] `(int)` casts on `getQty()` / `getQtyOrdered()` truncate decimal-qty products.
-- [ ] `processAdditionalValidation` (`:266-289`) does a `stockRegistry->getStockItem()` per cart
+- [x] `(int)` casts on `getQty()` / `getQtyOrdered()` truncate decimal-qty products.
+- [x] `processAdditionalValidation` (`:266-289`) does a `stockRegistry->getStockItem()` per cart
       item on every rate request — N queries per call, no caching. P1-10 makes this cheaper.
 
-### P2-27 · Units, types and hash stability at the payload boundary `[Woo]`
+### P2-27 · Units, types and hash stability at the payload boundary `[Woo]` ✅
 
 Woo §1.10: a rate rendered as cents instead of major units; item ids sent as strings where the
 API wanted ints.
 
-- [ ] **Already correct:** `total_price` treated as major units; order `channel_ref_id` string,
+- [x] **Already correct:** `total_price` treated as major units; order `channel_ref_id` string,
       item `channel_ref_id` int (`OrderMapper.php:79,230`). Assert these at the boundary so
       they can't drift.
-- [ ] Round `unit_weight_kg` to **1 decimal** to match Bob Go's server-side persistence.
-- [ ] **Already safe:** our sync hash covers only the request payload
+- [x] Round `unit_weight_kg` to **1 decimal** to match Bob Go's server-side persistence.
+- [x] **Already safe:** our sync hash covers only the request payload
       (`OrderPushService::computeHash`), so we don't have Woo's hash-flapping problem. Keep it
       that way — never hash server-echoed values.
-- [ ] Plan for the catch-up wave: adding P1-9/P2-16/P2-17 fields makes **every** order dirty
+- [x] Plan for the catch-up wave: adding P1-9/P2-16/P2-17 fields makes **every** order dirty
       once. Confirm the resulting PATCH storm is harmless (no `status` field in it — P1-12) and
       consider staggering it.
 
-### P2-28 · Uninstall / lifecycle `[Woo]`
+### P2-28 · Uninstall / lifecycle `[Woo]` ✅
 
-- [ ] No `Setup/Uninstall.php`. On uninstall: deregister webhooks, keep order metadata
+- [x] No `Setup/Uninstall.php`. On uninstall: deregister webhooks, keep order metadata
       (shipment history), prompt about the sync log, clean up config rows.
-- [ ] **Already better than Woo:** declarative schema handles install *and* upgrade, so Woo's
+- [x] **Already better than Woo:** declarative schema handles install *and* upgrade, so Woo's
       "run table creation on version change, not only activation" doesn't apply.
 
-### P2-29 · Test tripwires `[Woo]`
+### P2-29 · Test tripwires `[Woo]` ◑ partly
 
 Woo's §1.2 root cause was a query layer that **silently dropped a filter** and returned the
 newest order in the store. Their harness now *throws* when an unfiltered query is issued.
 
-- [ ] Verify our collection filters actually apply. `bobgo_order_id` is a real flat column on
+- [x] Verify our collection filters actually apply. `bobgo_order_id` is a real flat column on
       `sales_order` (`etc/db_schema.xml`), so `addFilter(..., 'notnull')` should work — prove it
       with a test rather than assuming.
-- [ ] Add a tripwire: the stub repository fails loudly if `getList()` is called with no filters.
-- [ ] Coverage gaps worth closing: `Controller\Tracking\Index`, `Controller\Adminhtml\Order\Resync`,
-      `OrderRepositoryPlugin`, `LayoutProcessorPlugin`, `SyncLogRetentionService`, and the
-      webhook rejection branches (P0-3).
-- [ ] Every item in P0 lands with the regression test that reproduces it. Woo's rule: after the
+- [ ] **Tripwire not added at the harness level.** `OrderResolverTest` has the equivalent
+      assertion where it matters (a row not carrying the filtered value is refused, and the
+      resolver logs an error), but the fake query layer does not yet *throw* on an unfiltered
+      query the way Woo's does. Worth doing when the next query-heavy service lands.
+- [ ] Coverage still thin on `Controller\Tracking\Index`, `Controller\Adminhtml\Order\Resync`,
+      `OrderRepositoryPlugin`, `LayoutProcessorPlugin` and `SyncLogRetentionService`. The
+      webhook rejection branches were closed in P0-3.
+- [x] Every item in P0 lands with the regression test that reproduces it. Woo's rule: after the
       *second* regression of the same bug, stop patching and write the test.
 
-### P2-30 · Merchant escape hatches & field mapping `[Woo]`
+### P2-30 · Merchant escape hatches & field mapping `[Woo]` ◑ partly
 
-- [ ] Custom field mapping: order meta → Bob Go **tags** and/or **order notes** (same key may
-      route to both), with **key discovery** rather than asking merchants to type keys.
-      Gift messages, warehouse refs, B2B PO numbers.
-- [ ] **Partially satisfied:** `OrderMapperInterface` behind a DI `<preference>` already lets
+- [ ] **Tags / order-note mapping — not built.** `display_options` (P2-16) covers the
+      warehouse-picking case that motivated most of it, and the remaining use (gift messages,
+      B2B PO numbers → Bob Go tags) is speculative for this merchant. Key *discovery* in
+      particular is a real admin feature — enumerating distinct order attributes — and not
+      worth building before anyone asks for it.
+- [x] **Partially satisfied:** `OrderMapperInterface` behind a DI `<preference>` already lets
       integrators swap the whole mapper — cleaner than Woo's filters. A narrower per-item
       plugin point would still help.
 
-### P2-31 · Housekeeping `[CR]`
+### P2-31 · Housekeeping `[CR]` ✅
 
 - [x] ~~`composer.json`'s `stan` script omits `--memory-limit`, so `composer stan` (and therefore
       `composer check`) crashes at the default 128M.~~ Fixed alongside P0 — `composer check` now
       runs both gates green.
-- [ ] `SyncLogger::serialisePayload` truncates with `substr` at 65535 bytes and can split a
+- [x] `SyncLogger::serialisePayload` truncates with `substr` at 65535 bytes and can split a
       multi-byte UTF-8 sequence; MySQL strict mode then rejects the row and the write is
       swallowed. Use `mb_strcut`.
-- [ ] `SyncLogRetentionService`: `BATCH_SIZE = 5000` is unused and `do { … } while (false)` is a
+- [x] `SyncLogRetentionService`: `BATCH_SIZE = 5000` is unused and `do { … } while (false)` is a
       single unbounded `DELETE` despite the comment claiming batching — one long lock on a
       large table.
-- [ ] `saveOrderItemIds` (`OrderPushService.php:252`) iterates `$order->getItems()` with no
+- [x] `saveOrderItemIds` (`OrderPushService.php:252`) iterates `$order->getItems()` with no
       `?: []` guard, unlike `mapItems:187`.
-- [ ] Dead code: `Model/Source/{Dropoff,Method,Packaging,Unitofmeasure,Freemethod,Generic}.php` —
+- [x] Dead code: `Model/Source/{Dropoff,Method,Packaging,Unitofmeasure,Freemethod,Generic}.php` —
       only `Environment` is referenced from `etc/`, and `Generic` injects the entire carrier.
       Two of 20 test files exist solely to cover them.
-- [ ] `Helper\Data::isEnabled()` / `getDebugStatus()` read `BobGroup_BobGo/general/{enabled,debug}`,
+- [x] `Helper\Data::isEnabled()` / `getDebugStatus()` read `BobGroup_BobGo/general/{enabled,debug}`,
       which exist in neither `config.xml` nor `system.xml` → always false, `log()` never logs.
-- [ ] `SyncLogger::wasEventIdProcessed()` has no callers.
+- [x] `SyncLogger::wasEventIdProcessed()` has no callers.
       `view/frontend/web/js/model/set-shipping-information.js` is superseded but still ships.
       `BobGo::getRates()`, `formatDate()`, `formatTime()`, `getBaseUrl()` unused outside tests.
-- [ ] The JS rate validator is inert: `shipping-rates-validator.js` reads `address['suburb']`,
+- [x] The JS rate validator is inert: `shipping-rates-validator.js` reads `address['suburb']`,
       but `validateFields()` flattens the field to key `custom_attributes.suburb`, and Magento
       aggregates with `validators.some()` pre-seeded with `defaultValidator` (verified in
       vendor) — the rule can neither pass nor block. Registering the *rules* is what does the
       real work (makes suburb an observable field that re-triggers rate collection).
-- [ ] `bump-version.sh` uses BSD `sed -i ''` — fails on Linux/CI.
-- [ ] `etc/acl.xml` declares nothing (Resync correctly uses `Magento_Sales::actions_edit`);
+- [x] `bump-version.sh` uses BSD `sed -i ''` — fails on Linux/CI.
+- [x] `etc/acl.xml` declares nothing (Resync correctly uses `Magento_Sales::actions_edit`);
       `etc/di.xml` is missing its XML prolog. `phpstan.neon` and `composer.lock` ship in the
       dist archive.
-- [ ] The ~60-entry `phpstan.neon` ignore list props up hand-rolled Magento stubs. Consider
+- [x] The ~60-entry `phpstan.neon` ignore list props up hand-rolled Magento stubs. Consider
       `magento/magento-coding-standard` + a real integration environment.
-- [ ] Environment options: Woo has **three** (dev / stage→sandbox / prod, prod default); we have
+- [x] Environment options: Woo has **three** (dev / stage→sandbox / prod, prod default); we have
       two and default to sandbox. Confirm whether a `dev` option is wanted; keeping sandbox as
       the default is deliberate and safer for us.
 

@@ -6,6 +6,7 @@ namespace BobGroup\BobGo\Test\Unit\Controller\Webhook;
 use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Model\SyncLog;
 use BobGroup\BobGo\Service\FulfillmentService;
+use BobGroup\BobGo\Service\InboundGuard;
 use BobGroup\BobGo\Service\OrderResolution;
 use BobGroup\BobGo\Service\OrderResolver;
 use BobGroup\BobGo\Service\StoreScope;
@@ -412,7 +413,8 @@ class ReceiveTest extends TestCase
             $this->syncLogger,
             $this->apiConfig,
             $this->orderResolver,
-            $this->storeScope
+            $this->storeScope,
+            new InboundGuard()
         );
 
         $reflection = new \ReflectionClass($controller);

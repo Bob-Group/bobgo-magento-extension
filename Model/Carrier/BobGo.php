@@ -600,16 +600,19 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     public function storeInformation(): array
     {
-        /** Store Origin details */
-        $originCountry = $this->getStringValue('general/store_information/country_id');
-        $originRegionRaw = $this->getStringValue('general/store_information/region_id');
+        // Goods rarely ship from the address on the invoice. When the merchant has
+        // filled in a Bob Go collection address, that wins field by field — a
+        // partially-filled override still falls back to Store Information for
+        // anything it leaves blank, rather than silently sending gaps.
+        $originCountry = $this->origin('country_id', 'general/store_information/country_id');
+        $originRegionRaw = $this->origin('region', 'general/store_information/region_id');
         $originRegion = $this->resolveRegionCode($originRegionRaw, $originCountry);
-        $originCity = $this->getStringValue('general/store_information/city');
-        $originStreet = $this->getStringValue('general/store_information/postcode');
-        $originStreet1 = $this->getStringValue('general/store_information/street_line1');
+        $originCity = $this->origin('city', 'general/store_information/city');
+        $originStreet = $this->origin('postcode', 'general/store_information/postcode');
+        $originStreet1 = $this->origin('street', 'general/store_information/street_line1');
         $originStreet2 = $this->getStringValue('general/store_information/street_line2');
-        $storeName = $this->getStringValue('general/store_information/name');
-        $originSuburb = $this->getStringValue('general/store_information/suburb');
+        $storeName = $this->origin('company', 'general/store_information/name');
+        $originSuburb = $this->origin('suburb', 'general/store_information/suburb');
         $weightUnit = $this->getStringValue('general/locale/weight_unit');
 
         return [
@@ -623,6 +626,20 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             $originSuburb,
             $weightUnit,
         ];
+    }
+
+    /**
+     * A collection-address field, preferring the Bob Go override when set.
+     */
+    private function origin(string $field, string $storeInformationPath): ?string
+    {
+        // Nested config group, so the path carries the extra segment:
+        // carriers/bobgo/origin/<field>.
+        $override = $this->getStringValue('carriers/bobgo/origin/' . $field);
+        if ($override !== null && trim($override) !== '') {
+            return trim($override);
+        }
+        return $this->getStringValue($storeInformationPath);
     }
 
     /**

@@ -601,4 +601,37 @@ class BobGoTest extends TestCase
         }
         $method->invoke($this->bobGo, $rates, $result);
     }
+
+    // ------------------------------------------------------------- collection address
+
+    /**
+     * Goods rarely ship from the address on the invoice.
+     *
+     * A partially-filled override still falls back to Store Information field by
+     * field, rather than sending the gaps.
+     */
+    public function testCollectionAddressOverridesStoreInformationFieldByField(): void
+    {
+        $config = [
+            'carriers/bobgo/origin/city' => 'Midrand',
+            'carriers/bobgo/origin/suburb' => 'Halfway House',
+            'general/store_information/city' => 'Cape Town',
+            'general/store_information/suburb' => 'Gardens',
+            'general/store_information/postcode' => '8001',
+            'general/store_information/country_id' => 'ZA',
+        ];
+        $this->scopeConfigMock->method('getValue')->willReturnCallback(
+            static function ($path) use ($config) {
+                return $config[$path] ?? null;
+            }
+        );
+        $this->scopeConfigMock->method('isSetFlag')->willReturn(true);
+
+        [$postcode, , $country, $city, , , , $suburb] = $this->bobGo->storeInformation();
+
+        $this->assertSame('Midrand', $city, 'overridden');
+        $this->assertSame('Halfway House', $suburb, 'overridden');
+        $this->assertSame('8001', $postcode, 'falls back to Store Information');
+        $this->assertSame('ZA', $country, 'falls back to Store Information');
+    }
 }

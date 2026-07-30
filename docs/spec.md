@@ -194,6 +194,10 @@ BobGroup/BobGo/
 │   ├── OrderSyncPolicy.php            # Which orders Bob Go hears about, and what status to forward
 │   ├── OrderSyncQueue.php             # Outbox between the save observer and the push cron
 │   ├── RateCache.php                  # Rates-at-checkout cache (memo + TTL by address precision)
+│   ├── ConnectionHealth.php           # Write-through credential state, fed by real API traffic
+│   ├── DisplayOptionsMapper.php       # Product options -> Bob Go display_options
+│   ├── InboundGuard.php               # Marks inbound-driven saves so they don't echo outbound
+│   ├── StoreScope.php                 # Runs work in the order's own store scope
 │   ├── ReconciliationService.php      # Hourly safety net: re-fetch authoritative shipments
 │   ├── SyncLogger.php                 # Single writer for bobgo_sync_log + race-safe claim/release dedup
 │   ├── SyncLogRetentionService.php    # Prunes bobgo_sync_log rows older than 30 days
@@ -509,9 +513,22 @@ Return Result with available shipping methods
       "weight_kg": 1.5
     }
   ],
-  "declared_value": 0
+  "declared_value": 399.98,
+  "order_total_price": 349.98,
+  "handling_time": 0
 }
 ```
+
+> `declared_value` is the **pre**-discount value of the shippable goods;
+> `order_total_price` is the **post**-discount total, and it is what Bob Go
+> evaluates free-shipping-over-X thresholds against. Both are required — sending
+> only the former grants free shipping that wasn't earned and denies it to
+> shoppers who did earn it. Builds before 1.2.0 sent a hardcoded
+> `declared_value: 0` and no total at all, so those thresholds could not work.
+>
+> Item dimensions are still sent as 0 on the rate path. The order payload reads
+> them from merchant-nominated product attributes; wiring the same into rates
+> needs a collection load to avoid an N+1 per cart line.
 
 > **Note:** Item weights are in **kg** (converted from grams internally). Dimensions default to 0 when not available from Magento.
 
@@ -1810,7 +1827,7 @@ vendor/bin/phpunit --prepend Test/stubs/autoload-prepend.php \
                    Test/Unit/Model/Carrier/BobGoTest.php
 ```
 
-**Status:** 262 tests / 478 assertions passing. PHPStan: 0 errors at level 2. `composer check` runs both (the `stan` script passes `--memory-limit=1G`; the default 128M crashes the analyser).
+**Status:** 305 tests / 550 assertions passing. PHPStan: 0 errors at level 2. `composer check` runs both (the `stan` script passes `--memory-limit=1G`; the default 128M crashes the analyser).
 
 ### Test Files
 
@@ -1912,7 +1929,18 @@ The script updates both `composer.json` and `etc/module.xml`.
 
 14. **A fulfilment cancelled after we shipped it is not reflected** — Magento shipments can't be un-shipped. The cancelled status appears in `bobgo_shipments` (and so in the admin panel), but no order comment or notice is raised. See `docs/todo.md`.
 
-15. **The fulfilments response item shape is unverified** — `FulfilmentSyncService` tolerates several keys for a fulfilment's line items, but which one Bob Go actually uses hasn't been confirmed against sandbox. When none is present the service refuses to guess the scope unless there is exactly one live fulfilment for the order.
+15. **The fulfilments response item shape is unverified** — `FulfilmentSyncService` tolerates several keys for a fulfilment's line items, but which one Bob Go actually uses hasn't been confirmed against sandbox. When none is present the service refuses to guess the scope unless there is exactly one live fulfilment for the order. This is the single most important thing to check on first contact with a live sandbox.
+
+16. **No suburb field on admin order create.** `sales_order_create` uses a different form
+    stack from the storefront checkout, so the LayoutProcessor plugin doesn't reach it. A
+    phone order still syncs — `local_area` falls back to the city — but without the suburb.
+
+17. **No GraphQL / headless support for the suburb field.** Needs a schema extension and a
+    resolver; not built because there is no known consumer.
+
+18. **A fulfilment cancelled after we shipped it is still not reflected** (see #14). The
+    cancelled status appears in `bobgo_shipments`, so it is visible in the admin panel, but
+    no comment or notice is raised.
 
 13. **Order-number resolution is still enabled** — Rung 4 of the resolution ladder accepts a match on `increment_id` alone when the order has no stored Bob Go link. It is logged at warning level. Once `channel_ref_id` is confirmed present on every inbound payload, this rung can be dropped.
 
@@ -2000,6 +2028,15 @@ The extension has idempotency checks (tracking number matching). If duplicates s
 | `Service\OrderSyncQueue` | Outbox table between the save observer and `Cron\PushOrders` |
 | `Service\RateCache` | Rates cache: in-request memo, TTL split by address precision, short negative entry |
 | `Cron\PushOrders` | Every minute — drains the order-push outbox, then forwards terminal statuses |
+| `Service\ConnectionHealth` | Whether the stored credentials work, folded from observed HTTP statuses |
+| `Service\DisplayOptionsMapper` | Order item `product_options` → Bob Go `display_options` |
+| `Service\InboundGuard` | Suppresses the outbound push for saves Bob Go itself caused |
+| `Service\StoreScope` | Emulates the order's store so per-store config resolves correctly |
+| `Block\Adminhtml\System\Config\ConnectionStatus` | Connection row on the config screen |
+| `Controller\Adminhtml\SyncLog\Index` | Sync log grid page |
+| `Model\AdminNotification\FailedSyncMessage` | Admin banner counting failed order syncs |
+| `Model\ResourceModel\SyncLog\Grid\Collection` | SearchResult collection backing the grid |
+| `Setup\Uninstall` | Deregisters webhooks and removes config on module:uninstall |
 | `Service\ReconciliationService` | Hourly reconciliation — re-fetch authoritative shipments; two scoped queries (active + complete lookback) |
 | `Service\SyncLogger` | Single writer for `bobgo_sync_log` + atomic claim/release dedup + PII redaction |
 | `Service\SyncLogRetentionService` | Prunes `bobgo_sync_log` rows older than 30 days |

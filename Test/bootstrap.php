@@ -153,7 +153,8 @@ $stubs = [
     'class' => [
         'Magento\Framework\HTTP\Client\Curl' => ['addHeader', 'get', 'post', 'getStatus', 'getBody', 'setOption'],
         'Magento\Framework\HTTP\Client\CurlFactory' => ['create'],
-        'Magento\Framework\Api\SearchCriteriaBuilder' => ['addFilter', 'setPageSize', 'setCurrentPage', 'setSortOrders', 'create'],
+        'Magento\Framework\Api\SearchCriteriaBuilder' => ['addFilter', 'setPageSize', 'setCurrentPage', 'setSortOrders', 'addSortOrder', 'create'],
+        'Magento\Framework\Api\SortOrderBuilder' => ['setField', 'setDescendingDirection', 'setAscendingDirection', 'create'],
         'Magento\Framework\Api\SearchCriteria' => [],
         // Note: Magento\Sales\Model\Order is defined separately below (implements OrderInterface)
 

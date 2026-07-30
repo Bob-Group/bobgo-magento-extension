@@ -7,6 +7,7 @@ use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Model\SyncLog;
 use BobGroup\BobGo\Service\FulfillmentService;
 use BobGroup\BobGo\Service\OrderResolution;
+use BobGroup\BobGo\Service\InboundGuard;
 use BobGroup\BobGo\Service\OrderResolver;
 use BobGroup\BobGo\Service\StoreScope;
 use BobGroup\BobGo\Service\SyncLogger;
@@ -106,6 +107,7 @@ class Receive extends Action implements CsrfAwareActionInterface
     private ApiConfig $apiConfig;
     private OrderResolver $orderResolver;
     private StoreScope $storeScope;
+    private InboundGuard $inboundGuard;
 
     public function __construct(
         Context $context,
@@ -116,7 +118,8 @@ class Receive extends Action implements CsrfAwareActionInterface
         SyncLogger $syncLogger,
         ApiConfig $apiConfig,
         OrderResolver $orderResolver,
-        StoreScope $storeScope
+        StoreScope $storeScope,
+        InboundGuard $inboundGuard
     ) {
         parent::__construct($context);
         $this->fulfillmentService = $fulfillmentService;
@@ -127,6 +130,7 @@ class Receive extends Action implements CsrfAwareActionInterface
         $this->apiConfig = $apiConfig;
         $this->orderResolver = $orderResolver;
         $this->storeScope = $storeScope;
+        $this->inboundGuard = $inboundGuard;
     }
 
     public function execute()
@@ -251,8 +255,12 @@ class Receive extends Action implements CsrfAwareActionInterface
         // this, a multi-store order would be refreshed using another store's API
         // key and channel identifier.
         try {
-            return $this->storeScope->forOrder($order, function () use ($topic, $order, $data, $eventId, $result) {
-                return $this->route($topic, $order, $data, $eventId, $result);
+            return $this->storeScope->forOrder($order, function () use ($topic, $order, $data, $eventId, $result, $orderId) {
+                // Mark the order inbound-driven for the duration, so the saves the
+                // handlers make don't queue an outbound push of Bob Go's own change.
+                return $this->inboundGuard->around($orderId, function () use ($topic, $order, $data, $eventId, $result) {
+                    return $this->route($topic, $order, $data, $eventId, $result);
+                });
             });
         } catch (TransientWebhookException $e) {
             // Our fault or a race, and retrying can fix it: release the dedup

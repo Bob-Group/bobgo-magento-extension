@@ -39,6 +39,8 @@ $shipmentData = $block->getTrackingData();
             <div class="field">
                 <label for="order_reference"><?= $block->escapeHtml(__('Order Number/Tracking Reference:')) ?></label>
                 <input type="text" id="order_reference" name="order_reference" required>
+                <label for="email"><?= $block->escapeHtml(__('Email Address:')) ?></label>
+                <input type="email" id="email" name="email" required>
             </div>
             <br>
             <div class="actions-toolbar">

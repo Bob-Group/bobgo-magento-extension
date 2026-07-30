@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace BobGroup\BobGo\Plugin\Checkout\Block;
 
 use Magento\Checkout\Block\Checkout\LayoutProcessor;
+use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Store\Model\ScopeInterface;
 
 /**
  * Adds a suburb field to the checkout shipping address form.
@@ -13,6 +15,19 @@ use Magento\Checkout\Block\Checkout\LayoutProcessor;
  */
 class LayoutProcessorPlugin
 {
+    private const XML_PATH_LABEL = 'carriers/bobgo/suburb_label';
+    private const XML_PATH_TOOLTIP = 'carriers/bobgo/suburb_tooltip';
+
+    private const DEFAULT_LABEL = 'Suburb';
+    private const DEFAULT_TOOLTIP = 'Required for shipping accuracy';
+
+    private ScopeConfigInterface $scopeConfig;
+
+    public function __construct(ScopeConfigInterface $scopeConfig)
+    {
+        $this->scopeConfig = $scopeConfig;
+    }
+
     /**
      * Path segments from jsLayout root to the shipping address fieldset children.
      */
@@ -52,11 +67,13 @@ class LayoutProcessorPlugin
                     'template' => 'ui/form/field',
                     'elementTmpl' => 'ui/form/element/input',
                     'tooltip' => [
-                        'description' => 'Required for shipping accuracy',
+                        'description' => $this->text(self::XML_PATH_TOOLTIP, self::DEFAULT_TOOLTIP),
                     ],
                 ],
                 'dataScope' => 'shippingAddress.custom_attributes.suburb',
-                'label' => 'Suburb',
+                // Merchant-overridable: "Suburb" is the South African term, but a
+                // store selling elsewhere may want "Area" or a local equivalent.
+                'label' => $this->text(self::XML_PATH_LABEL, self::DEFAULT_LABEL),
                 'provider' => 'checkoutProvider',
                 'sortOrder' => 80,
                 'validation' => [
@@ -71,6 +88,12 @@ class LayoutProcessorPlugin
         }
 
         return $jsLayout;
+    }
+
+    private function text(string $path, string $default): string
+    {
+        $value = $this->scopeConfig->getValue($path, ScopeInterface::SCOPE_STORE);
+        return is_string($value) && trim($value) !== '' ? trim($value) : $default;
     }
 
     /**

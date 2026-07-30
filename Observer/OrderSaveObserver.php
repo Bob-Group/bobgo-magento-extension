@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace BobGroup\BobGo\Observer;
 
 use BobGroup\BobGo\Model\Config\ApiConfig;
+use BobGroup\BobGo\Service\InboundGuard;
 use BobGroup\BobGo\Service\OrderSyncPolicy;
 use BobGroup\BobGo\Service\OrderSyncQueue;
 use Magento\Framework\Event\Observer;
@@ -32,17 +33,20 @@ class OrderSaveObserver implements ObserverInterface
     private OrderSyncQueue $queue;
     private OrderSyncPolicy $policy;
     private ApiConfig $apiConfig;
+    private InboundGuard $inboundGuard;
     private LoggerInterface $logger;
 
     public function __construct(
         OrderSyncQueue $queue,
         OrderSyncPolicy $policy,
         ApiConfig $apiConfig,
+        InboundGuard $inboundGuard,
         LoggerInterface $logger
     ) {
         $this->queue = $queue;
         $this->policy = $policy;
         $this->apiConfig = $apiConfig;
+        $this->inboundGuard = $inboundGuard;
         $this->logger = $logger;
     }
 
@@ -63,6 +67,16 @@ class OrderSaveObserver implements ObserverInterface
                 return;
             }
 
+            $orderId = (int) $order->getEntityId();
+
+            // This save is Bob Go's own change coming back to us. Sending it
+            // straight back out is pointless; the sync-hash check would stop the
+            // API call anyway, but that makes the loop protection accidental
+            // rather than deliberate.
+            if ($this->inboundGuard->isActive($orderId)) {
+                return;
+            }
+
             // Cheap gate so the queue doesn't fill with orders the job would only
             // throw away. The job re-checks anyway, since state can change
             // between here and there.
@@ -70,7 +84,7 @@ class OrderSaveObserver implements ObserverInterface
                 return;
             }
 
-            $this->queue->enqueue((int) $order->getEntityId());
+            $this->queue->enqueue($orderId);
         } catch (\Throwable $e) {
             // Order saving is never blocked by Bob Go.
             $this->logger->error('Bob Go: OrderSaveObserver failed', [

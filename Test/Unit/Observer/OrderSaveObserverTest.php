@@ -5,6 +5,7 @@ namespace BobGroup\BobGo\Test\Unit\Observer;
 
 use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Observer\OrderSaveObserver;
+use BobGroup\BobGo\Service\InboundGuard;
 use BobGroup\BobGo\Service\OrderSyncPolicy;
 use BobGroup\BobGo\Service\OrderSyncQueue;
 use Magento\Framework\Event;
@@ -25,6 +26,7 @@ class OrderSaveObserverTest extends TestCase
 {
     private $queue;
     private $apiConfig;
+    private $inboundGuard;
     private $logger;
     /** @var OrderSaveObserver */
     private $observer;
@@ -33,12 +35,14 @@ class OrderSaveObserverTest extends TestCase
     {
         $this->queue = $this->createMock(OrderSyncQueue::class);
         $this->apiConfig = $this->createMock(ApiConfig::class);
+        $this->inboundGuard = new InboundGuard();
         $this->logger = $this->createMock(LoggerInterface::class);
 
         $this->observer = new OrderSaveObserver(
             $this->queue,
             new OrderSyncPolicy(),
             $this->apiConfig,
+            $this->inboundGuard,
             $this->logger
         );
     }
@@ -153,5 +157,33 @@ class OrderSaveObserverTest extends TestCase
             return $key === null ? $data : ($data[$key] ?? null);
         });
         return $order;
+    }
+
+    /**
+     * An inbound handler's own saves must not queue Bob Go's change back to Bob Go.
+     *
+     * The sync-hash check would stop the API call anyway, but that makes the loop
+     * protection accidental — it holds only while nothing inbound touches a field
+     * that appears in the outbound payload.
+     */
+    public function testDoesNotQueueASaveDrivenByAnInboundWebhook(): void
+    {
+        $this->enable();
+        $this->inboundGuard->enter(42);
+
+        $this->queue->expects($this->never())->method('enqueue');
+
+        $this->observer->execute($this->eventFor($this->order(Order::STATE_PROCESSING)));
+    }
+
+    public function testQueuesAgainOnceTheInboundHandlerHasFinished(): void
+    {
+        $this->enable();
+        $this->inboundGuard->enter(42);
+        $this->inboundGuard->leave(42);
+
+        $this->queue->expects($this->once())->method('enqueue')->with(42);
+
+        $this->observer->execute($this->eventFor($this->order(Order::STATE_PROCESSING)));
     }
 }
