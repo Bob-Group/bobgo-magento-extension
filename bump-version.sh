@@ -22,7 +22,15 @@ esac
 NEW="${MAJOR}.${MINOR}.${PATCH}"
 echo "Bumping version: ${CURRENT} -> ${NEW}"
 
-sed -i '' "s/\"version\": *\"${CURRENT}\"/\"version\": \"${NEW}\"/" composer.json
-sed -i '' "s/setup_version=\"${CURRENT}\"/setup_version=\"${NEW}\"/" etc/module.xml
+# -i takes no argument on GNU sed and a mandatory one on BSD/macOS sed, so pick
+# per-platform rather than assuming a dev machine.
+if sed --version >/dev/null 2>&1; then
+    SED_INPLACE=(-i)
+else
+    SED_INPLACE=(-i '')
+fi
+
+sed "${SED_INPLACE[@]}" "s/\"version\": *\"${CURRENT}\"/\"version\": \"${NEW}\"/" composer.json
+sed "${SED_INPLACE[@]}" "s/setup_version=\"${CURRENT}\"/setup_version=\"${NEW}\"/" etc/module.xml
 
 echo "Updated composer.json and etc/module.xml to ${NEW}"

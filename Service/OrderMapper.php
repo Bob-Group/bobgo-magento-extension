@@ -284,10 +284,13 @@ class OrderMapper implements OrderMapperInterface
 
         $unit = $this->scopeConfig->getValue('general/locale/weight_unit', ScopeInterface::SCOPE_STORE);
         if (is_string($unit) && strtolower($unit) === 'lbs') {
-            return $weight * self::LBS_TO_KG;
+            $weight = $weight * self::LBS_TO_KG;
         }
 
-        return $weight;
+        // One decimal, to match what Bob Go persists server-side. Sending more
+        // precision than the server keeps means the value we send and the value
+        // it stores differ, which matters the moment anything compares them.
+        return round($weight, 1);
     }
 
     private function getProductImageUrl(OrderItemInterface $item): ?string

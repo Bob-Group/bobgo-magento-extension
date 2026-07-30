@@ -150,24 +150,6 @@ class SyncLogger
     }
 
     /**
-     * Has an inbound event with this provider-issued id already been logged
-     * successfully? Kept for backwards compatibility — new code should use
-     * the atomic claim API above.
-     */
-    public function wasEventIdProcessed(?string $eventId): bool
-    {
-        if ($eventId === null || $eventId === '') {
-            return false;
-        }
-        $collection = $this->collectionFactory->create()
-            ->addFieldToFilter('event_id', $eventId)
-            ->addFieldToFilter('direction', SyncLog::DIRECTION_INBOUND)
-            ->addFieldToFilter('success', 1)
-            ->setPageSize(1);
-        return $collection->getSize() > 0;
-    }
-
-    /**
      * @param array<string,mixed>|string|null $payload
      */
     public function logInbound(
@@ -287,14 +269,29 @@ class SyncLogger
             return null;
         }
         if (is_string($payload)) {
-            return substr($payload, 0, self::MAX_PAYLOAD_BYTES);
+            return $this->truncate($payload);
         }
         $redacted = $this->redactPii($payload);
         $encoded = json_encode($redacted);
         if ($encoded === false) {
             return null;
         }
-        return substr($encoded, 0, self::MAX_PAYLOAD_BYTES);
+        return $this->truncate($encoded);
+    }
+
+    /**
+     * Trim to the TEXT column's byte limit without splitting a UTF-8 character.
+     *
+     * A plain substr() can cut mid-sequence, and MySQL in strict mode rejects the
+     * resulting invalid string outright ("Incorrect string value") — which
+     * SyncLogger then swallows, so the row is simply lost. mb_strcut counts bytes
+     * like substr but only ever cuts on a character boundary.
+     */
+    private function truncate(string $value): string
+    {
+        return function_exists('mb_strcut')
+            ? mb_strcut($value, 0, self::MAX_PAYLOAD_BYTES, 'UTF-8')
+            : substr($value, 0, self::MAX_PAYLOAD_BYTES);
     }
 
     /**

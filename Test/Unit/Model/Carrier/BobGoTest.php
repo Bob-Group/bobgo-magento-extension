@@ -493,4 +493,112 @@ class BobGoTest extends TestCase
 
         return $captured;
     }
+
+    // ----------------------------------------------------------- rate list hygiene
+
+    /**
+     * A checkout with forty shipping options is worse than one with five.
+     */
+    public function testRateListIsCappedForDisplay(): void
+    {
+        $rates = [];
+        for ($i = 0; $i < 25; $i++) {
+            $rates[] = ['service_name' => 'Option ' . $i, 'service_code' => 'bobgo_' . $i, 'total_price' => 10 + $i];
+        }
+
+        $appended = 0;
+        $resultMock = $this->createMock(\Magento\Shipping\Model\Rate\Result::class);
+        $resultMock->method('append')->willReturnCallback(function () use (&$appended) {
+            $appended++;
+        });
+        $this->resultFactoryMock->method('create')->willReturn($resultMock);
+        $this->methodFactoryMock->method('create')->willReturnCallback(function () {
+            return $this->createMock(\Magento\Quote\Model\Quote\Address\RateResult\Method::class);
+        });
+
+        $this->scopeConfigMock->method('getValue')->willReturn(null);
+        $this->rateCacheMock->method('load')->willReturn(null);
+        $this->apiClientMock->method('post')->willReturn(['rates' => $rates]);
+
+        $this->invokeFormatRates(['rates' => $rates], $resultMock);
+
+        $this->assertSame(20, $appended);
+    }
+
+    /**
+     * No rates and nothing configured to say about it: appending an Error with an
+     * empty message and no carrier code rendered as a blank row at checkout.
+     */
+    public function testNoRatesAppendsNothingWhenThereIsNoMessageToShow(): void
+    {
+        $this->scopeConfigMock->method('getValue')->willReturn(null);
+
+        $resultMock = $this->createMock(\Magento\Shipping\Model\Rate\Result::class);
+        $resultMock->expects($this->never())->method('append');
+
+        $this->invokeFormatRates(['rates' => []], $resultMock);
+    }
+
+    /**
+     * Configurable parents carry the price but no weight; the simple child
+     * carries the variant and the weight. Sending both gave Bob Go a duplicate
+     * zero-weight line for every configurable in the cart, and disagreed with
+     * what OrderMapper sends on push.
+     */
+    public function testRatePayloadSkipsConfigurableParents(): void
+    {
+        $parent = $this->createMock(\Magento\Quote\Model\Quote\Item::class);
+        $parent->method('getProductType')->willReturn('configurable');
+        $parent->method('getName')->willReturn('Hoodie');
+        $parent->method('getQty')->willReturn(1);
+        $parent->method('getPrice')->willReturn(500.00);
+        $parent->method('getWeight')->willReturn(0.0);
+
+        $child = $this->createMock(\Magento\Quote\Model\Quote\Item::class);
+        $child->method('getProductType')->willReturn('simple');
+        $child->method('getName')->willReturn('Hoodie-M-Blue');
+        $child->method('getQty')->willReturn(1);
+        $child->method('getPrice')->willReturn(0.0);
+        $child->method('getWeight')->willReturn(1.5);
+
+        $captured = $this->captureRatePayload(static function (RateRequest $request) {
+        }, [$parent, $child]);
+
+        $this->assertCount(1, $captured['items']);
+        $this->assertSame('Hoodie-M-Blue', $captured['items'][0]['description']);
+    }
+
+    /**
+     * Products sold by weight or length have fractional quantities; casting to int
+     * shipped 2.5 kg of something as 2.
+     */
+    public function testRatePayloadKeepsFractionalQuantities(): void
+    {
+        $item = $this->createMock(\Magento\Quote\Model\Quote\Item::class);
+        $item->method('getProductType')->willReturn('simple');
+        $item->method('getName')->willReturn('Biltong');
+        $item->method('getQty')->willReturn(2.5);
+        $item->method('getPrice')->willReturn(100.00);
+        $item->method('getWeight')->willReturn(0.5);
+
+        $captured = $this->captureRatePayload(static function (RateRequest $request) {
+        }, [$item]);
+
+        $this->assertSame(2.5, $captured['items'][0]['quantity']);
+    }
+
+    /**
+     * @param array<string,mixed> $rates
+     * @param object $result
+     */
+    private function invokeFormatRates(array $rates, $result): void
+    {
+        $method = new \ReflectionMethod($this->bobGo, '_formatRates');
+        if (PHP_VERSION_ID < 80100) {
+            // Required on the 7.4 end of our supported range; a no-op and
+            // deprecated from 8.1 onwards.
+            $method->setAccessible(true);
+        }
+        $method->invoke($this->bobGo, $rates, $result);
+    }
 }

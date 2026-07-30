@@ -417,7 +417,7 @@ class OrderPushService
 
         $skuIndex = [];
 
-        foreach ($order->getItems() as $item) {
+        foreach ($order->getItems() ?: [] as $item) {
             if ($item->getProductType() === 'configurable') {
                 continue;
             }

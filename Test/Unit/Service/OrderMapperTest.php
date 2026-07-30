@@ -335,6 +335,11 @@ class OrderMapperTest extends TestCase
         $this->assertArrayNotHasKey('id', $payload['order_items'][0]);
     }
 
+    /**
+     * Rounded to one decimal, matching what Bob Go persists. Sending more
+     * precision than the server keeps means the value we sent and the value it
+     * stored differ.
+     */
     public function testWeightConvertsLbsToKgInPayload(): void
     {
         // Override scopeConfig with one that reports LBS.
@@ -354,7 +359,7 @@ class OrderMapperTest extends TestCase
         $order = $this->createOrderMock(['items' => [$item]]);
         $payload = $mapper->mapOrderToPayload($order);
 
-        $this->assertEqualsWithDelta(4.5359237, $payload['order_items'][0]['unit_weight_kg'], 0.0001);
+        $this->assertEqualsWithDelta(4.5, $payload['order_items'][0]['unit_weight_kg'], 0.0001);
     }
 
     public function testWeightPassesThroughForKgs(): void

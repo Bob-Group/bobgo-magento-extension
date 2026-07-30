@@ -45,26 +45,28 @@ class SyncLogRetentionService
         try {
             $connection = $this->syncLogResource->getConnection();
             $table = $this->syncLogResource->getMainTable();
-            // Delete in batches so a busy table doesn't lock for the whole
-            // operation. Loop until a batch returns fewer rows than the cap.
+
+            // Genuinely batched: select a page of ids, delete by id, repeat until
+            // a page comes back short. A single unbounded DELETE holds a lock for
+            // as long as it takes, and on a busy store this table is the busiest
+            // thing the extension owns.
             do {
-                $rowsDeleted = $connection->delete(
-                    $table,
-                    [
-                        'created_at < ?' => $cutoff,
+                $ids = $connection->fetchCol(
+                    $connection->select()
+                        ->from($table, ['entity_id'])
+                        ->where('created_at < ?', $cutoff)
                         // Keep claim rows the controller is actively using —
                         // they're tiny and self-clean on completion.
-                        "event_type <> 'webhook_claim'",
-                    ],
+                        ->where("event_type <> 'webhook_claim'")
+                        ->limit(self::BATCH_SIZE)
                 );
-                if (!is_int($rowsDeleted)) {
+
+                if (empty($ids)) {
                     break;
                 }
-                $totalDeleted += $rowsDeleted;
-                // Without LIMIT support on the abstraction layer we run a
-                // single bulk DELETE; if it succeeded we're done. Loop kept
-                // for future LIMIT-aware backends.
-            } while (false);
+
+                $totalDeleted += (int) $connection->delete($table, ['entity_id IN (?)' => $ids]);
+            } while (count($ids) === self::BATCH_SIZE);
         } catch (\Throwable $e) {
             $this->logger->error('Bob Go: sync log prune failed', [
                 'error' => $e->getMessage(),

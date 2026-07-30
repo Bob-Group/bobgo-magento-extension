@@ -42,6 +42,11 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <comment>Displays the delivery timeframe and additional service level description, as configured on Bob Go.</comment>
                 </field>
+                <field id="max_rates" translate="label comment" type="text" sortOrder="4" showInDefault="1" showInWebsite="1">
+                    <label>Maximum rates to show</label>
+                    <comment>How many Bob Go rates to display at checkout, at most. Leave blank for 20.</comment>
+                    <validate>validate-digits</validate>
+                </field>
                 <field id="enable_order_push" translate="label" type="select" sortOrder="5" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Enable order push</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>

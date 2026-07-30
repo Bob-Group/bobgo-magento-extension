@@ -6,3 +6,5 @@
 /.gitignore export-ignore
 /.gitattributes export-ignore
 /bump-version.sh export-ignore
+/phpstan.neon export-ignore
+/.claude export-ignore

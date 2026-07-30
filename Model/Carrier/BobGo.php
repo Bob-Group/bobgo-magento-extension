@@ -60,6 +60,13 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     public const FREE_SHIPPING_METHOD = 'free';
 
+    /**
+     * Ceiling on how many rates we show. Bob Go can be configured to return a
+     * long list; a checkout with forty shipping options is worse than one with
+     * five. Overridable per store via carriers/bobgo/max_rates.
+     */
+    private const DEFAULT_MAX_RATES = 20;
+
     private const MAX_WEIGHT_KG = 500;
     private const SECONDS_PER_DAY = 86400;
     private const LBS_TO_KG = 0.45359237;
@@ -132,6 +139,13 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @var RateCache
      */
     protected RateCache $rateCache;
+
+    /**
+     * Per-request memo for stock lookups during rate validation.
+     *
+     * @var array<string,mixed>
+     */
+    private array $stockItemCache = [];
 
     /**
      * BobGo constructor.
@@ -286,7 +300,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             if ($product && $product->getId()) {
                 $weight = $product->getWeight();
                 $websiteId = (int) $item->getStore()->getWebsiteId(); // Ensure $websiteId is an integer
-                $stockItemData = $this->stockRegistry->getStockItem($product->getId(), $websiteId);
+                $stockItemData = $this->stockItemFor((int) $product->getId(), $websiteId);
                 $doValidation = true;
 
                 if ($stockItemData->getIsQtyDecimal() && $stockItemData->getIsDecimalDivided()) {
@@ -337,6 +351,39 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         }
 
         return $this;
+    }
+
+    /**
+     * Per-request memo over StockRegistry.
+     *
+     * This runs once per cart line on every single rate request, and rate
+     * requests are frequent — the same product in a cart twice, or a cart
+     * re-costed several times in one page load, meant repeating the same query.
+     *
+     * Return type is left unannotated on purpose: StockRegistryInterface is only
+     * stubbed in the test bootstrap, so naming the concrete interface here just
+     * gives the analyser an unknown class to complain about.
+     *
+     * @return mixed
+     */
+    private function stockItemFor(int $productId, int $websiteId)
+    {
+        $key = $productId . ':' . $websiteId;
+        if (!array_key_exists($key, $this->stockItemCache)) {
+            $this->stockItemCache[$key] = $this->stockRegistry->getStockItem($productId, $websiteId);
+        }
+        return $this->stockItemCache[$key];
+    }
+
+    /**
+     * How many rates to show at checkout.
+     */
+    private function maxRates(): int
+    {
+        $configured = $this->getConfigData('max_rates');
+        return is_numeric($configured) && (int) $configured > 0
+            ? (int) $configured
+            : self::DEFAULT_MAX_RATES;
     }
 
     /**
@@ -922,39 +969,6 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     }
 
     /**
-     * Format a date to 'd M Y'.
-     *
-     * @param string $date
-     * @return string
-     */
-    public function formatDate(string $date): string
-    {
-        $timestamp = strtotime($date);
-        if ($timestamp === false) {
-            // Handle the error or return a default value, for example:
-            return 'Invalid date';
-        }
-        return date('d M Y', $timestamp);
-    }
-
-    /**
-     * Format a time to 'H:i'.
-     *
-     * @param string $time
-     * @return string
-     */
-    public function formatTime(string $time): string
-    {
-        $timestamp = strtotime($time);
-        if ($timestamp === false) {
-            // Handle the error or return a default value, for example:
-            return 'Invalid time';
-        }
-        return date('H:i', $timestamp);
-    }
-
-
-    /**
      * Perform API Request to Bob Go API and return response.
      *
      * @param array<string,mixed> $payload The payload for the API request.
@@ -982,19 +996,39 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     protected function _formatRates(array $rates, Result $result): void
     {
-        if (empty($rates['rates']) || !is_array($rates['rates'])) {  // Validate that 'rates' exists and is an array
-            $error = $this->_rateErrorFactory->create();
-            $error->setCarrierTitle($this->getConfigData('title'));
-            $error->setErrorMessage($this->getConfigData('specificerrmsg'));
-
-            $result->append($error);
+        if (empty($rates['rates']) || !is_array($rates['rates'])) {
+            // No rates for this address. Only surface that if the merchant has
+            // both asked for it (showmethod) and given us something to say —
+            // otherwise we used to append an Error carrying an empty message and
+            // no carrier code, which renders as a blank row at checkout. Saying
+            // nothing is better than saying nothing loudly.
+            $message = $this->getConfigData('specificerrmsg');
+            if ($this->getConfigData('showmethod') && $message) {
+                $error = $this->_rateErrorFactory->create();
+                $error->setCarrier(self::CODE);
+                $error->setCarrierTitle($this->getConfigData('title'));
+                $error->setErrorMessage($message);
+                $result->append($error);
+            }
             return;
         }
+
+        $maxRates = $this->maxRates();
+        $shown = 0;
 
         foreach ($rates['rates'] as $rate) {
             if (!is_array($rate)) {
                 continue;  // Skip if the rate is not an array
             }
+
+            if ($shown >= $maxRates) {
+                $this->_logger->info('Bob Go: rate list truncated for display', [
+                    'returned' => count($rates['rates']),
+                    'shown' => $shown,
+                ]);
+                break;
+            }
+            $shown++;
 
             $method = $this->_rateMethodFactory->create();
 
@@ -1210,12 +1244,25 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         array $itemsArray
     ): array {
         foreach ($items as $item) {
+            // Skip configurable parents. Magento records two rows for a
+            // configurable — the parent (customer-paid price, no weight) and the
+            // simple child (the variant, which carries the weight) — so sending
+            // both gave Bob Go a duplicate zero-weight line for every
+            // configurable in the cart. OrderMapper::mapItems() has always
+            // skipped them; the rate payload didn't, so the two disagreed.
+            if (method_exists($item, 'getProductType') && $item->getProductType() === 'configurable') {
+                continue;
+            }
+
             $massGrams = $this->getItemWeight($weightUnit, $item);
             $weightKg = round($massGrams / 1000, 2);
 
             $itemsArray[] = [
                 'description' => $item->getName() ?: $item->getSku(),
-                'quantity' => (int) $item->getQty(),
+                // Float, not int: decimal-qty products (sold by weight or
+                // length) were silently truncated, so 2.5 kg of something
+                // shipped as 2.
+                'quantity' => (float) $item->getQty(),
                 'price' => (float) $item->getPrice(),
                 'length_cm' => 0,
                 'width_cm' => 0,
