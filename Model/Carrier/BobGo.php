@@ -336,6 +336,32 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             return false;
         }
 
+        // Fail soft — checkout must survive anything going wrong in here.
+        // Magento does NOT guard this call: Shipping::collectCarrierRates()
+        // invokes collectRates() with no try/catch, so an exception escaping
+        // here 500s the checkout shipping step (and the cart estimator) for
+        // every customer, whatever other carriers the store has. A falsy
+        // return is the documented "this carrier has no rates" signal, so the
+        // rest of the checkout carries on without us.
+        try {
+            return $this->collectBobGoRates($request);
+        } catch (\Throwable $e) {
+            $this->_logger->error('Bob Go: rate collection failed, hiding carrier', [
+                'exception' => get_class($e),
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Build the rate request payload and collect rates from the Bob Go API.
+     *
+     * @param RateRequest $request
+     * @return Result
+     */
+    private function collectBobGoRates(RateRequest $request): Result
+    {
         /**
          * Gets the destination company name from Company Name field in the checkout page.
          * This method is used as the last resort to get the company name since the company name is

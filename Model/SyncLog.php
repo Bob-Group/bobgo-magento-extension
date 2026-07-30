@@ -16,6 +16,14 @@ class SyncLog extends AbstractModel
     public const EVENT_WEBHOOK_RECEIVED        = 'webhook_received';
     public const EVENT_WEBHOOK_REJECTED        = 'webhook_rejected';
     public const EVENT_WEBHOOK_UNKNOWN_TOPIC   = 'webhook_unknown_topic';
+
+    /**
+     * Authentic, well-formed delivery that carried an order reference we could
+     * not safely tie to a local order. Acknowledged with 200 (see
+     * Controller\Webhook\Receive) but kept for inspection — this is the shape an
+     * attempted cross-channel mis-link takes.
+     */
+    public const EVENT_WEBHOOK_IGNORED         = 'webhook_ignored';
     public const EVENT_WEBHOOK_CLAIM           = 'webhook_claim';
     public const EVENT_FULFILLMENT_RECEIVED    = 'fulfillment_received';
     public const EVENT_TRACKING_UPDATED        = 'tracking_updated';

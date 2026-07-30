@@ -226,4 +226,57 @@ class BobGoApiClientTest extends TestCase
             // Expected
         }
     }
+
+    /**
+     * Magento's Curl client reports transport failures — connect timeout, read
+     * timeout, DNS failure, TLS error — by throwing a bare \Exception from
+     * Curl::doError(). Nothing up our stack catches that type, and
+     * Shipping::collectCarrierRates() has no try/catch around collectRates(),
+     * so letting it escape turns a Bob Go outage into a 500 on the checkout
+     * shipping step. Everything must leave this class as a BobGoApiException.
+     *
+     * @dataProvider transportCallProvider
+     */
+    public function testTransportFailuresBecomeApiExceptions(string $method, array $args): void
+    {
+        $this->apiConfigMock->method('getApiKey')->willReturn('test-key-abc123');
+        $this->apiConfigMock->method('getBaseUrl')->willReturn(ApiConfig::BASE_URL_SANDBOX);
+
+        $boom = static function (): void {
+            throw new \Exception('Operation timed out after 8001 milliseconds');
+        };
+        $this->curlMock->method('get')->willReturnCallback($boom);
+        $this->curlMock->method('post')->willReturnCallback($boom);
+
+        $this->loggerMock->expects($this->once())
+            ->method('error')
+            ->with('Bob Go API transport failure', $this->callback(function (array $context) {
+                // The key must still be masked on this path.
+                $this->assertSame('****c123', $context['api_key']);
+                return true;
+            }));
+
+        try {
+            $this->client->{$method}(...$args);
+            $this->fail('Expected a BobGoApiException');
+        } catch (BobGoApiException $e) {
+            // Status 0 == "never produced an HTTP response", same convention as
+            // the missing-API-key case.
+            $this->assertSame(0, $e->getStatusCode());
+            $this->assertStringContainsString('Operation timed out', $e->getMessage());
+        }
+    }
+
+    /**
+     * @return array<string,array{0:string,1:array<int,mixed>}>
+     */
+    public function transportCallProvider(): array
+    {
+        return [
+            'get' => ['get', ['rates-at-checkout']],
+            'post' => ['post', ['rates-at-checkout', ['items' => []]]],
+            'patch' => ['patch', ['orders', ['id' => 1]]],
+            'delete' => ['delete', ['webhooks']],
+        ];
+    }
 }

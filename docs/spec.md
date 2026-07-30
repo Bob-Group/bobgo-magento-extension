@@ -187,6 +187,8 @@ BobGroup/BobGo/
 │   ├── FulfillmentService.php         # Creates Magento shipments from Bob Go fulfillments
 │   ├── OrderMapper.php                # Maps Magento orders to Bob Go API payload (incl. LBS→KG)
 │   ├── OrderPushService.php           # POST/PATCH orders to Bob Go (with sync-hash dirty check); returns bool
+│   ├── OrderResolution.php            # Value object: matched / no-reference / unresolved
+│   ├── OrderResolver.php              # Maps an inbound webhook payload to a local order (never guesses)
 │   ├── ReconciliationService.php      # Hourly safety net: re-fetch authoritative shipments
 │   ├── SyncLogger.php                 # Single writer for bobgo_sync_log + race-safe claim/release dedup
 │   ├── SyncLogRetentionService.php    # Prunes bobgo_sync_log rows older than 30 days
@@ -353,7 +355,9 @@ const ENV_PRODUCTION = 'production';
 
 1. **Bearer Token Auth + Channel Identifier** - API key stored encrypted, sent as `Authorization: Bearer {key}`. Every outbound call also carries `bobgo-channel-identifier: {store base URL}` so Bob Go can associate the call with the right channel.
 2. **HMAC-Verified Webhooks** - Every inbound webhook body is verified against `Bobgo-Webhook-Signature` (HMAC-SHA256 base64, constant-time compare) using a merchant-issued secret. Verification is the first gate; the body is never inspected before it passes.
-3. **Event-ID Webhook Dedup** - Bob Go retries failed deliveries; `SyncLogger::wasEventIdProcessed()` short-circuits duplicates to a 200 so they don't re-process.
+3. **Event-ID Webhook Dedup** - Bob Go retries failed deliveries; `SyncLogger::claimEventId()` claims the event atomically under a unique index and short-circuits duplicates to a 200 so they don't re-process.
+3b. **Acknowledge, Don't Reject** - Webhook subscriptions are account-wide, so this endpoint receives events for orders that aren't ours. Anything authentic and well-formed gets a 200 even when we do nothing with it, because Bob Go disables the whole subscription after three days without a successful delivery.
+3c. **Never Guess an Order** - `OrderResolver` walks a strict reference ladder and refuses ambiguous matches. Magento's default `increment_id` sequence is identical across stores, so an order number alone can never establish ownership.
 4. **Sync-Hash Dirty Checking** - `OrderPushService::updateOrder()` skips PATCH calls entirely when the canonicalised payload hash matches the last successful sync.
 5. **Reconciliation as Safety Net** - Webhooks remain the primary fulfillment signal. An hourly cron (`Cron\Reconcile`) refetches `GET /v2/order-fulfillments?order_id=...` for active orders and full-replaces `sales_order.bobgo_shipments`, closing the gap when a webhook is lost or delayed.
 6. **Sync Log as Single Source of Truth** - Every inbound and outbound API event flows through `SyncLogger`, recording event type, direction, payload, HTTP status, success flag, and `event_id` for correlation.
@@ -392,6 +396,7 @@ Central HTTP client for all Bob Go API communication. Uses Magento's `CurlFactor
 
 **Error Handling:**
 - HTTP status >= 400 throws `BobGoApiException` with status code, response body, and endpoint
+- **Transport failures** — connect timeout, read timeout, DNS failure, TLS error — are caught and rethrown as `BobGoApiException` with `statusCode = 0` (the same convention as a missing API key). Magento's `Curl::doError()` raises these as a bare `\Exception`, which no caller up the stack catches; leaving them unwrapped turned a Bob Go outage into a 500 on the checkout shipping step
 - API key is masked in log output (shows only last 4 characters: `****xxxx`)
 - Response bodies in `Bob Go API error` log entries are capped at 512 bytes (`response_snippet`) — Bob Go's 4xx/5xx responses echo the offending payload back, which can include PII that we don't want recurring in `system.log`
 - Empty responses return `[]`
@@ -670,21 +675,22 @@ Every accepted fulfillment / tracking webhook also stamps `sales_order.bobgo_las
 
 ### FulfillmentService::processFulfillment() (`Service/FulfillmentService.php`)
 
+Takes an **already-resolved order** — the controller resolves it via
+`OrderResolver` before routing, because the outcome of resolution decides the
+HTTP status (see [Webhook System](#10-webhook-system)).
+
 ```
-Receive fulfillment data
+processFulfillment(OrderInterface $order, array $data)
          │
          ▼
-Extract: channel_ref_id, fulfillment_id, tracking_numbers, line_items
-         │
-         ▼
-Validate: channel_ref_id present?
-         │ yes
-         ▼
-Find order by entity_id (channel_ref_id)
+Extract from the payload:
+  - id               → the Bob Go FULFILMENT id (NOT the order id)
+  - method_reference → tracking number
+  - order_items[]    → { sku, fulfilled_qty, channel_ref_id }
          │
          ▼
 Check: order.canShip()?
-         │ yes (otherwise: log + return — permanent, 200)
+         │ yes (otherwise: log a WARNING + return — permanent, 200)
          ▼
 Idempotency checks (in order):
   1. tracking number already on a shipment for this order → skip
@@ -723,28 +729,46 @@ TransientWebhookException — Bob Go retries.
 
 ### Fulfillment Webhook Payload Structure
 
+The real `fulfillment/created` shape. Note that the top-level `id` is the
+**fulfilment** id — the Bob Go *order* id arrives as `order_id`:
+
 ```json
 {
   "channel_ref_id": "12345",
-  "fulfillment_id": "ful_abc123",
-  "tracking_numbers": [
+  "channel_order_number": "100000001",
+  "order_id": 987,
+  "id": 4321,
+  "method_reference": "TRACK123456",
+  "courier_name": "The Courier Guy",
+  "order_items": [
     {
-      "number": "TRACK123456",
-      "carrier": "The Courier Guy"
-    }
-  ],
-  "line_items": [
-    {
-      "channel_ref_id": "67890",
-      "quantity": 1
+      "channel_ref_id": 67890,
+      "sku": "PROD-001",
+      "fulfilled_qty": 1
     }
   ]
 }
 ```
 
+> Earlier revisions of this document described a `fulfillment_id` /
+> `tracking_numbers[]` / `line_items[]` shape. That was never what the code
+> read, and never what Bob Go sends.
+
 ### FulfillmentService::processTrackingUpdate()
 
-Handles `tracking/updated` webhook topic. Adds new tracking numbers to the **latest** shipment on the order. Prevents duplicate tracking numbers.
+Handles the `tracking/updated` topic. Finds the shipment that already carries
+the tracking number, backfills the courier title when `fulfillment/created` left
+the generic `Bob Go` placeholder, and adds a status comment to the order.
+
+It deliberately does **not** fall back to "the latest shipment" — on a
+multi-shipment order that misattributes the update. When no shipment carries the
+tracking number yet, it throws `TransientWebhookException` so Bob Go retries once
+`fulfillment/created` has landed. That is safe only because the order has already
+been positively resolved as ours; foreign traffic is acknowledged with 200 before
+reaching this method.
+
+On this topic the top-level `id` is the **tracking-reference string**, and the
+payload carries no Bob Go order id at all.
 
 ---
 
@@ -755,11 +779,90 @@ Handles `tracking/updated` webhook topic. Adds new tracking numbers to the **lat
 **Route:** `POST /bobgo/webhook/receive`
 **Access:** Anonymous (CSRF disabled — auth is via HMAC, not Magento's CSRF token)
 **Defined in:** `etc/frontend/routes.xml` + `Controller/Webhook/Receive.php`
+
 **Topic resolution order:**
-1. `X-BobGo-Topic` header
-2. `X-Webhook-Topic` header
-3. `X-Topic` header
-4. Payload-shape inference (`shipment_tracking_reference` / `checkpoints` → `tracking/updated`; `method_reference` + `order_items` → `fulfillment/created`)
+1. `topic` in the JSON body — Bob Go's primary channel
+2. `X-Bobgroup-Topic`, `X-BobGo-Topic`, `X-Webhook-Topic`, `X-Topic` headers
+3. Payload-shape inference (`shipment_tracking_reference` / `checkpoints` → `tracking/updated`; `method_reference` + `order_items` → `fulfillment/created`)
+
+**Event id resolution order:**
+1. `event_id` in the JSON body
+2. `Bobgo-Webhook-Event-Id` header
+3. `Bob-Go-Request-Id` header
+4. `X-Request-Id` header — last resort only. CDNs, load balancers and nginx
+   commonly stamp this with a fresh value per request; preferring it would give
+   each retry of one event a different id and silently defeat dedup.
+
+### Response policy
+
+**This is the most consequential thing in the inbound path.** Bob Go's delivery
+layer counts **any non-2xx as a delivery failure and disables the entire
+subscription after three days without a success** — emailing the merchant only;
+the integration is never told. And subscriptions are **account-wide**, so this
+endpoint receives every event on the merchant's Bob Go account: manual
+shipments, CSV imports, other channels' orders. A quiet trading period in which
+foreign traffic is the only traffic is therefore enough to silently kill
+fulfilment sync for the whole store.
+
+So 4xx/5xx is reserved for input that is malformed or unauthentic, and for our
+own transient failures. "Not one of ours" is a 200.
+
+| Outcome | Status | Sync-log row |
+|---|---|---|
+| Processed | 200 | `fulfillment_received` / `tracking_updated` / `order_updated_inbound`, success |
+| Signature missing/invalid | 403 | `webhook_rejected` |
+| Unparseable body, no resolvable topic | 400 | `webhook_rejected` |
+| Fulfillment sync disabled | 200 | none |
+| Known topic, **no order reference at all** | 200 `{"status":"ignored"}` | **none** — the volume would drown the log |
+| Known topic, reference **matched no local order** | 200 `{"status":"ignored","reason":…}` | `webhook_ignored` |
+| Unknown topic | 200 | `webhook_unknown_topic` |
+| Our own transient failure | 500 (Bob Go retries) | `webhook_received` |
+| Unexpected `\Throwable` | 500 | `webhook_received`, claim retained |
+
+> The unknown-topic case deliberately diverges from the WooCommerce integration,
+> which returns 400. An unhandled topic is not malformed input, and under
+> account-wide delivery a 4xx there burns the subscription's success budget for
+> no reason.
+
+### Order resolution — never guess
+
+`Service/OrderResolver.php` decides which local order an inbound payload refers
+to, and its outcome (`OrderResolution`) decides the HTTP status above.
+
+Magento makes this sharper than it is on other platforms: **every store is
+handed the same `increment_id` sequence by default** (`000000001`,
+`1000000001`…), so "this order number exists here" is no evidence at all that an
+account-wide event belongs to this store. A lookup that falls back to "some
+order that looks close enough" attaches a stranger's shipment to a real customer
+order, overwrites its tracking, and marks it synced so it is never pushed at
+all. That has happened in production on the WooCommerce integration.
+
+The ladder, in order:
+
+| # | Key | Matched against | Notes |
+|---|---|---|---|
+| 1 | `channel_ref_id` | `entity_id` | Authoritative **and terminal** — if present we match on it or give up. Requires one corroborating field (see below). |
+| 2 | Bob Go order id | `bobgo_order_id` | `order_id` on `fulfillment/created`; top-level `id` on `order/updated` only. |
+| 3 | `order_ref` | `bobgo_order_ref`, then `bobgo_order_id` | Older payload shapes put the numeric id here. |
+| 4 | `channel_order_number`, `order_number`, `custom_order_name` | `increment_id` **only** | Last resort. Tolerates a leading `#`. |
+
+Invariants at every rung:
+
+- **Exactly one match required.** More than one → refuse and log.
+- **Never re-point an order already linked to a different Bob Go order.**
+- **Ownership cross-check on rung 1.** `entity_id`s are unique per store but not
+  per Bob Go account, so the id alone isn't proof: either the stored
+  `bobgo_order_id` must agree with the payload's, or the order number must match.
+- **Never match an order number against a stored Bob Go id.** Different
+  namespaces; matching across them is a hijack.
+- **Verify the row carries the value we filtered on.** Magento can silently
+  ignore a filter on an attribute it doesn't recognise and return an unfiltered
+  page, whose first row looks exactly like a good match. The tripwire in
+  `findExactlyOneBy()` turns that class of bug into a logged refusal.
+
+A rung-4 match on an order with no stored link is accepted but logged at
+**warning** level — it's legitimate for orders pushed before `channel_ref_id`
+echo, and it's also the shape a mis-link takes.
 
 ### Inbound Pipeline
 
@@ -774,54 +877,67 @@ POST /bobgo/webhook/receive
    ┌──────────────────┴──────────────────┐
    │ false                                │ true
    ▼                                      ▼
-  403 + log webhook_rejected         apiConfig.isFulfillmentSyncEnabled()?
-   (body truncated to 256 B)              │
-                                          │ no  → 200 "fulfillment sync disabled" (don't process)
+  403 + log webhook_rejected         json_decode(body) ── not an array → 400 + webhook_rejected
+   (body truncated to 256 B,              │
+    event_id NULL)                        ▼
+                                     apiConfig.isFulfillmentSyncEnabled()?
+                                          │ no  → 200 "fulfillment sync disabled" (no log row)
                                           │ yes
                                           ▼
-                                     json_decode(body)
-                                          │
+                                     Resolve topic (body → headers → shape)
+                                          │  none → 400 + webhook_rejected
+                                          │  not a known topic → 200 + webhook_unknown_topic
                                           ▼
-                                     Resolve topic + event_id
-                                          │
-                                          ▼
-                                     SyncLogger::claimEventId(event_id, topic)
-                                       ┌────────┴────────┐
-                                       │ false (dup)     │ true (claimed)
-                                       ▼                 ▼
-                                  200 "duplicate"   Route to handler
-                                                         │
-                                          ┌──────────────┼──────────────┐
-                                          ▼              ▼              ▼
-                                fulfillment/created tracking/updated unknown
-                                          │              │              │
-                                          ▼              ▼              ▼
-                                processFulfillment() processTracking() webhook_unknown_topic
-                                          │              │              │
-                                          ├── success ──┼── success ────┴── 200, log success=true
-                                          │              │
-                                          │              │             (upgradeClaim → success=1)
-                                          │              │
-                                          ├── TransientWebhookException
-                                          │     │
-                                          │     ▼
-                                          │  releaseEventIdClaim()
-                                          │  logInbound(..., event_id=NULL, success=false)
-                                          │  500 → Bob Go retries
-                                          │
-                                          └── any other \Throwable
-                                                │
-                                                ▼
-                                            KEEP the claim row (don't release)
-                                            logInbound(..., event_id=NULL, success=false)
-                                            500 (operator must intervene)
+                                     OrderResolver::resolve(data, topic)
+                                       ┌──────────┼───────────────┐
+                                       │          │               │
+                              NO_REFERENCE   UNRESOLVED        MATCHED
+                                       │          │               │
+                                       ▼          ▼               ▼
+                              200 "ignored"  200 "ignored"   SyncLogger::claimEventId()
+                              (no log row)   + webhook_          ┌──────┴───────┐
+                                             ignored             │ false (dup)  │ true
+                                                                 ▼              ▼
+                                                        200 "duplicate"    Route to handler
+                                                                                │
+                                                        ┌───────────────────────┼───────────────┐
+                                                        ▼                       ▼               ▼
+                                              fulfillment/created      tracking/updated   order/updated
+                                                        │                       │               │
+                                                        ├── success ────────────┴───────────────┴── 200,
+                                                        │                              log success=true with order_id
+                                                        │                              (upgradeClaim → success=1)
+                                                        │
+                                                        ├── TransientWebhookException
+                                                        │     │
+                                                        │     ▼
+                                                        │  releaseEventIdClaim()
+                                                        │  logInbound(..., event_id=NULL, success=false)
+                                                        │  500 → Bob Go retries
+                                                        │
+                                                        └── any other \Throwable
+                                                              │
+                                                              ▼
+                                                          KEEP the claim row (don't release)
+                                                          logInbound(..., event_id=NULL, success=false)
+                                                          500 (operator must intervene)
 ```
 
-The `event_id=NULL` on failure rows is load-bearing. Writing the failure
-under the same `event_id` would re-occupy the `UNIQUE (event_id, direction)`
-slot, and Bob Go's retry would look like a duplicate and be 200'd — the
-event would be silently dropped. Passing `null` keeps the slot free for
-the retry to claim.
+Two properties of that flow are load-bearing:
+
+**1. Failure and ignored rows are written with `event_id = NULL`.** Anything
+written with a non-null `event_id` occupies the `UNIQUE (event_id, direction)`
+slot permanently, so the next delivery of that event fails `claimEventId()` and
+is answered "duplicate, ignored" — dropped for good. This applies to the 403 and
+400 branches too, not just the transient one: the classic trigger is a merchant
+who enables fulfilment sync **before** pasting the webhook secret (the field sits
+below the toggle in the admin UI, and the same save creates the subscriptions).
+Every delivery in that window is 403'd, and without this rule none of the retries
+can ever land. The event id still travels inside the logged payload so operators
+can trace it.
+
+**2. Resolution happens before the claim.** Routine foreign traffic therefore
+leaves no trace at all — no claim row, no log row.
 
 ### Signature Verification (`Service/WebhookSignatureVerifier.php`)
 
@@ -861,9 +977,10 @@ NULL/empty event ids skip dedup entirely (MySQL treats NULLs as not-equal in uni
 | Event type | When |
 |-----------|------|
 | `webhook_claim`         | Sentinel row written by `claimEventId()` — upgraded to a real event type on success |
-| `webhook_rejected`      | Signature missing/invalid/secret unset, or body unparseable (body truncated to 256 B) |
-| `webhook_received`      | Transient/unexpected failure log (event_id intentionally NULL) |
-| `webhook_unknown_topic` | Topic unrecognised — 200 returned, but `success=false` so operators can grep for it |
+| `webhook_rejected`      | Signature missing/invalid/secret unset, body unparseable, or no resolvable topic (body truncated to 256 B, `event_id` NULL) |
+| `webhook_received`      | Transient/unexpected failure log (`event_id` intentionally NULL) |
+| `webhook_ignored`       | Authentic, well-formed, carried an order reference — but it matched no local order. 200 returned; `success=false` and the reason recorded, because this is the shape an attempted mis-link takes |
+| `webhook_unknown_topic` | Topic resolved but not one we handle — 200 returned, `success=false` so operators can grep for it |
 | `fulfillment_received`  | `fulfillment/created` accepted and processed |
 | `tracking_updated`      | `tracking/updated` accepted and processed |
 
@@ -1012,11 +1129,11 @@ Followed by one card per shipment (when `bobgo_shipments` is populated), showing
 | `EVENT_WEBHOOK_CLAIM`         | `webhook_claim`         | inbound  | Sentinel row inserted by `claimEventId()`. Upgraded in place to the real outcome on success. |
 | `EVENT_WEBHOOK_RECEIVED`      | `webhook_received`      | inbound  | Used for transient/unexpected processing failures (with `event_id = NULL` so retries can re-claim). |
 | `EVENT_WEBHOOK_REJECTED`      | `webhook_rejected`      | inbound  | Signature or body parse failure. Payload truncated to 256 B before persistence. |
+| `EVENT_WEBHOOK_IGNORED`       | `webhook_ignored`       | inbound  | Carried an order reference that resolved to no local order. 200 returned, `success = false`, reason recorded in the payload. |
 | `EVENT_WEBHOOK_UNKNOWN_TOPIC` | `webhook_unknown_topic` | inbound  | Topic resolved but isn't one of the known routes (`fulfillment/created`, `tracking/updated`, `order/updated`). 200 returned, `success = false` so operators can grep. |
 | `EVENT_FULFILLMENT_RECEIVED`  | `fulfillment_received`  | inbound  | |
 | `EVENT_TRACKING_UPDATED`      | `tracking_updated`      | inbound  | |
 | `EVENT_ORDER_UPDATED_INBOUND` | `order_updated_inbound` | inbound  | `order/updated` webhook acknowledged. No local mutation yet — reserved for future field-mapping work. |
-| `EVENT_ORDER_UPDATED_INBOUND` | `order_updated_inbound` | inbound  | Reserved (no current emitter). |
 | `EVENT_ORDER_CREATED`         | `order_created`         | outbound | |
 | `EVENT_ORDER_UPDATED_OUTBOUND`| `order_updated_outbound`| outbound | |
 | `EVENT_RECONCILIATION_FETCHED`| `reconciliation_fetched`| outbound | |
@@ -1583,8 +1700,9 @@ All components log to Magento's standard logger (`Psr\Log\LoggerInterface`), whi
 
 1. **Non-blocking observers** - `OrderSaveObserver` wraps everything in try/catch. A Bob Go API failure will never prevent an order from being saved.
 2. **Idempotent fulfillments** - tracking-number check, fulfillment_id check, and a refusal-to-ship when the payload has items but none mapped (prevents an "unknown SKU" payload from blowing out into a full shipment).
-3. **Graceful API failures** - `BobGo::uRates()` returns `null` on API error; `_getRates()` logs and returns empty result. The customer sees no rates rather than an error page. Timeouts are tight (8 s for rates, 5 s connect, 15 s elsewhere) so a Bob Go outage can't hang checkout.
-4. **Webhook retry semantics** - `TransientWebhookException` from processing → controller releases the dedup claim, writes a failure log row with `event_id = NULL`, returns 500. Bob Go retries. Any other `\Throwable` → claim row stays, retries 200 at the dedup gate (operator must clear to replay).
+3. **Graceful API failures** - Every failure mode leaves `BobGoApiClient` as a `BobGoApiException`, including transport failures (connect/read timeout, DNS, TLS), which Magento's `Curl` client raises as a bare `\Exception` from `Curl::doError()`. On top of that `BobGo::collectRates()` catches `\Throwable` and returns `false`, hiding the carrier. Both layers are needed: `Shipping::collectCarrierRates()` calls `collectRates()` with **no** try/catch of its own, so anything escaping would 500 the checkout shipping step and the cart estimator for every customer. Timeouts are tight (8 s for rates, 5 s connect, 15 s elsewhere) so a Bob Go outage can't hang checkout.
+4. **Webhook retry semantics** - `TransientWebhookException` from processing → controller releases the dedup claim, writes a failure log row with `event_id = NULL`, returns 500. Bob Go retries. Any other `\Throwable` → claim row stays, retries 200 at the dedup gate (operator must clear to replay). Every non-success row is written with `event_id = NULL` so a retry can always re-claim the slot.
+7. **Order push failure detection** - A 2xx from `POST /v2/orders` that carries no usable (positive, numeric) order id is recorded as a **failure**, not a success, and the sync hash is deliberately not stored. Marking it synced would orphan the order: reconciliation only looks at orders with a `bobgo_order_id`, webhooks can't resolve to it, and the dirty check would suppress every future PATCH.
 5. **PII redaction** - `SyncLogger::PII_KEYS` scrubs customer and address fields before persistence. API error responses are capped at 512 B in `system.log` for the same reason.
 6. **Sync log retention** - Rows older than 30 days are pruned by `Cron\PruneSyncLog` so the table stays bounded.
 
@@ -1684,18 +1802,18 @@ vendor/bin/phpunit --prepend Test/stubs/autoload-prepend.php \
                    Test/Unit/Model/Carrier/BobGoTest.php
 ```
 
-**Status:** 143 tests / 257 assertions passing. PHPStan: 0 errors at level 2 (run with `--memory-limit=512M`).
+**Status:** 182 tests / 350 assertions passing. PHPStan: 0 errors at level 2. `composer check` runs both (the `stan` script passes `--memory-limit=1G`; the default 128M crashes the analyser).
 
 ### Test Files
 
 | Test File | Tests |
 |-----------|-------|
-| `Api/BobGoApiClientTest.php` | HTTP client: GET/POST/PATCH/DELETE, error handling, auth + channel-id headers |
+| `Api/BobGoApiClientTest.php` | HTTP client: GET/POST/PATCH/DELETE, error handling, transport failures wrapped as `BobGoApiException`, auth + channel-id headers |
 | `Block/System/Config/Form/Field/VersionTest.php` | Version display block |
-| `Controller/Webhook/ReceiveTest.php` | Webhook controller: transient failure releases claim + logs `event_id=NULL`; success doesn't release; duplicate claim short-circuits to 200; disabled fulfillment sync skips entirely |
+| `Controller/Webhook/ReceiveTest.php` | Webhook controller: response policy (no-reference silent 200, unresolved 200 + log, unknown topic 200), every non-success row logs `event_id=NULL`, body topic/event_id precedence, transient failure releases the claim, duplicate claim short-circuits |
 | `Helper/DataTest.php` | Helper functions, debug logging |
 | `Model/Carrier/AdditionalInfoTest.php` | Request body parsing (suburb attribute_code matching, associative-map shape, company, phone) |
-| `Model/Carrier/BobGoTest.php` | Rate collection, validation, weight conversion, formatting |
+| `Model/Carrier/BobGoTest.php` | Rate collection, validation, weight conversion, formatting, fail-soft when anything throws |
 | `Model/Config/ApiConfigTest.php` | Configuration getters, environment URLs, feature flags |
 | `Model/Source/FreemethodTest.php` | Free method source model |
 | `Model/Source/GenericTest.php` | Generic source model base |
@@ -1705,7 +1823,8 @@ vendor/bin/phpunit --prepend Test/stubs/autoload-prepend.php \
 | `Plugin/Quote/ToOrderAddressPluginTest.php` | Suburb carries quote → order address (extension attr, custom attr, raw data fallback) |
 | `Service/FulfillmentServiceTest.php` | Shipment creation, tracking updates, fulfillment-id + tracking-number idempotency |
 | `Service/OrderMapperTest.php` | Order-to-payload mapping, status mapping, LBS→KG conversion, suburb resolution |
-| `Service/OrderPushServiceTest.php` | Order POST/PATCH, sync-hash dirty-check, sync-log writes |
+| `Service/OrderPushServiceTest.php` | Order POST/PATCH, sync-hash dirty-check, sync-log writes, 2xx-without-order-id treated as failure |
+| `Service/OrderResolverTest.php` | Resolution ladder: corroboration, terminal channel_ref_id, refusal to relink, ambiguous matches, topic-specific `id` meaning, filter tripwire |
 | `Service/ReconciliationServiceTest.php` | Reconciliation cron — gated by config, batched fetch, change-detection, API error handling |
 | `Service/SyncLoggerTest.php` | Atomic claim/release, duplicate-key detection (AlreadyExistsException + raw SQLSTATE 23000), fail-open on unexpected DB errors, address-field PII redaction |
 | `Service/WebhookSignatureVerifierTest.php` | HMAC verification — correct/wrong/tampered/missing-secret/missing-header/different-secret |
@@ -1780,6 +1899,10 @@ The script updates both `composer.json` and `etc/module.xml`.
 10. **Tracking-page reference resolution paginates by 100** — When the customer pastes a tracking number (not an order increment_id), the controller scans up to 100 recently-Bob-Go'd orders to confirm it belongs to the store. Direct shipment_track queries aren't cleanly exposed via Magento repositories; acceptable while the feature is hidden by default, would need a real query for production use.
 
 11. **Throwable-on-webhook keeps the claim** — Any exception other than `TransientWebhookException` leaves the dedup claim in the table, so retries return 200 at the dedup gate. Intentional (don't loop on crash bugs) but means an operator has to manually clear the claim row to allow a replay after fixing the underlying issue.
+
+12. **Reconciliation does not create shipments** — It refreshes `bobgo_shipments` for the admin panel, but the webhook is still the only path that creates a Magento shipment. A `fulfillment/created` that is never processed (order on hold, unresolvable reference, unexpected exception) therefore leaves the order unshipped with no automatic recovery. See `docs/todo.md` P1-6.
+
+13. **Order-number resolution is still enabled** — Rung 4 of the resolution ladder accepts a match on `increment_id` alone when the order has no stored Bob Go link. It is logged at warning level. Once `channel_ref_id` is confirmed present on every inbound payload, this rung can be dropped.
 
 ---
 
@@ -1857,7 +1980,9 @@ The extension has idempotency checks (tracking number matching). If duplicates s
 | `Plugin\Quote\ToOrderAddressPlugin` | Copies suburb from quote address → order address on conversion |
 | `Service\FulfillmentService` | Creates shipments from fulfillments (stamps `bobgo_last_webhook` and `bobgo_fulfillment_id`) |
 | `Service\OrderMapper` | Order→API payload transformation (emits `channel_ref_id`, normalises weight, resolves suburb) |
-| `Service\OrderPushService` | POST/PATCH orders to Bob Go (sync-hash dirty-check); returns `bool` |
+| `Service\OrderPushService` | POST/PATCH orders to Bob Go (sync-hash dirty-check); returns `bool`. A 2xx with no usable order id is recorded as a failure |
+| `Service\OrderResolution` | Outcome of webhook order resolution — drives the HTTP status |
+| `Service\OrderResolver` | Resolves an inbound payload to a local order via a strict ladder; refuses to guess |
 | `Service\ReconciliationService` | Hourly reconciliation — re-fetch authoritative shipments; two scoped queries (active + complete lookback) |
 | `Service\SyncLogger` | Single writer for `bobgo_sync_log` + atomic claim/release dedup + PII redaction |
 | `Service\SyncLogRetentionService` | Prunes `bobgo_sync_log` rows older than 30 days |
@@ -1889,5 +2014,5 @@ The extension has idempotency checks (tracking number matching). If duplicates s
 
 ---
 
-*Last updated: 2026-05-26*
+*Last updated: 2026-07-30*
 *Extension version: 1.1.0*

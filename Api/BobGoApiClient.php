@@ -86,8 +86,9 @@ class BobGoApiClient
     {
         $url = $this->buildUrl($endpoint, $queryParams);
         $curl = $this->createCurl($endpoint);
-        $curl->get($url);
-        return $this->handleResponse($curl, $endpoint);
+        return $this->send($curl, $endpoint, static function () use ($curl, $url) {
+            $curl->get($url);
+        });
     }
 
     /**
@@ -99,9 +100,11 @@ class BobGoApiClient
     public function post(string $endpoint, array $payload): array
     {
         $url = $this->buildUrl($endpoint);
+        $body = $this->encodePayload($payload, $endpoint);
         $curl = $this->createCurl($endpoint);
-        $curl->post($url, $this->encodePayload($payload, $endpoint));
-        return $this->handleResponse($curl, $endpoint);
+        return $this->send($curl, $endpoint, static function () use ($curl, $url, $body) {
+            $curl->post($url, $body);
+        });
     }
 
     /**
@@ -113,10 +116,12 @@ class BobGoApiClient
     public function patch(string $endpoint, array $payload): array
     {
         $url = $this->buildUrl($endpoint);
+        $body = $this->encodePayload($payload, $endpoint);
         $curl = $this->createCurl($endpoint);
         $curl->setOption(CURLOPT_CUSTOMREQUEST, 'PATCH');
-        $curl->post($url, $this->encodePayload($payload, $endpoint));
-        return $this->handleResponse($curl, $endpoint);
+        return $this->send($curl, $endpoint, static function () use ($curl, $url, $body) {
+            $curl->post($url, $body);
+        });
     }
 
     /**
@@ -128,14 +133,59 @@ class BobGoApiClient
     public function delete(string $endpoint, array $payload = []): array
     {
         $url = $this->buildUrl($endpoint);
+        $body = empty($payload) ? null : $this->encodePayload($payload, $endpoint);
         $curl = $this->createCurl($endpoint);
 
         $curl->setOption(CURLOPT_CUSTOMREQUEST, 'DELETE');
-        if (!empty($payload)) {
-            $curl->post($url, $this->encodePayload($payload, $endpoint));
-        } else {
-            $curl->get($url);
+        return $this->send($curl, $endpoint, static function () use ($curl, $url, $body) {
+            if ($body !== null) {
+                $curl->post($url, $body);
+            } else {
+                $curl->get($url);
+            }
+        });
+    }
+
+    /**
+     * Dispatch a prepared request and normalise the response.
+     *
+     * Magento's Curl client reports transport failures — connect timeout, read
+     * timeout, DNS failure, TLS error — by throwing a bare \Exception from
+     * Curl::doError(). Those must not escape as-is: nothing up the stack
+     * catches them, and Shipping::collectCarrierRates() has no try/catch around
+     * collectRates(), so a Bob Go outage would surface as a 500 on the checkout
+     * shipping step instead of simply hiding our rates. Every failure mode
+     * leaves this class as a BobGoApiException.
+     *
+     * A status code of 0 on the exception means the request never produced an
+     * HTTP response at all (same convention as the missing-API-key case).
+     *
+     * @param callable $dispatch Performs the actual curl call
+     * @return array<string,mixed>
+     * @throws BobGoApiException
+     */
+    private function send(
+        \Magento\Framework\HTTP\Client\Curl $curl,
+        string $endpoint,
+        callable $dispatch
+    ): array {
+        try {
+            $dispatch();
+        } catch (\Throwable $e) {
+            $this->logger->error('Bob Go API transport failure', [
+                'endpoint' => $endpoint,
+                'error' => $e->getMessage(),
+                'api_key' => $this->getMaskedApiKey(),
+            ]);
+            throw new BobGoApiException(
+                sprintf('Bob Go API request to %s could not be completed: %s', $endpoint, $e->getMessage()),
+                0,
+                '',
+                $endpoint,
+                $e instanceof \Exception ? $e : null
+            );
         }
+
         return $this->handleResponse($curl, $endpoint);
     }
 

@@ -29,7 +29,7 @@
     },
     "scripts": {
         "test": "phpunit --prepend Test/stubs/autoload-prepend.php --bootstrap Test/bootstrap.php Test/Unit/",
-        "stan": "phpstan analyse --no-progress",
+        "stan": "phpstan analyse --no-progress --memory-limit=1G",
         "check": [
             "@stan",
             "@test"

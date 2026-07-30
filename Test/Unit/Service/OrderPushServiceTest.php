@@ -80,14 +80,16 @@ class OrderPushServiceTest extends TestCase
         $this->apiClientMock->expects($this->once())
             ->method('post')
             ->with('orders', $payload)
-            ->willReturn(['id' => 'bg-order-abc-123']);
+            // The API returns the id as a JSON number; we normalise to string
+            // because that's what the varchar column holds.
+            ->willReturn(['id' => 987]);
 
         $this->orderRepositoryMock->expects($this->once())->method('save')->with($order);
         $this->syncLoggerMock->expects($this->once())->method('logOutbound');
 
-        $this->service->pushOrder($order);
+        $this->assertTrue($this->service->pushOrder($order));
 
-        $this->assertSame('bg-order-abc-123', $writes['bobgo_order_id']);
+        $this->assertSame('987', $writes['bobgo_order_id']);
         $this->assertSame('success', $writes['bobgo_sync_status']);
         $this->assertNotEmpty($writes['bobgo_sync_hash']);
     }
@@ -114,11 +116,11 @@ class OrderPushServiceTest extends TestCase
     {
         $writes = [];
         $order = $this->makeOrder(100, '000000100', [
-            'bobgo_order_id'   => 'bg-order-abc-123',
+            'bobgo_order_id'   => '987',
             'bobgo_sync_hash'  => 'stale-hash',
         ], $writes);
 
-        $payload = ['id' => 'bg-order-abc-123', 'channel_ref_id' => '100'];
+        $payload = ['id' => '987', 'channel_ref_id' => '100'];
         $this->orderMapperMock->method('mapOrderToUpdatePayload')->willReturn($payload);
 
         $this->apiClientMock->expects($this->once())->method('patch')
@@ -137,7 +139,7 @@ class OrderPushServiceTest extends TestCase
 
         $writes = [];
         $order = $this->makeOrder(100, '000000100', [
-            'bobgo_order_id'  => 'bg-order-abc-123',
+            'bobgo_order_id'  => '987',
             'bobgo_sync_hash' => $expectedHash,
         ], $writes);
 
@@ -153,7 +155,7 @@ class OrderPushServiceTest extends TestCase
     {
         $writes = [];
         $order = $this->makeOrder(100, '000000100', [
-            'bobgo_order_id' => 'bg-order-abc-123',
+            'bobgo_order_id' => '987',
         ], $writes);
 
         $this->orderMapperMock->method('mapOrderToUpdatePayload')->willReturn([]);
@@ -187,7 +189,7 @@ class OrderPushServiceTest extends TestCase
 
         $this->orderMapperMock->method('mapOrderToPayload')->willReturn([]);
         $this->apiClientMock->method('post')->willReturn([
-            'id' => 'bg-order-123',
+            'id' => '987',
             'order_items' => [
                 ['id' => 456, 'sku' => 'SKU-A'],
                 ['id' => 789, 'sku' => 'SKU-B'],
@@ -204,7 +206,7 @@ class OrderPushServiceTest extends TestCase
         $order->method('getItems')->willReturn([]);
 
         $this->orderMapperMock->method('mapOrderToPayload')->willReturn([]);
-        $this->apiClientMock->method('post')->willReturn(['id' => 'bg-order-123']);
+        $this->apiClientMock->method('post')->willReturn(['id' => '987']);
 
         $this->orderRepositoryMock->expects($this->once())->method('save');
         $this->service->pushOrder($order);
@@ -230,7 +232,7 @@ class OrderPushServiceTest extends TestCase
 
         $this->orderMapperMock->method('mapOrderToPayload')->willReturn([]);
         $this->apiClientMock->method('post')->willReturn([
-            'id' => 'bg-order-123',
+            'id' => '987',
             'order_items' => [
                 ['id' => 100, 'sku' => 'SAME-SKU'],
                 ['id' => 101, 'sku' => 'SAME-SKU'],
@@ -238,6 +240,87 @@ class OrderPushServiceTest extends TestCase
         ]);
 
         $this->service->pushOrder($order);
+    }
+
+    /**
+     * A 2xx with no order id in the body must NOT be recorded as a success.
+     *
+     * Marking it synced orphans the order: reconciliation only looks at orders
+     * that have a bobgo_order_id, fulfilment webhooks can't resolve to it, and
+     * the sync-hash dirty check suppresses every future PATCH. It would sit
+     * there invisible and never retried.
+     */
+    public function testPushOrderTreatsResponseWithoutOrderIdAsFailure(): void
+    {
+        $writes = [];
+        $order = $this->makeOrder(100, '000000100', [], $writes);
+
+        $this->orderMapperMock->method('mapOrderToPayload')->willReturn(['channel_ref_id' => '100']);
+        $this->apiClientMock->method('post')->willReturn(['message' => 'accepted']);
+
+        $this->loggerMock->expects($this->once())->method('error');
+        $this->syncLoggerMock->expects($this->once())->method('logOutbound')
+            ->with($this->anything(), $this->anything(), $this->anything(), 200, false);
+
+        $this->assertFalse($this->service->pushOrder($order));
+
+        $this->assertSame('failed', $writes['bobgo_sync_status']);
+        // Crucially: no hash written, so the next save retries instead of
+        // short-circuiting on a dirty check that thinks we're in sync.
+        $this->assertArrayNotHasKey('bobgo_sync_hash', $writes);
+        $this->assertArrayNotHasKey('bobgo_order_id', $writes);
+    }
+
+    /**
+     * Bob Go order ids are numeric (mapOrderToUpdatePayload casts to int, and
+     * the API's own by-id lookup is numeric). A zero or non-numeric id would
+     * PATCH as `id: 0` forever, so refuse it loudly instead.
+     *
+     * @dataProvider unusableOrderIdProvider
+     * @param mixed $unusableId
+     */
+    public function testPushOrderRejectsUnusableOrderId($unusableId): void
+    {
+        $writes = [];
+        $order = $this->makeOrder(100, '000000100', [], $writes);
+
+        $this->orderMapperMock->method('mapOrderToPayload')->willReturn([]);
+        $this->apiClientMock->method('post')->willReturn(['id' => $unusableId]);
+
+        $this->assertFalse($this->service->pushOrder($order));
+        $this->assertSame('failed', $writes['bobgo_sync_status']);
+    }
+
+    /**
+     * @return array<string,array{0:mixed}>
+     */
+    public function unusableOrderIdProvider(): array
+    {
+        return [
+            'zero int' => [0],
+            'zero string' => ['0'],
+            'negative' => [-5],
+            'empty string' => [''],
+            'null' => [null],
+            'non-numeric' => ['bg-order-abc'],
+        ];
+    }
+
+    /**
+     * An update whose order somehow has no stored link and whose PATCH response
+     * carries no id is the same orphan case — fail, don't claim success.
+     */
+    public function testUpdateOrderWithoutAnyOrderIdIsAFailure(): void
+    {
+        $writes = [];
+        $order = $this->makeOrder(100, '000000100', [], $writes);
+
+        $this->orderMapperMock->method('mapOrderToUpdatePayload')->willReturn(['channel_ref_id' => '100']);
+        $this->apiClientMock->method('patch')->willReturn([]);
+
+        $this->assertFalse($this->service->updateOrder($order));
+        $this->assertSame('failed', $writes['bobgo_sync_status']);
+        $this->assertArrayNotHasKey('bobgo_sync_hash', $writes);
     }
 
     public function testPushOrderSavesIdOnSimpleChildNotConfigurableParent(): void
@@ -261,7 +344,7 @@ class OrderPushServiceTest extends TestCase
 
         $this->orderMapperMock->method('mapOrderToPayload')->willReturn([]);
         $this->apiClientMock->method('post')->willReturn([
-            'id' => 'bg-order-123',
+            'id' => '987',
             'order_items' => [
                 ['id' => 500, 'sku' => 'WS12-M-Orange'],
             ],

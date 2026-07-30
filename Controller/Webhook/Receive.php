@@ -6,6 +6,8 @@ namespace BobGroup\BobGo\Controller\Webhook;
 use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Model\SyncLog;
 use BobGroup\BobGo\Service\FulfillmentService;
+use BobGroup\BobGo\Service\OrderResolution;
+use BobGroup\BobGo\Service\OrderResolver;
 use BobGroup\BobGo\Service\SyncLogger;
 use BobGroup\BobGo\Service\TransientWebhookException;
 use BobGroup\BobGo\Service\WebhookSignatureVerifier;
@@ -22,17 +24,43 @@ use Psr\Log\LoggerInterface;
  *
  * Inbound flow:
  *   1. Read raw body (signature is computed over this exact byte sequence).
- *   2. Verify HMAC-SHA256 of the body against the Bobgo-Webhook-Signature header
- *      using the merchant-issued webhook secret. Constant-time compare. 403 on any
- *      mismatch or when the secret isn't configured — we never process unverified bodies.
- *   3. Decode JSON, resolve topic (header → payload-shape fallback).
- *   4. Dedup by event_id via SyncLogger so retried deliveries are 200'd, not reprocessed.
- *   5. Route to the appropriate handler. Every outcome is recorded in bobgo_sync_log.
+ *   2. Verify HMAC-SHA256 against the Bobgo-Webhook-Signature header using the
+ *      merchant-issued secret. Constant-time compare. 403 on any mismatch or
+ *      when the secret isn't configured — we never process unverified bodies.
+ *   3. Decode JSON, resolve topic (body → header → payload shape).
+ *   4. Resolve the payload to a local order (see OrderResolver).
+ *   5. Dedup by event_id via an atomic claim, then route to a handler.
+ *
+ * RESPONSE POLICY — the most important thing in this class.
+ *
+ * Bob Go's delivery layer counts ANY non-2xx as a delivery failure and disables
+ * the entire subscription after three days without a success. Only the merchant
+ * is emailed; we are never told. And subscriptions are account-wide, so this
+ * endpoint receives every event on the merchant's Bob Go account — manual
+ * shipments, CSV imports, other channels' orders. A quiet trading period in
+ * which foreign traffic is the only traffic is therefore enough to silently
+ * kill fulfilment sync for the whole store.
+ *
+ * So 4xx/5xx is reserved for input that is genuinely malformed or unauthentic,
+ * and for our own transient failures. "Not one of ours" is a 200:
+ *
+ *   processed                                    200
+ *   signature missing/invalid                    403
+ *   unparseable body / no resolvable topic       400
+ *   known topic, no order reference at all       200 ignored, no log row
+ *   known topic, reference matched nothing       200 ignored, log row kept
+ *   unknown topic                                200 ignored, log row kept
+ *   our own transient failure                    500 (Bob Go retries)
  *
  * Route: POST /bobgo/webhook/receive
  */
 class Receive extends Action implements CsrfAwareActionInterface
 {
+    /**
+     * Header names carrying the topic, in preference order. The body's own
+     * `topic` field is checked first — that is Bob Go's primary channel, and
+     * relying on headers alone risks 400-ing everything if they change.
+     */
     private const TOPIC_HEADERS = [
         'X-Bobgroup-Topic',
         'X-BobGo-Topic',
@@ -40,8 +68,34 @@ class Receive extends Action implements CsrfAwareActionInterface
         'X-Topic',
     ];
 
+    /**
+     * Header names carrying the delivery's unique event id, in preference order.
+     *
+     * The body's own `event_id` wins over all of these. That ordering matters:
+     * X-Request-Id is a generic header that CDNs, load balancers and nginx
+     * commonly stamp on every inbound request with a fresh value. Preferring it
+     * would give each retry of the same event a different id, quietly defeating
+     * dedup. It stays only as a last resort, below the two Bob Go-specific names.
+     */
+    private const EVENT_ID_HEADERS = [
+        'Bobgo-Webhook-Event-Id',
+        'Bob-Go-Request-Id',
+        'X-Request-Id',
+    ];
+
     private const SIGNATURE_HEADER = 'Bobgo-Webhook-Signature';
-    private const EVENT_ID_HEADER  = 'Bobgo-Webhook-Event-Id';
+
+    /** Topics we act on. Anything else is acknowledged and logged, not rejected. */
+    private const KNOWN_TOPICS = [
+        OrderResolver::TOPIC_FULFILLMENT_CREATED,
+        OrderResolver::TOPIC_TRACKING_UPDATED,
+        OrderResolver::TOPIC_ORDER_UPDATED,
+    ];
+
+    /** Cap on how much of a rejected body we persist — anyone who fails signature
+     *  verification can spray 64 KB requests at us, so we keep just enough to
+     *  diagnose the rejection without giving them a free log-bloat vector. */
+    private const REJECTED_BODY_CAP_BYTES = 256;
 
     private FulfillmentService $fulfillmentService;
     private JsonFactory $jsonFactory;
@@ -49,6 +103,7 @@ class Receive extends Action implements CsrfAwareActionInterface
     private WebhookSignatureVerifier $signatureVerifier;
     private SyncLogger $syncLogger;
     private ApiConfig $apiConfig;
+    private OrderResolver $orderResolver;
 
     public function __construct(
         Context $context,
@@ -57,7 +112,8 @@ class Receive extends Action implements CsrfAwareActionInterface
         LoggerInterface $logger,
         WebhookSignatureVerifier $signatureVerifier,
         SyncLogger $syncLogger,
-        ApiConfig $apiConfig
+        ApiConfig $apiConfig,
+        OrderResolver $orderResolver
     ) {
         parent::__construct($context);
         $this->fulfillmentService = $fulfillmentService;
@@ -66,12 +122,8 @@ class Receive extends Action implements CsrfAwareActionInterface
         $this->signatureVerifier = $signatureVerifier;
         $this->syncLogger = $syncLogger;
         $this->apiConfig = $apiConfig;
+        $this->orderResolver = $orderResolver;
     }
-
-    /** Cap on how much of a rejected body we persist — anyone who fails signature
-     *  verification can spray 64 KB requests at us, so we keep just enough to
-     *  diagnose the rejection without giving them a free log-bloat vector. */
-    private const REJECTED_BODY_CAP_BYTES = 256;
 
     public function execute()
     {
@@ -79,16 +131,18 @@ class Receive extends Action implements CsrfAwareActionInterface
         $request = $this->getRequest();
         $rawBody = (string) $request->getContent();
 
+        // Headers only for now — the body must not be parsed before the
+        // signature is verified. Upgraded to the body's own event_id below.
+        $eventId = $this->getEventIdFromHeaders($request);
+
         // 1. Signature verification — first gate. Never inspect the body before this.
         $providedSignature = $request->getHeader(self::SIGNATURE_HEADER);
         if (!$this->signatureVerifier->verify($rawBody, is_string($providedSignature) ? $providedSignature : null)) {
-            $this->syncLogger->logInbound(
+            $this->logWithoutClaimingEventId(
                 SyncLog::EVENT_WEBHOOK_REJECTED,
                 substr($rawBody, 0, self::REJECTED_BODY_CAP_BYTES),
-                null,
-                $this->getEventId($request),
-                403,
-                false
+                $eventId,
+                403
             );
             return $result->setHttpResponseCode(403)->setData(['error' => 'Invalid signature']);
         }
@@ -96,13 +150,11 @@ class Receive extends Action implements CsrfAwareActionInterface
         // 2. Parse body
         $data = json_decode($rawBody, true);
         if (!is_array($data)) {
-            $this->syncLogger->logInbound(
+            $this->logWithoutClaimingEventId(
                 SyncLog::EVENT_WEBHOOK_REJECTED,
                 substr($rawBody, 0, self::REJECTED_BODY_CAP_BYTES),
-                null,
-                $this->getEventId($request),
-                400,
-                false
+                $eventId,
+                400
             );
             return $result->setHttpResponseCode(400)->setData(['error' => 'Invalid JSON']);
         }
@@ -116,33 +168,71 @@ class Receive extends Action implements CsrfAwareActionInterface
             return $result->setHttpResponseCode(200)->setData(['message' => 'fulfillment sync disabled']);
         }
 
-        $topic = $this->resolveTopicFromHeaders($request) ?? $this->inferTopicFromPayload($data);
-        $eventId = $this->getEventId($request) ?? ($data['event_id'] ?? null);
-        if ($eventId !== null) {
-            $eventId = (string) $eventId;
-        }
-
-        $this->logger->info('Bob Go webhook received', [
-            'topic' => $topic ?? 'unknown',
-            'event_id' => $eventId,
-            'channel_order_number' => $data['channel_order_number'] ?? null,
-        ]);
+        // 3. Topic and event id. The body is authoritative for both.
+        $topic = $this->resolveTopic($request, $data);
+        $eventId = $this->normaliseEventId($data['event_id'] ?? null) ?? $eventId;
 
         if ($topic === null) {
-            $this->syncLogger->logInbound(
-                SyncLog::EVENT_WEBHOOK_REJECTED,
-                $data,
-                null,
-                $eventId,
-                400,
-                false
-            );
+            $this->logWithoutClaimingEventId(SyncLog::EVENT_WEBHOOK_REJECTED, $data, $eventId, 400);
             return $result->setHttpResponseCode(400)->setData(['error' => 'Could not determine webhook topic']);
         }
 
-        // 3. Idempotency — atomic claim. claimEventId() writes a sentinel
-        // success row under a unique (event_id, direction) index; if a
-        // concurrent delivery already claimed it, we 200 without processing.
+        if (!in_array($topic, self::KNOWN_TOPICS, true)) {
+            // Not malformed, just not ours to handle. Acknowledge — a 4xx here
+            // would count against the subscription-disable window.
+            $this->logger->warning('Bob Go webhook: unknown topic', ['topic' => $topic]);
+            $this->logWithoutClaimingEventId(
+                SyncLog::EVENT_WEBHOOK_UNKNOWN_TOPIC,
+                $data,
+                $eventId,
+                200,
+                null,
+                sprintf('topic "%s" is not handled by this integration', $topic)
+            );
+            return $result->setData(['message' => 'unknown topic, ignored']);
+        }
+
+        // 4. Which local order is this about? Resolution happens before the
+        // dedup claim so that routine foreign traffic leaves no trace at all.
+        $resolution = $this->orderResolver->resolve($data, $topic);
+
+        if (!$resolution->hasReference()) {
+            // No order reference whatsoever. Under account-wide delivery this is
+            // ordinary background noise (standalone shipments, other channels).
+            // Deliberately not logged: the volume would drown the sync log.
+            return $result->setData(['status' => 'ignored']);
+        }
+
+        if (!$resolution->isMatched()) {
+            $this->logger->info('Bob Go webhook: no local order matched, acknowledging', [
+                'topic' => $topic,
+                'event_id' => $eventId,
+                'reason' => $resolution->getReason(),
+            ]);
+            $this->logWithoutClaimingEventId(
+                SyncLog::EVENT_WEBHOOK_IGNORED,
+                $data,
+                $eventId,
+                200,
+                null,
+                $resolution->getReason()
+            );
+            return $result->setData(['status' => 'ignored', 'reason' => $resolution->getReason()]);
+        }
+
+        $order = $resolution->getOrder();
+        $orderId = (int) $order->getEntityId();
+
+        $this->logger->info('Bob Go webhook received', [
+            'topic' => $topic,
+            'event_id' => $eventId,
+            'order_id' => $orderId,
+            'increment_id' => $order->getIncrementId(),
+        ]);
+
+        // 5. Idempotency — atomic claim. claimEventId() writes a sentinel row
+        // under a unique (event_id, direction) index; if a concurrent delivery
+        // already claimed it, we 200 without processing.
         if (!$this->syncLogger->claimEventId($eventId, $topic)) {
             $this->logger->info('Bob Go webhook: duplicate event_id, acknowledging', [
                 'event_id' => $eventId,
@@ -151,88 +241,125 @@ class Receive extends Action implements CsrfAwareActionInterface
             return $result->setHttpResponseCode(200)->setData(['message' => 'duplicate, ignored']);
         }
 
-        // 4. Route
+        // 6. Route
         try {
             switch ($topic) {
-                case 'fulfillment/created':
-                    $this->fulfillmentService->processFulfillment($data);
-                    $this->syncLogger->logInbound(SyncLog::EVENT_FULFILLMENT_RECEIVED, $data, null, $eventId, 200, true);
+                case OrderResolver::TOPIC_FULFILLMENT_CREATED:
+                    $this->fulfillmentService->processFulfillment($order, $data);
+                    $this->syncLogger->logInbound(
+                        SyncLog::EVENT_FULFILLMENT_RECEIVED,
+                        $data,
+                        $orderId,
+                        $eventId,
+                        200,
+                        true
+                    );
                     return $result->setData(['message' => 'fulfillment processed']);
 
-                case 'tracking/updated':
-                    $this->fulfillmentService->processTrackingUpdate($data);
-                    $this->syncLogger->logInbound(SyncLog::EVENT_TRACKING_UPDATED, $data, null, $eventId, 200, true);
+                case OrderResolver::TOPIC_TRACKING_UPDATED:
+                    $this->fulfillmentService->processTrackingUpdate($order, $data);
+                    $this->syncLogger->logInbound(
+                        SyncLog::EVENT_TRACKING_UPDATED,
+                        $data,
+                        $orderId,
+                        $eventId,
+                        200,
+                        true
+                    );
                     return $result->setData(['message' => 'tracking update processed']);
 
-                case 'order/updated':
-                    // Acknowledge-and-log only for now. The dedup claim and
-                    // success log row are enough for visibility; we don't
-                    // mutate the local order until we've defined a field
-                    // mapping against real payloads.
-                    $this->syncLogger->logInbound(SyncLog::EVENT_ORDER_UPDATED_INBOUND, $data, null, $eventId, 200, true);
-                    return $result->setData(['message' => 'order update acknowledged']);
-
                 default:
-                    $this->logger->warning('Bob Go webhook: unknown topic', ['topic' => $topic]);
-                    $this->syncLogger->logInbound(SyncLog::EVENT_WEBHOOK_UNKNOWN_TOPIC, $data, null, $eventId, 200, false);
-                    return $result->setData(['message' => 'unknown topic, ignored']);
+                    // order/updated — acknowledge-and-log only for now. The
+                    // dedup claim and success row are enough for visibility; we
+                    // don't mutate the local order until the field mapping has
+                    // been defined against real payloads (docs/todo.md P1-13).
+                    $this->syncLogger->logInbound(
+                        SyncLog::EVENT_ORDER_UPDATED_INBOUND,
+                        $data,
+                        $orderId,
+                        $eventId,
+                        200,
+                        true
+                    );
+                    return $result->setData(['message' => 'order update acknowledged']);
             }
         } catch (TransientWebhookException $e) {
-            // Transient failure — release the dedup claim and log the
-            // failure WITHOUT event_id so the unique (event_id, direction)
-            // slot stays free for Bob Go's retry to re-claim. We embed
-            // the event_id in the payload so operators can still trace it.
+            // Our fault or a race, and retrying can fix it: release the dedup
+            // claim so Bob Go's retry can re-claim, and 500 so it retries.
             $this->syncLogger->releaseEventIdClaim($eventId);
             $this->logger->error('Bob Go webhook processing failed (transient, will retry)', [
                 'topic' => $topic,
                 'event_id' => $eventId,
+                'order_id' => $orderId,
                 'error' => $e->getMessage(),
             ]);
-            $this->syncLogger->logInbound(
+            $this->logWithoutClaimingEventId(
                 SyncLog::EVENT_WEBHOOK_RECEIVED,
-                ['event_id' => $eventId, 'topic' => $topic, 'data' => $data, 'error' => $e->getMessage()],
-                null,
-                null, // intentionally null — do NOT re-occupy the dedup slot
+                $data,
+                $eventId,
                 500,
-                false
+                $orderId,
+                $e->getMessage()
             );
             return $result->setHttpResponseCode(500)->setData(['error' => 'Processing failed']);
         } catch (\Throwable $e) {
-            // Permanent / unexpected. We DON'T release the claim — the row
-            // stays as a marker so retries from Bob Go are short-circuited.
-            // A 500 is returned for visibility (so the operator notices),
-            // but Bob Go's subsequent retries will be 200'd at the dedup
-            // check rather than re-running broken code.
+            // Unexpected. We DON'T release the claim — the row stays as a marker
+            // so retries are short-circuited at the dedup gate rather than
+            // re-running broken code. A 500 makes the operator notice; an
+            // operator clears the claim row to allow a replay after fixing it.
             $this->logger->error('Bob Go webhook processing failed (unexpected)', [
                 'topic' => $topic,
                 'event_id' => $eventId,
+                'order_id' => $orderId,
+                'exception' => get_class($e),
                 'error' => $e->getMessage(),
             ]);
-            // Same rule as the transient branch: don't log with event_id,
-            // because the claim row already holds the slot.
-            $this->syncLogger->logInbound(
+            $this->logWithoutClaimingEventId(
                 SyncLog::EVENT_WEBHOOK_RECEIVED,
-                ['event_id' => $eventId, 'topic' => $topic, 'data' => $data, 'error' => $e->getMessage()],
-                null,
-                null,
+                $data,
+                $eventId,
                 500,
-                false
+                $orderId,
+                $e->getMessage()
             );
             return $result->setHttpResponseCode(500)->setData(['error' => 'Processing failed']);
         }
     }
 
-    private function getEventId(RequestInterface $request): ?string
-    {
-        $value = $request->getHeader(self::EVENT_ID_HEADER);
-        return is_string($value) && $value !== '' ? $value : null;
+    /**
+     * Record an outcome that must NOT occupy the (event_id, direction) dedup slot.
+     *
+     * Anything written with a non-null event_id claims that slot permanently. If
+     * a rejection claimed it, the legitimate redelivery of the same event would
+     * fail claimEventId() and be answered "duplicate, ignored" — dropped for
+     * good. The classic trigger is a merchant enabling fulfilment sync before
+     * pasting the webhook secret: every delivery in between is 403'd, and
+     * without this rule none of those retries can ever land.
+     *
+     * The event id still travels in the payload, so operators can trace it.
+     *
+     * @param array<string,mixed>|string|null $body
+     */
+    private function logWithoutClaimingEventId(
+        string $eventType,
+        $body,
+        ?string $eventId,
+        ?int $httpStatus,
+        ?int $orderId = null,
+        ?string $reason = null
+    ): void {
+        $payload = ['event_id' => $eventId, 'body' => $body];
+        if ($reason !== null) {
+            $payload['reason'] = $reason;
+        }
+        $this->syncLogger->logInbound($eventType, $payload, $orderId, null, $httpStatus, false);
     }
 
-    private function resolveTopicFromHeaders(RequestInterface $request): ?string
+    private function getEventIdFromHeaders(RequestInterface $request): ?string
     {
-        foreach (self::TOPIC_HEADERS as $headerName) {
-            $value = $request->getHeader($headerName);
-            if (is_string($value) && $value !== '') {
+        foreach (self::EVENT_ID_HEADERS as $headerName) {
+            $value = $this->normaliseEventId($request->getHeader($headerName));
+            if ($value !== null) {
                 return $value;
             }
         }
@@ -240,17 +367,51 @@ class Receive extends Action implements CsrfAwareActionInterface
     }
 
     /**
-     * Fallback topic resolution when no header is present.
+     * @param mixed $value
+     */
+    private function normaliseEventId($value): ?string
+    {
+        if (!is_scalar($value)) {
+            return null;
+        }
+        $value = trim((string) $value);
+        return $value === '' ? null : $value;
+    }
+
+    /**
+     * Topic from the body, then the headers, then the payload's shape.
+     *
+     * @param array<string,mixed> $data
+     */
+    private function resolveTopic(RequestInterface $request, array $data): ?string
+    {
+        $fromBody = $data['topic'] ?? null;
+        if (is_string($fromBody) && trim($fromBody) !== '') {
+            return trim($fromBody);
+        }
+
+        foreach (self::TOPIC_HEADERS as $headerName) {
+            $value = $request->getHeader($headerName);
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
+        }
+
+        return $this->inferTopicFromPayload($data);
+    }
+
+    /**
+     * Last-resort topic resolution from the payload's shape.
      *
      * @param array<string,mixed> $data
      */
     private function inferTopicFromPayload(array $data): ?string
     {
         if (isset($data['shipment_tracking_reference']) || isset($data['checkpoints'])) {
-            return 'tracking/updated';
+            return OrderResolver::TOPIC_TRACKING_UPDATED;
         }
         if (isset($data['method_reference']) && isset($data['order_items'])) {
-            return 'fulfillment/created';
+            return OrderResolver::TOPIC_FULFILLMENT_CREATED;
         }
         return null;
     }

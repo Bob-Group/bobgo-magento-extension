@@ -63,7 +63,13 @@ class OrderPushService
 
         try {
             $response = $this->apiClient->post('orders', $payload);
-            $this->applySuccess($order, $response, $hash);
+
+            $bobgoOrderId = $this->resolveBobGoOrderId($order, $response);
+            if ($bobgoOrderId === null) {
+                return $this->reportMissingOrderId($order, SyncLog::EVENT_ORDER_CREATED, $payload, $response);
+            }
+
+            $this->applySuccess($order, $response, $hash, $bobgoOrderId);
             $this->syncLogger->logOutbound(
                 SyncLog::EVENT_ORDER_CREATED,
                 ['request' => $payload, 'response' => $response],
@@ -114,8 +120,19 @@ class OrderPushService
         }
 
         try {
-            $this->apiClient->patch('orders', $payload);
-            $this->applySuccess($order, [], $hash);
+            $response = $this->apiClient->patch('orders', $payload);
+
+            $bobgoOrderId = $this->resolveBobGoOrderId($order, $response);
+            if ($bobgoOrderId === null) {
+                return $this->reportMissingOrderId(
+                    $order,
+                    SyncLog::EVENT_ORDER_UPDATED_OUTBOUND,
+                    $payload,
+                    $response
+                );
+            }
+
+            $this->applySuccess($order, $response, $hash, $bobgoOrderId);
             $this->syncLogger->logOutbound(
                 SyncLog::EVENT_ORDER_UPDATED_OUTBOUND,
                 ['request' => $payload],
@@ -148,14 +165,75 @@ class OrderPushService
     }
 
     /**
+     * The Bob Go order id to link this order to: preferring the one the API
+     * just returned, falling back to the one already stored. Returns null when
+     * neither yields a usable (positive, numeric) id.
+     *
      * @param array<string,mixed> $response
      */
-    private function applySuccess(OrderInterface $order, array $response, string $hash): void
+    private function resolveBobGoOrderId(OrderInterface $order, array $response): ?string
     {
-        $bobgoOrderId = $response['id'] ?? $order->getData('bobgo_order_id');
-        if ($bobgoOrderId !== null && $bobgoOrderId !== '') {
-            $order->setData('bobgo_order_id', $bobgoOrderId);
+        $candidates = [$response['id'] ?? null, $order->getData('bobgo_order_id')];
+        foreach ($candidates as $candidate) {
+            if (!is_scalar($candidate)) {
+                continue;
+            }
+            $value = trim((string) $candidate);
+            if ($value !== '' && is_numeric($value) && (float) $value > 0) {
+                return $value;
+            }
         }
+        return null;
+    }
+
+    /**
+     * A 2xx that yields no usable Bob Go order id is a failure, not a success.
+     *
+     * Recording it as synced orphans the order: reconciliation skips orders
+     * with no bobgo_order_id, fulfilment webhooks can't resolve to it, and the
+     * sync-hash dirty check suppresses every future PATCH — so it would sit
+     * invisible and never be retried. Marking it failed (and deliberately NOT
+     * storing the hash) keeps it in the retry population.
+     *
+     * @param array<string,mixed> $payload
+     * @param array<string,mixed> $response
+     */
+    private function reportMissingOrderId(
+        OrderInterface $order,
+        string $eventType,
+        array $payload,
+        array $response
+    ): bool {
+        $this->applyFailure($order);
+        $this->syncLogger->logOutbound(
+            $eventType,
+            [
+                'request' => $payload,
+                'response' => $response,
+                'error' => 'Bob Go returned a success status but no usable order id',
+            ],
+            (int) $order->getEntityId(),
+            200,
+            false
+        );
+        $this->logger->error('Bob Go: API reported success but returned no order id', [
+            'order_id' => $order->getEntityId(),
+            'increment_id' => $order->getIncrementId(),
+            'event_type' => $eventType,
+        ]);
+        return false;
+    }
+
+    /**
+     * @param array<string,mixed> $response
+     */
+    private function applySuccess(
+        OrderInterface $order,
+        array $response,
+        string $hash,
+        string $bobgoOrderId
+    ): void {
+        $order->setData('bobgo_order_id', $bobgoOrderId);
 
         // Persist the immutable Bob Go reference when present — schema has
         // a column for it; this is the first place it actually gets written.

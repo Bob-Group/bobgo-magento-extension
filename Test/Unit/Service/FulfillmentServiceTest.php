@@ -5,10 +5,6 @@ namespace BobGroup\BobGo\Test\Unit\Service;
 
 use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Service\FulfillmentService;
-use Magento\Framework\Api\SearchCriteria;
-use Magento\Framework\Api\SearchCriteriaBuilder;
-use Magento\Sales\Api\Data\OrderInterface;
-use Magento\Sales\Api\Data\OrderSearchResultInterface;
 use Magento\Sales\Api\Data\ShipmentItemCreationInterface;
 use Magento\Sales\Api\Data\ShipmentItemCreationInterfaceFactory;
 use Magento\Sales\Api\Data\ShipmentTrackCreationInterface;
@@ -18,7 +14,6 @@ use Magento\Sales\Api\ShipOrderInterface;
 use Magento\Sales\Api\ShipmentRepositoryInterface;
 use Magento\Sales\Model\Order\Shipment;
 use Magento\Sales\Model\Order\Shipment\Track;
-use Magento\Sales\Model\Order\Shipment\TrackFactory;
 use Magento\Sales\Model\ResourceModel\Order\Shipment\Collection as ShipmentCollection;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -53,16 +48,6 @@ class FulfillmentServiceTest extends TestCase
     /**
      * @var \PHPUnit\Framework\MockObject\MockObject
      */
-    private $searchCriteriaBuilderMock;
-
-    /**
-     * @var \PHPUnit\Framework\MockObject\MockObject
-     */
-    private $trackFactoryMock;
-
-    /**
-     * @var \PHPUnit\Framework\MockObject\MockObject
-     */
     private $apiConfigMock;
 
     /**
@@ -76,8 +61,6 @@ class FulfillmentServiceTest extends TestCase
         $this->shipOrderMock = $this->createMock(ShipOrderInterface::class);
         $this->trackCreationFactoryMock = $this->createMock(ShipmentTrackCreationInterfaceFactory::class);
         $this->itemCreationFactoryMock = $this->createMock(ShipmentItemCreationInterfaceFactory::class);
-        $this->searchCriteriaBuilderMock = $this->createMock(SearchCriteriaBuilder::class);
-        $this->trackFactoryMock = $this->createMock(TrackFactory::class);
         $this->apiConfigMock = $this->createMock(ApiConfig::class);
         $this->loggerMock = $this->createMock(LoggerInterface::class);
         $dateTimeMock = $this->createMock(\Magento\Framework\Stdlib\DateTime\DateTime::class);
@@ -90,29 +73,11 @@ class FulfillmentServiceTest extends TestCase
             $this->shipOrderMock,
             $this->trackCreationFactoryMock,
             $this->itemCreationFactoryMock,
-            $this->searchCriteriaBuilderMock,
-            $this->trackFactoryMock,
             $this->apiConfigMock,
             $this->loggerMock,
             $dateTimeMock,
             $shipmentRepositoryMock
         );
-    }
-
-    /**
-     * Helper to mock order lookup via findOrderByIncrementId (SearchCriteriaBuilder + getList).
-     *
-     * @param \PHPUnit\Framework\MockObject\MockObject $orderMock
-     */
-    private function mockOrderLookupByIncrementId($orderMock): void
-    {
-        $searchCriteriaMock = $this->createMock(SearchCriteria::class);
-        $this->searchCriteriaBuilderMock->method('addFilter')->willReturnSelf();
-        $this->searchCriteriaBuilderMock->method('create')->willReturn($searchCriteriaMock);
-
-        $searchResultMock = $this->createMock(OrderSearchResultInterface::class);
-        $searchResultMock->method('getItems')->willReturn([$orderMock]);
-        $this->orderRepositoryMock->method('getList')->willReturn($searchResultMock);
     }
 
     public function testProcessFulfillmentCreatesShipment(): void
@@ -134,9 +99,6 @@ class FulfillmentServiceTest extends TestCase
         $shipmentCollectionMock = $this->createMock(ShipmentCollection::class);
         $shipmentCollectionMock->method('getSize')->willReturn(0);
         $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
-
-        $this->mockOrderLookupByIncrementId($orderMock);
-
         // Track creation
         $trackMock = $this->createMock(ShipmentTrackCreationInterface::class);
         $trackMock->expects($this->once())->method('setTrackNumber')->with('TRACK001');
@@ -151,7 +113,7 @@ class FulfillmentServiceTest extends TestCase
             ->method('execute')
             ->with($orderId, [], false, false, null, [$trackMock]);
 
-        $this->service->processFulfillment($data);
+        $this->service->processFulfillment($orderMock, $data);
     }
 
     public function testProcessFulfillmentSkipsWhenOrderNotShippable(): void
@@ -170,10 +132,11 @@ class FulfillmentServiceTest extends TestCase
         $orderMock->method('getState')->willReturn('complete');
         $orderMock->method('canShip')->willReturn(false);
 
-        $this->mockOrderLookupByIncrementId($orderMock);
-
+        // Warning, not info: canShip() is also false for held and
+        // payment-review orders, where the merchant HAS fulfilled in Bob Go and
+        // silently getting no Magento shipment is a real problem.
         $this->loggerMock->expects($this->once())
-            ->method('info')
+            ->method('warning')
             ->with(
                 'Bob Go fulfillment: order cannot be shipped',
                 $this->callback(function ($context) use ($orderId) {
@@ -184,7 +147,7 @@ class FulfillmentServiceTest extends TestCase
         // shipOrder should never be called
         $this->shipOrderMock->expects($this->never())->method('execute');
 
-        $this->service->processFulfillment($data);
+        $this->service->processFulfillment($orderMock, $data);
     }
 
     public function testProcessFulfillmentIdempotency(): void
@@ -214,9 +177,6 @@ class FulfillmentServiceTest extends TestCase
         $shipmentCollectionMock->method('getIterator')->willReturn(new \ArrayIterator([$shipmentMock]));
 
         $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
-
-        $this->mockOrderLookupByIncrementId($orderMock);
-
         // shipOrder should never be called (duplicate)
         $this->shipOrderMock->expects($this->never())->method('execute');
 
@@ -229,26 +189,12 @@ class FulfillmentServiceTest extends TestCase
                 })
             );
 
-        $this->service->processFulfillment($data);
+        $this->service->processFulfillment($orderMock, $data);
     }
 
-    public function testProcessFulfillmentMissingChannelOrderNumber(): void
-    {
-        $data = [
-            'id' => 'ful_123',
-            'method_reference' => '',
-        ];
-
-        $this->loggerMock->expects($this->once())
-            ->method('error')
-            ->with('Bob Go fulfillment missing channel_order_number', ['data' => $data]);
-
-        // Should not attempt to find order
-        $this->orderRepositoryMock->expects($this->never())->method('getList');
-        $this->shipOrderMock->expects($this->never())->method('execute');
-
-        $this->service->processFulfillment($data);
-    }
+    // Payloads that carry no usable order reference no longer reach this
+    // service at all — the webhook controller acknowledges them with 200 and
+    // never resolves an order. See OrderResolverTest and ReceiveTest.
 
     public function testProcessTrackingUpdateBackfillsPlaceholderTitle(): void
     {
@@ -281,16 +227,13 @@ class FulfillmentServiceTest extends TestCase
             ->willReturn(new \ArrayIterator([$shipmentMock]));
 
         $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
-
-        $this->mockOrderLookupByIncrementId($orderMock);
-
         // Order comment with status should still be added.
         $orderMock->expects($this->once())
             ->method('addCommentToStatusHistory')
             ->with('Bob Go tracking update: In Transit (ref: TRACK002)');
         $orderMock->expects($this->once())->method('save');
 
-        $this->service->processTrackingUpdate($data);
+        $this->service->processTrackingUpdate($orderMock, $data);
     }
 
     public function testProcessTrackingUpdateLeavesRealTitleAlone(): void
@@ -325,15 +268,12 @@ class FulfillmentServiceTest extends TestCase
             ->willReturn(new \ArrayIterator([$shipmentMock]));
 
         $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
-
-        $this->mockOrderLookupByIncrementId($orderMock);
-
         $orderMock->expects($this->once())
             ->method('addCommentToStatusHistory')
             ->with('Bob Go tracking update: Delivered (ref: EXISTING001)');
         $orderMock->expects($this->once())->method('save');
 
-        $this->service->processTrackingUpdate($data);
+        $this->service->processTrackingUpdate($orderMock, $data);
     }
 
     public function testProcessTrackingUpdateThrowsTransientWhenNoMatchingShipment(): void
@@ -368,15 +308,12 @@ class FulfillmentServiceTest extends TestCase
             ->willReturn(new \ArrayIterator([$otherShipmentMock]));
 
         $orderMock->method('getShipmentsCollection')->willReturn($shipmentCollectionMock);
-
-        $this->mockOrderLookupByIncrementId($orderMock);
-
         // No comment should be added — we're throwing so Bob Go retries.
         $orderMock->expects($this->never())->method('addCommentToStatusHistory');
 
         $this->expectException(\BobGroup\BobGo\Service\TransientWebhookException::class);
         $this->expectExceptionMessageMatches('/No shipment carries tracking UASS4ZW6 yet/');
 
-        $this->service->processTrackingUpdate($data);
+        $this->service->processTrackingUpdate($orderMock, $data);
     }
 }

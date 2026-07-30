@@ -250,4 +250,57 @@ class BobGoTest extends TestCase
         $this->assertArrayHasKey('delivery_address', $capturedPayload);
         $this->assertArrayHasKey('items', $capturedPayload);
     }
+
+    /**
+     * Fail soft. Magento invokes collectRates() with no try/catch of its own
+     * (Shipping::collectCarrierRates), so anything escaping here 500s the
+     * checkout shipping step and the cart estimator for every customer —
+     * including stores that also offer other carriers. Whatever goes wrong, the
+     * carrier must simply not appear.
+     *
+     * @dataProvider thrownFromApiProvider
+     */
+    public function testCollectRatesHidesCarrierWhenSomethingThrows(\Throwable $thrown): void
+    {
+        $this->scopeConfigMock->method('getValue')->willReturn('test_value');
+        $this->scopeConfigMock->method('isSetFlag')->willReturn(true);
+
+        $this->additionalInfoMock->method('getDestComp')->willReturn('Test Co');
+        $this->additionalInfoMock->method('getSuburb')->willReturn('Test Suburb');
+
+        $storeMock = $this->createMock(\Magento\Store\Model\Store::class);
+        $storeMock->method('getBaseUrl')->willReturn('https://example.com/');
+        $this->storeManagerMock->method('getStore')->willReturn($storeMock);
+
+        $this->resultFactoryMock->method('create')
+            ->willReturn($this->createMock(\Magento\Shipping\Model\Rate\Result::class));
+
+        $this->apiClientMock->method('post')->willReturnCallback(
+            static function () use ($thrown) {
+                throw $thrown;
+            }
+        );
+
+        $rateRequest = new RateRequest();
+        $rateRequest->setDestPostcode('2196');
+        $rateRequest->setDestCountryId('ZA');
+        $rateRequest->setDestCity('Sandton');
+        $rateRequest->setDestStreet('1 Test St');
+        $rateRequest->setAllItems([]);
+
+        $this->assertFalse($this->bobGo->collectRates($rateRequest));
+    }
+
+    /**
+     * @return array<string,array{0:\Throwable}>
+     */
+    public function thrownFromApiProvider(): array
+    {
+        return [
+            // What Magento's Curl client throws on a timeout or DNS failure.
+            'bare exception' => [new \Exception('Operation timed out')],
+            // And a hard error, so the guard is genuinely \Throwable-wide.
+            'error' => [new \TypeError('unexpected null')],
+        ];
+    }
 }
