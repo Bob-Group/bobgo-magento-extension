@@ -362,6 +362,12 @@ if (!interface_exists(\Magento\Quote\Api\Data\AddressInterface::class, false)) {
 if (!interface_exists(\Magento\Sales\Api\Data\OrderAddressInterface::class, false)) {
     eval('namespace Magento\Sales\Api\Data; interface OrderAddressInterface {}');
 }
+if (!interface_exists(\Magento\Checkout\Api\Data\ShippingInformationInterface::class, false)) {
+    eval('namespace Magento\Checkout\Api\Data; interface ShippingInformationInterface { public function getShippingAddress(); }');
+}
+if (!class_exists(\Magento\Checkout\Model\ShippingInformationManagement::class, false)) {
+    eval('namespace Magento\Checkout\Model; class ShippingInformationManagement { public function saveAddressInformation($cartId, $addressInformation) {} }');
+}
 if (!interface_exists(\Magento\Framework\App\RequestInterface::class, false)) {
     eval('namespace Magento\Framework\App; interface RequestInterface { public function getContent(); public function getHeader($name); public function getParam($name); }');
 }
