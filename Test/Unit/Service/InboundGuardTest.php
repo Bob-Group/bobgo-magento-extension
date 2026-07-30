@@ -83,4 +83,76 @@ class InboundGuardTest extends TestCase
 
         $this->assertFalse($this->guard->isActive(0));
     }
+
+    // ------------------------------------------------------------------ nesting
+
+    /**
+     * The scopes genuinely nest: the webhook controller marks a whole delivery
+     * inbound, and FulfilmentSyncService marks its own refresh, so a
+     * webhook-driven refresh enters twice. If the inner exit cleared the mark,
+     * every save the outer scope made afterwards — the webhook timestamp, the
+     * status-history comment — would queue an outbound push of Bob Go's own
+     * change, which is precisely the loop the guard exists to close.
+     */
+    public function testInnerScopeExitDoesNotUnguardTheOuterOne(): void
+    {
+        $this->guard->enter(42);
+        $this->guard->enter(42);
+
+        $this->guard->leave(42);
+        $this->assertTrue($this->guard->isActive(42), 'the outer scope is still open');
+
+        $this->guard->leave(42);
+        $this->assertFalse($this->guard->isActive(42));
+    }
+
+    public function testNestedAroundCallsUnwindInOrder(): void
+    {
+        $observed = [];
+
+        $this->guard->around(42, function () use (&$observed) {
+            $this->guard->around(42, function () use (&$observed) {
+                $observed['inner'] = $this->guard->isActive(42);
+            });
+            $observed['after_inner'] = $this->guard->isActive(42);
+        });
+        $observed['after_outer'] = $this->guard->isActive(42);
+
+        $this->assertSame(
+            ['inner' => true, 'after_inner' => true, 'after_outer' => false],
+            $observed
+        );
+    }
+
+    /**
+     * Depth is per order, so unwinding one must not affect another.
+     */
+    public function testNestingIsTrackedPerOrder(): void
+    {
+        $this->guard->enter(42);
+        $this->guard->enter(42);
+        $this->guard->enter(43);
+
+        $this->guard->leave(43);
+        $this->assertFalse($this->guard->isActive(43));
+        $this->assertTrue($this->guard->isActive(42));
+    }
+
+    /**
+     * An unbalanced leave() is a bug in the caller, but it must not drive the
+     * depth negative and wedge the order into a permanently guarded state.
+     */
+    public function testAnUnbalancedLeaveIsHarmless(): void
+    {
+        $this->guard->leave(42);
+        $this->assertFalse($this->guard->isActive(42));
+
+        $this->guard->enter(42);
+        $this->guard->leave(42);
+        $this->guard->leave(42);
+        $this->assertFalse($this->guard->isActive(42));
+
+        $this->guard->enter(42);
+        $this->assertTrue($this->guard->isActive(42), 'still usable afterwards');
+    }
 }

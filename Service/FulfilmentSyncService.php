@@ -68,6 +68,7 @@ class FulfilmentSyncService
     private ShipmentRepositoryInterface $shipmentRepository;
     private ApiConfig $apiConfig;
     private SyncLogger $syncLogger;
+    private InboundGuard $inboundGuard;
     private DateTime $dateTime;
     private LoggerInterface $logger;
 
@@ -80,6 +81,7 @@ class FulfilmentSyncService
         ShipmentRepositoryInterface $shipmentRepository,
         ApiConfig $apiConfig,
         SyncLogger $syncLogger,
+        InboundGuard $inboundGuard,
         DateTime $dateTime,
         LoggerInterface $logger
     ) {
@@ -91,6 +93,7 @@ class FulfilmentSyncService
         $this->shipmentRepository = $shipmentRepository;
         $this->apiConfig = $apiConfig;
         $this->syncLogger = $syncLogger;
+        $this->inboundGuard = $inboundGuard;
         $this->dateTime = $dateTime;
         $this->logger = $logger;
     }
@@ -119,6 +122,31 @@ class FulfilmentSyncService
             return false;
         }
 
+        // Everything below writes Bob Go's own state back onto the order, and every
+        // order save queues an outbound push. Guarding here rather than at each
+        // caller is what makes this structural: the webhook controller already
+        // marks its deliveries, but reconciliation — cron and the admin Resync
+        // button — came through unmarked, so each hourly pass re-queued every order
+        // it touched and the next push cron PATCHed them all back with nothing
+        // changed. On a store with real volume that is a PATCH per order per hour,
+        // forever. The guard nests, so the webhook path is unaffected.
+        return (bool) $this->inboundGuard->around(
+            (int) $order->getEntityId(),
+            function () use ($order, $webhookItems, $bobgoOrderId): bool {
+                return $this->refresh($order, $webhookItems, (string) $bobgoOrderId);
+            }
+        );
+    }
+
+    /**
+     * The refresh itself. Split out only so syncOrder() can wrap it in the
+     * inbound guard without burying the body in a closure.
+     *
+     * @param array<int,array<string,mixed>> $webhookItems
+     * @throws TransientWebhookException
+     */
+    private function refresh(OrderInterface $order, array $webhookItems, string $bobgoOrderId): bool
+    {
         try {
             $response = $this->apiClient->get(self::ENDPOINT, ['order_id' => $bobgoOrderId]);
         } catch (BobGoApiException $e) {

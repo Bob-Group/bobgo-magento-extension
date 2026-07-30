@@ -7,6 +7,7 @@ use BobGroup\BobGo\Api\BobGoApiClient;
 use BobGroup\BobGo\Api\BobGoApiException;
 use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Service\FulfilmentSyncService;
+use BobGroup\BobGo\Service\InboundGuard;
 use BobGroup\BobGo\Service\SyncLogger;
 use BobGroup\BobGo\Service\TransientWebhookException;
 use Magento\Framework\Stdlib\DateTime\DateTime;
@@ -48,6 +49,8 @@ class FulfilmentSyncServiceTest extends TestCase
     private $apiConfig;
     private $syncLogger;
     private $logger;
+    /** @var InboundGuard */
+    private $inboundGuard;
     /** @var FulfilmentSyncService */
     private $service;
 
@@ -65,6 +68,10 @@ class FulfilmentSyncServiceTest extends TestCase
 
         $dateTime = $this->createMock(DateTime::class);
         $dateTime->method('gmtDate')->willReturn('2026-05-19 12:00:00');
+
+        // Real, not mocked: the guard is the thing under test in the loop-protection
+        // cases below, and its nesting behaviour is the part that has to be right.
+        $this->inboundGuard = new InboundGuard();
 
         $this->trackCreationFactory->method('create')
             ->willReturnCallback(function () {
@@ -84,6 +91,7 @@ class FulfilmentSyncServiceTest extends TestCase
             $this->shipmentRepository,
             $this->apiConfig,
             $this->syncLogger,
+            $this->inboundGuard,
             $dateTime,
             $this->logger
         );
@@ -122,6 +130,59 @@ class FulfilmentSyncServiceTest extends TestCase
         $this->assertSame('collected', $decoded[0]['status']);
         $this->assertSame('2546', $decoded[0]['fulfillment_id']);
         $this->assertSame('2026-05-19 12:00:00', $writes['bobgo_last_synced']);
+    }
+
+    /**
+     * The order save below queues an outbound push unless the order is marked
+     * inbound-driven, and reconciliation — cron and the admin Resync button —
+     * reached this save unmarked. The webhook controller had its own guard, so
+     * only the reconcile path was exposed: every hourly pass re-queued every
+     * order it touched, and the next push cron PATCHed them all back with nothing
+     * changed. Observed live as six redundant 200 PATCHes in one cron run.
+     *
+     * Guarding inside this service rather than at each caller is what makes it
+     * structural — a future caller cannot forget.
+     */
+    public function testMarksTheOrderInboundDrivenWhileItSaves(): void
+    {
+        $order = $this->order(7, '987', '[]');
+
+        $this->apiClient->method('get')
+            ->willReturn(['order_fulfillments' => [$this->fulfilment('UASDRTR3', 'Demo Couriers', 'collected')]]);
+
+        $guardedDuringSave = null;
+        $this->orderRepository->expects($this->once())->method('save')
+            ->willReturnCallback(function ($saved) use (&$guardedDuringSave) {
+                $guardedDuringSave = $this->inboundGuard->isActive(7);
+                return $saved;
+            });
+
+        $this->service->syncOrder($order);
+
+        $this->assertTrue($guardedDuringSave, 'the save must happen inside the guard');
+        $this->assertFalse($this->inboundGuard->isActive(7), 'and the mark must be released after');
+    }
+
+    /**
+     * A stuck mark would suppress every genuine push for that order for the rest
+     * of the request, so the release has to survive a failure too.
+     */
+    public function testReleasesTheInboundMarkWhenTheRefreshThrows(): void
+    {
+        $order = $this->order(7, '987', '[]');
+
+        $this->apiClient->method('get')
+            ->willReturn(['order_fulfillments' => [$this->fulfilment('UASDRTR3', 'Demo Couriers', 'collected')]]);
+        $this->orderRepository->method('save')
+            ->willThrowException(new \RuntimeException('database went away'));
+
+        try {
+            $this->service->syncOrder($order);
+        } catch (\Throwable $e) {
+            // The mark, not the exception, is what this test is about.
+        }
+
+        $this->assertFalse($this->inboundGuard->isActive(7));
     }
 
     public function testIsANoOpWhenNothingChanged(): void

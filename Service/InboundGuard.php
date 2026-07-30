@@ -18,27 +18,43 @@ namespace BobGroup\BobGo\Service;
  *
  * Request-scoped, which is all that is needed: the guard only has to span a single
  * inbound handler's own saves.
+ *
+ * Re-entrant, because the scopes legitimately nest: the webhook controller marks
+ * the whole delivery inbound, and FulfilmentSyncService marks its own refresh —
+ * so a webhook-driven refresh enters twice. Counting depth rather than storing a
+ * flag is what stops the inner scope's exit from unguarding the outer one, which
+ * would silently re-open the very loop this class exists to close.
  */
 class InboundGuard
 {
-    /** @var array<int,bool> */
-    private array $active = [];
+    /**
+     * Order id => nesting depth. Absent means not guarded.
+     *
+     * @var array<int,int>
+     */
+    private array $depth = [];
 
     public function enter(int $orderId): void
     {
         if ($orderId > 0) {
-            $this->active[$orderId] = true;
+            $this->depth[$orderId] = ($this->depth[$orderId] ?? 0) + 1;
         }
     }
 
     public function leave(int $orderId): void
     {
-        unset($this->active[$orderId]);
+        if (!isset($this->depth[$orderId])) {
+            return;
+        }
+
+        if (--$this->depth[$orderId] <= 0) {
+            unset($this->depth[$orderId]);
+        }
     }
 
     public function isActive(int $orderId): bool
     {
-        return isset($this->active[$orderId]);
+        return isset($this->depth[$orderId]);
     }
 
     /**
