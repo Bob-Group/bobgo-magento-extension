@@ -204,4 +204,63 @@ class DisplayOptionsMapperTest extends TestCase
         $item->method('getProductOptions')->willReturn($productOptions);
         return $item;
     }
+
+    /**
+     * The case this whole feature exists for, and the one it was silently failing.
+     *
+     * Magento records two rows for a configurable: the parent, which holds
+     * `attributes_info` describing what the customer chose, and the simple child,
+     * which holds only info_buyRequest. OrderMapper sends the CHILD (it has the
+     * variant SKU), so reading options from the child alone returned nothing for
+     * every configurable product — verified against a live order where a
+     * size-L/yellow tank produced no display_options at all.
+     */
+    public function testReadsVariantAttributesFromTheConfigurableParent(): void
+    {
+        $child = $this->item(['info_buyRequest' => ['qty' => 1]]);
+        $parent = $this->item([
+            'info_buyRequest' => ['qty' => 1],
+            'attributes_info' => [
+                ['label' => 'Size', 'value' => 'L', 'option_value' => '169'],
+                ['label' => 'Color', 'value' => 'Yellow', 'option_value' => '61'],
+            ],
+        ]);
+
+        $entries = $this->mapper->map($child, $parent);
+
+        $this->assertSame(['size', 'color'], array_column($entries, 'key'));
+        $this->assertSame(['L', 'Yellow'], array_column($entries, 'display_value'));
+    }
+
+    /**
+     * Child and parent can describe the same option; the same selection twice is
+     * noise, but two genuinely different selections sharing a key are not.
+     */
+    public function testDoesNotDuplicateAnOptionPresentOnBothItems(): void
+    {
+        $options = ['options' => [['label' => 'Engraving', 'value' => 'Hello']]];
+
+        $entries = $this->mapper->map($this->item($options), $this->item($options));
+
+        $this->assertCount(1, $entries);
+    }
+
+    public function testStillKeepsTwoDifferentSelectionsSharingAKey(): void
+    {
+        $entries = $this->mapper->map(
+            $this->item(['options' => [['label' => 'Extra', 'value' => 'Gift wrap']]]),
+            $this->item(['options' => [['label' => 'Extra', 'value' => 'Gift note']]])
+        );
+
+        $this->assertCount(2, $entries);
+    }
+
+    public function testWorksWithNoParent(): void
+    {
+        $entries = $this->mapper->map($this->item([
+            'options' => [['label' => 'Engraving', 'value' => 'Hello']],
+        ]));
+
+        $this->assertCount(1, $entries);
+    }
 }

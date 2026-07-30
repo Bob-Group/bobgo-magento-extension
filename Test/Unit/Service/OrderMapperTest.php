@@ -501,6 +501,48 @@ class OrderMapperTest extends TestCase
         return $order;
     }
 
+    /**
+     * End-to-end: the parent's attributes_info must reach the child's payload entry.
+     *
+     * A live order proved this was broken — a configurable tank in size L / yellow
+     * went out with no display_options at all, because mapItems() sends the simple
+     * child and Magento keeps attributes_info on the configurable parent.
+     */
+    public function testConfigurableVariantAttributesReachTheItemPayload(): void
+    {
+        $parent = $this->createMock(OrderItemInterface::class);
+        $parent->method('getItemId')->willReturn(17);
+        $parent->method('getProductType')->willReturn('configurable');
+        $parent->method('getSku')->willReturn('WT09-L-Yellow');
+        $parent->method('getPriceInclTax')->willReturn(34.0);
+        $parent->method('getProductOptions')->willReturn([
+            'info_buyRequest' => ['qty' => 1],
+            'attributes_info' => [
+                ['label' => 'Size', 'value' => 'L', 'option_value' => '169'],
+                ['label' => 'Color', 'value' => 'Yellow', 'option_value' => '61'],
+            ],
+        ]);
+
+        $child = $this->createMock(OrderItemInterface::class);
+        $child->method('getItemId')->willReturn(18);
+        $child->method('getParentItemId')->willReturn(17);
+        $child->method('getProductType')->willReturn('simple');
+        $child->method('getSku')->willReturn('WT09-L-Yellow');
+        $child->method('getName')->willReturn('Breathe-Easy Tank-L-Yellow');
+        $child->method('getPriceInclTax')->willReturn(0.0);
+        $child->method('getQtyOrdered')->willReturn(1.0);
+        $child->method('getWeight')->willReturn(0.5);
+        $child->method('getProductOptions')->willReturn(['info_buyRequest' => ['qty' => 1]]);
+
+        $payload = $this->mapper->mapOrderToPayload($this->orderWith(['getItems' => [$parent, $child]]));
+
+        $this->assertCount(1, $payload['order_items'], 'the configurable parent is not sent');
+        $item = $payload['order_items'][0];
+        $this->assertSame(34.0, $item['unit_price'], "the parent's price is mirrored onto the child");
+        $this->assertArrayHasKey('display_options', $item);
+        $this->assertSame(['size', 'color'], array_column($item['display_options'], 'key'));
+    }
+
     // -------------------------------------------------------- payload completeness
 
     /**

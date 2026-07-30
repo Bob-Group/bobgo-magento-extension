@@ -26,6 +26,33 @@
             <column name="bobgo_sync_status"/>
         </index>
     </table>
+    <!--
+        Storage for the suburb captured at checkout.
+
+        `suburb` was declared as an extension attribute in
+        extension_attributes.xml but never given a column, so every write was
+        silently dropped: Magento only persists fields that exist in the table.
+        The value therefore survived only in memory, within a single request.
+
+        That made it fail in two places at once. The quote address is saved during
+        set-shipping-information but the order is placed in a *later* request, so
+        ToOrderAddressPlugin found nothing to carry across. And once order push
+        moved to a background job (1.2.0), OrderMapper read the order back from a
+        database that had never stored it. Both fell back to `city`, which is what
+        Bob Go was receiving as `local_area`.
+
+        Rate requests were unaffected — AdditionalInfo reads the suburb straight
+        out of the request body — which is why this went unnoticed.
+    -->
+    <table name="quote_address" resource="checkout" comment="Quote Address">
+        <column xsi:type="varchar" name="suburb" nullable="true" length="255"
+                comment="Suburb / local area captured at checkout"/>
+    </table>
+    <table name="sales_order_address" resource="sales" comment="Sales Order Address">
+        <column xsi:type="varchar" name="suburb" nullable="true" length="255"
+                comment="Suburb / local area, carried from the quote address"/>
+    </table>
+
     <table name="sales_order_item" resource="sales" comment="Sales Order Item">
         <column xsi:type="varchar" name="bobgo_order_item_id" nullable="true" length="255"
                 comment="Bob Go Order Item ID"/>

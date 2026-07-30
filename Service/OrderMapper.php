@@ -279,18 +279,21 @@ class OrderMapper implements OrderMapperInterface
                 continue;
             }
 
-            $entry = $this->mapItem($item);
+            // The configurable parent is where Magento records what the customer
+            // actually chose (`attributes_info` in product_options) — the simple
+            // child we send carries only info_buyRequest. Hand the parent over so
+            // display_options isn't empty for exactly the case it exists for.
+            $parentItemId = $item->getParentItemId();
+            $parent = ($parentItemId !== null && $parentItemId !== '' && isset($byId[(int) $parentItemId]))
+                ? $byId[(int) $parentItemId]
+                : null;
+
+            $entry = $this->mapItem($item, $parent);
 
             // If this simple is a child of a configurable, the customer-paid price
             // sits on the parent (child's price is 0). Mirror it over.
-            $parentItemId = $item->getParentItemId();
-            if (
-                $parentItemId !== null
-                && $parentItemId !== ''
-                && isset($byId[(int) $parentItemId])
-                && (float) $entry['unit_price'] === 0.0
-            ) {
-                $entry['unit_price'] = (float) $byId[(int) $parentItemId]->getPriceInclTax();
+            if ($parent !== null && (float) $entry['unit_price'] === 0.0) {
+                $entry['unit_price'] = (float) $parent->getPriceInclTax();
             }
 
             $mapped[] = $entry;
@@ -301,9 +304,10 @@ class OrderMapper implements OrderMapperInterface
 
     /**
      * @param OrderItemInterface $item
+     * @param OrderItemInterface|null $parent Configurable parent, when this is its child
      * @return array<string,mixed>
      */
-    private function mapItem(OrderItemInterface $item): array
+    private function mapItem(OrderItemInterface $item, ?OrderItemInterface $parent = null): array
     {
         $mapped = [
             'channel_ref_id'    => (int) $item->getItemId(),
@@ -322,7 +326,7 @@ class OrderMapper implements OrderMapperInterface
 
         // What the customer chose: variant attributes, custom options,
         // personalisation text. This is what a picker in the warehouse needs.
-        $displayOptions = $this->displayOptions->map($item);
+        $displayOptions = $this->displayOptions->map($item, $parent);
         if (!empty($displayOptions)) {
             $mapped['display_options'] = $displayOptions;
         }

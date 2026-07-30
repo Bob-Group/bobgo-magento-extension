@@ -62,5 +62,15 @@
             "PRIMARY": true,
             "BOBGO_ORDER_SYNC_QUEUE_ORDER_ID_UNQ": true
         }
+    },
+    "quote_address": {
+        "column": {
+            "suburb": true
+        }
+    },
+    "sales_order_address": {
+        "column": {
+            "suburb": true
+        }
     }
 }

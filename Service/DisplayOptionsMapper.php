@@ -67,47 +67,66 @@ class DisplayOptionsMapper
     }
 
     /**
+     * @param OrderItemInterface|null $parent The configurable parent, when $item is
+     *        its simple child. Magento records the chosen variant attributes on the
+     *        PARENT (`attributes_info`); the child carries only info_buyRequest. We
+     *        send the child, so without the parent this returns nothing for every
+     *        configurable product — the exact case the field exists for.
      * @return array<int,array<string,string>>
      */
-    public function map(OrderItemInterface $item): array
+    public function map(OrderItemInterface $item, ?OrderItemInterface $parent = null): array
     {
         if (!$this->isEnabled()) {
             return [];
         }
 
-        $productOptions = $item->getProductOptions();
-        if (!is_array($productOptions)) {
-            return [];
+        $sources = [$item->getProductOptions()];
+        if ($parent !== null) {
+            $sources[] = $parent->getProductOptions();
         }
 
         $blocked = $this->blocklist();
         $entries = [];
+        $seen = [];
         $truncated = false;
 
-        foreach (self::SOURCES as $sourceKey => $valueIsList) {
-            $rows = $productOptions[$sourceKey] ?? null;
-            if (!is_array($rows)) {
+        foreach ($sources as $productOptions) {
+            if (!is_array($productOptions)) {
                 continue;
             }
 
-            foreach ($rows as $row) {
-                if (!is_array($row)) {
+            foreach (self::SOURCES as $sourceKey => $valueIsList) {
+                $rows = $productOptions[$sourceKey] ?? null;
+                if (!is_array($rows)) {
                     continue;
                 }
 
-                $entry = $this->mapRow($row, $valueIsList);
-                if ($entry === null || in_array($entry['key'], $blocked, true)) {
-                    continue;
-                }
+                foreach ($rows as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
 
-                if (count($entries) >= self::MAX_ENTRIES) {
-                    $truncated = true;
-                    break 2;
-                }
+                    $entry = $this->mapRow($row, $valueIsList);
+                    if ($entry === null || in_array($entry['key'], $blocked, true)) {
+                        continue;
+                    }
 
-                // Appended, never merged by key: two rows with the same key are
-                // two distinct selections.
-                $entries[] = $entry;
+                    // Child and parent can describe the same option. Dedupe on the
+                    // whole entry, not on the key — two *different* selections that
+                    // share a key are still two selections.
+                    $fingerprint = $entry['key'] . "\0" . $entry['value'] . "\0" . $entry['display_value'];
+                    if (isset($seen[$fingerprint])) {
+                        continue;
+                    }
+                    $seen[$fingerprint] = true;
+
+                    if (count($entries) >= self::MAX_ENTRIES) {
+                        $truncated = true;
+                        break 3;
+                    }
+
+                    $entries[] = $entry;
+                }
             }
         }
 

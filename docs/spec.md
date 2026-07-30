@@ -1501,8 +1501,14 @@ Injected at `checkout > steps > shipping-step > shippingAddress > shipping-addre
 5. `BobGo::collectRates()` calls `getDestSuburb()` and includes it as `local_area` in the API payload
 
 **Order push (post-placement)**
-1. The quote address (carrying `extension_attributes.suburb`) is converted to an order address by Magento's `ToOrderAddress` converter
-2. `ToOrderAddressPlugin::afterConvert` copies the suburb onto the order address (sets both the extension attribute and the raw `suburb` data key)
+1. The quote address persists the suburb in `quote_address.suburb`, so it survives
+   the gap between the shipping-information request and the later place-order
+   request. **Without that column the value never made it this far** — see §17.
+2. The quote address is converted to an order address by Magento's `ToOrderAddress`
+   converter
+3. `ToOrderAddressPlugin::afterConvert` copies the suburb onto the order address
+   (setting both the extension attribute and the raw `suburb` data key, the latter
+   being what actually persists to `sales_order_address.suburb`)
 3. `OrderMapper::extractSuburb()` reads it back when building the outbound payload and emits as `delivery_address.local_area`; falls back to `city` if no suburb was captured
 
 ---
@@ -1783,6 +1789,30 @@ suggests.
 | `bobgo_last_webhook` | TIMESTAMP | Yes | UTC timestamp of last accepted inbound Bob Go webhook |
 | `bobgo_shipments` | TEXT | Yes | JSON-encoded shipments array from Bob Go (authoritative; refreshed by reconciliation) |
 | `bobgo_status_synced` | VARCHAR(32) | Yes | Last order status forwarded to Bob Go (`cancelled` / `completed`), so a transition isn't re-sent |
+
+### Tables: `quote_address` / `sales_order_address` (added columns)
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `suburb` | VARCHAR(255) | Yes | Suburb / local area captured at checkout |
+
+**Added in 1.2.0, and load-bearing.** `suburb` was declared as an extension
+attribute from the start but never given a column, so every write was silently
+dropped — Magento only persists fields that exist in the table. It therefore
+survived in memory for the length of one request and no further, which broke it
+twice over:
+
+- the quote address is saved during `set-shipping-information`, but the order is
+  placed in a **later** request, so `ToOrderAddressPlugin` had nothing to carry
+  across;
+- once order push moved to a background job, `OrderMapper` read the order back
+  from a database that had never stored it.
+
+Both fell back to `city`, which is what Bob Go was receiving as `local_area`.
+Confirmed against a live sandbox order before the fix.
+
+Rate requests were never affected — `AdditionalInfo` reads the suburb straight out
+of the request body — which is exactly why this went unnoticed.
 
 ### Table: `sales_order_item` (added columns)
 
@@ -2394,9 +2424,12 @@ The script updates both `composer.json` and `etc/module.xml`.
    `Controller\Tracking\Index` — deprecated since 2.3. Both belong to the disabled
    tracking page; migrate to view models if that feature is ever turned on.
 
-6. **`bobgo_order_ref` field-name guesswork** — `applySuccess()` tries
-   `response['reference']` then `response['order_ref']`. If Bob Go's key is
-   neither, the column stays null forever. → Appendix C, Q2.
+6. **`bobgo_order_ref` is dead weight** — resolved by observation rather than by
+   fixing. A live order-create response carries `id`, `channel_ref_id` and
+   `channel_order_number` and no immutable string reference at all, so
+   `applySuccess()`'s guesses at `reference` / `order_ref` can never match. The
+   column and the admin panel row will always be empty. Drop both, or keep them
+   against a future API addition — but stop treating the emptiness as a bug.
 
 7. **Throwable-on-webhook keeps the dedup claim** — any exception other than
    `TransientWebhookException` leaves the claim row in place, so Bob Go's retries
@@ -2617,8 +2650,8 @@ this extension hits all of them.
 
 | # | Question | Why it matters here |
 |---|----------|---------------------|
-| Q1 | What exactly does `bobgo-channel-identifier` expect — full canonical URL, or host with the scheme stripped? | Two shipped integrations disagree: WooCommerce sends the URL, we strip the scheme (§6) |
-| Q2 | Which response key carries the immutable order reference? | `applySuccess()` guesses `reference` then `order_ref`; if neither, `bobgo_order_ref` stays null forever |
+| ~~Q1~~ | ~~What does `bobgo-channel-identifier` expect?~~ | **Answered 2026-07-30.** Host with the scheme stripped is correct: a live `POST /v2/orders` came back with `channel.identifier: "app.bobgo-magento.test"`, matching our header exactly. No change needed |
+| ~~Q2~~ | ~~Which response key carries the immutable order reference?~~ | **Answered 2026-07-30: none does.** A full order-create response carries `id`, `channel_ref_id` and `channel_order_number` — there is no `reference` or `order_ref`. `bobgo_order_ref` can never be populated; see Known Limitations |
 | Q3 | Does `PATCH /v2/orders` echo enough to confirm a status change applied? | Otherwise a follow-up `GET /v2/orders?id=` is needed to be certain |
 | Q4 | Is `channel_ref_id` present on **every** inbound webhook payload, on every topic? | If yes, rung 4 of the resolution ladder (order number alone) can be dropped — see Known Limitations #13 |
 | Q5 | **Channel-scoped webhook delivery, or a `channel_id` in payloads.** | The root fix. Eliminates the cross-channel mis-link class and most ignored-event volume. More urgent for Magento than WooCommerce, because default `increment_id` sequences are identical across stores |
