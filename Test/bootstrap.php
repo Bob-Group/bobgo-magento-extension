@@ -287,6 +287,35 @@ if (!interface_exists(\Magento\Framework\App\Action\HttpPostActionInterface::cla
 if (!interface_exists(\Magento\Sales\Api\ShipmentRepositoryInterface::class, false)) {
     eval('namespace Magento\Sales\Api; interface ShipmentRepositoryInterface { public function get($id); public function save($shipment); }');
 }
+// Admin grid + notification surfaces. Stubbed rather than excluded from static
+// analysis so the classes that use them still get checked.
+if (!interface_exists(\Magento\Framework\Api\Search\SearchResultInterface::class, false)) {
+    eval('namespace Magento\Framework\Api\Search; interface SearchResultInterface {}');
+}
+if (!interface_exists(\Magento\Framework\Event\ManagerInterface::class, false)) {
+    eval('namespace Magento\Framework\Event; interface ManagerInterface { public function dispatch($eventName, array $data = []); }');
+}
+if (!interface_exists(\Magento\Framework\Data\Collection\EntityFactoryInterface::class, false)) {
+    eval('namespace Magento\Framework\Data\Collection; interface EntityFactoryInterface { public function create($className, array $data = []); }');
+}
+if (!interface_exists(\Magento\Framework\Data\Collection\Db\FetchStrategyInterface::class, false)) {
+    eval('namespace Magento\Framework\Data\Collection\Db; interface FetchStrategyInterface { public function fetchAll($select, array $bindParams = []); }');
+}
+if (!class_exists(\Magento\Framework\View\Element\UiComponent\DataProvider\SearchResult::class, false)) {
+    eval('namespace Magento\Framework\View\Element\UiComponent\DataProvider; class SearchResult { public function __construct($entityFactory = null, $logger = null, $fetchStrategy = null, $eventManager = null, $mainTable = null, $resourceModel = null) {} }');
+}
+if (!interface_exists(\Magento\Framework\Notification\MessageInterface::class, false)) {
+    eval('namespace Magento\Framework\Notification; interface MessageInterface { const SEVERITY_CRITICAL = 1; const SEVERITY_MAJOR = 2; const SEVERITY_MINOR = 3; const SEVERITY_NOTICE = 4; public function getIdentity(); public function isDisplayed(); public function getText(); public function getSeverity(); }');
+}
+if (!class_exists(\Magento\Framework\Controller\ResultFactory::class, false)) {
+    eval('namespace Magento\Framework\Controller; class ResultFactory { const TYPE_PAGE = "page"; const TYPE_JSON = "json"; const TYPE_REDIRECT = "redirect"; public function create($type, array $args = []) { return null; } }');
+}
+if (!class_exists(\Magento\Backend\App\Action::class, false)) {
+    eval('namespace Magento\Backend\App; class Action extends \Magento\Framework\App\Action\Action { protected $resultFactory; }');
+}
+if (!interface_exists(\Magento\Framework\App\Action\HttpGetActionInterface::class, false)) {
+    eval('namespace Magento\Framework\App\Action; interface HttpGetActionInterface {}');
+}
 if (!class_exists(\Magento\Store\Model\App\Emulation::class, false)) {
     eval('namespace Magento\Store\Model\App; class Emulation { public function startEnvironmentEmulation($storeId, $area = "frontend", $force = false) { return $this; } public function stopEnvironmentEmulation() { return $this; } }');
 }

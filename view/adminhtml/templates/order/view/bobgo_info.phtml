@@ -8,7 +8,9 @@ if ($order === null) {
 }
 
 $bobgoOrderId   = (string) ($order->getData('bobgo_order_id') ?? '');
+$bobgoOrderRef  = (string) ($order->getData('bobgo_order_ref') ?? '');
 $syncStatus     = (string) ($order->getData('bobgo_sync_status') ?? '—');
+$statusSynced   = (string) ($order->getData('bobgo_status_synced') ?? '');
 $lastSynced     = (string) ($order->getData('bobgo_last_synced') ?? '—');
 $lastWebhook    = (string) ($order->getData('bobgo_last_webhook') ?? '—');
 $shipments      = $block->getShipments();
@@ -24,9 +26,19 @@ $shipments      = $block->getShipments();
                 <td><?= $bobgoOrderId !== '' ? $escaper->escapeHtml($bobgoOrderId) : '—' ?></td>
             </tr>
             <tr>
+                <th><?= $escaper->escapeHtml(__('Bob Go order ref')) ?></th>
+                <td><?= $bobgoOrderRef !== '' ? $escaper->escapeHtml($bobgoOrderRef) : '—' ?></td>
+            </tr>
+            <tr>
                 <th><?= $escaper->escapeHtml(__('Sync status')) ?></th>
                 <td><?= $escaper->escapeHtml($syncStatus) ?></td>
             </tr>
+            <?php if ($statusSynced !== ''): ?>
+            <tr>
+                <th><?= $escaper->escapeHtml(__('Status sent to Bob Go')) ?></th>
+                <td><?= $escaper->escapeHtml($statusSynced) ?></td>
+            </tr>
+            <?php endif; ?>
             <tr>
                 <th><?= $escaper->escapeHtml(__('Last synced')) ?></th>
                 <td><?= $escaper->escapeHtml($lastSynced) ?></td>

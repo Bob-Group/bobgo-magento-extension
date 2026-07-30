@@ -63,7 +63,11 @@ parameters:
         - '#Property BobGroup\\BobGo\\.* has unknown class Magento\\Framework\\Data\\Form\\FormKey as its type#'
         - '#Property BobGroup\\BobGo\\.* has unknown class Magento\\Framework\\Data\\Form\\FormKey\\Validator as its type#'
         - '#Property BobGroup\\BobGo\\.* has unknown class Magento\\Sales\\Api\\Data\\OrderAddressExtensionFactory as its type#'
-        - '#Call to an undefined method BobGroup\\BobGo\\Block\\Adminhtml\\Order\\View\\BobGoInfo::escapeHtmlAttr#'
+        - '#Call to an undefined method BobGroup\\BobGo\\Block\\Adminhtml\\.*::escapeHtml(Attr)?#'
+        # Backend page result: Magento\Backend\Model\View\Result\Page, only the
+        # base controller is stubbed.
+        - '#has invalid return type Magento\\Backend\\Model\\View\\Result\\Page#'
+        - '#Call to method (setActiveMenu|getConfig)\(\) on an unknown class Magento\\Backend\\Model\\View\\Result\\Page#'
         - '#Call to method getFormKey\(\) on an unknown class Magento\\Framework\\Data\\Form\\FormKey#'
         - '#Call to method validate\(\) on an unknown class Magento\\Framework\\Data\\Form\\FormKey\\Validator#'
         - '#Call to (an undefined |)method (getExtensionAttributes|setExtensionAttributes|getCustomAttribute|getData|setData|create)\(\) on an unknown class Magento\\(Quote|Sales)\\#'

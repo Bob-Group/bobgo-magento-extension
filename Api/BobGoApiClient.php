@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace BobGroup\BobGo\Api;
 
 use BobGroup\BobGo\Model\Config\ApiConfig;
+use BobGroup\BobGo\Service\ConnectionHealth;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -64,16 +65,23 @@ class BobGoApiClient
      */
     private StoreManagerInterface $storeManager;
 
+    /**
+     * @var ConnectionHealth
+     */
+    private ConnectionHealth $connectionHealth;
+
     public function __construct(
         ApiConfig $apiConfig,
         CurlFactory $curlFactory,
         LoggerInterface $logger,
-        StoreManagerInterface $storeManager
+        StoreManagerInterface $storeManager,
+        ConnectionHealth $connectionHealth
     ) {
         $this->apiConfig = $apiConfig;
         $this->curlFactory = $curlFactory;
         $this->logger = $logger;
         $this->storeManager = $storeManager;
+        $this->connectionHealth = $connectionHealth;
     }
 
     /**
@@ -172,6 +180,9 @@ class BobGoApiClient
         try {
             $dispatch();
         } catch (\Throwable $e) {
+            // Status 0: we learned nothing about the credentials, so the health
+            // state is deliberately left as it was.
+            $this->connectionHealth->observe(0);
             $this->logger->error('Bob Go API transport failure', [
                 'endpoint' => $endpoint,
                 'error' => $e->getMessage(),
@@ -267,6 +278,10 @@ class BobGoApiClient
     {
         $statusCode = $curl->getStatus();
         $responseBody = $curl->getBody();
+
+        // Write-through health tracking: a key revoked on the Bob Go side shows up
+        // here, on ordinary traffic, without anyone pressing a Test button.
+        $this->connectionHealth->observe((int) $statusCode);
 
         if ($statusCode >= 400) {
             $maskedKey = $this->getMaskedApiKey();

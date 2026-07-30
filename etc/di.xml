@@ -10,6 +10,16 @@
             <argument name="displayOptions" xsi:type="object">BobGroup\BobGo\Service\DisplayOptionsMapper</argument>
         </arguments>
     </type>
+    <type name="Magento\Framework\Notification\MessageList">
+        <arguments>
+            <argument name="messages" xsi:type="array">
+                <item name="bobgo_failed_order_sync" xsi:type="string">
+                    BobGroup\BobGo\Model\AdminNotification\FailedSyncMessage
+                </item>
+            </argument>
+        </arguments>
+    </type>
+
     <type name="Magento\Sales\Api\OrderRepositoryInterface">
         <plugin name="bobgo_order_repository_plugin" type="BobGroup\BobGo\Plugin\OrderRepositoryPlugin" sortOrder="20" />
     </type>
@@ -17,11 +27,27 @@
         <plugin name="bobgo_to_order_address_suburb" type="BobGroup\BobGo\Plugin\Quote\ToOrderAddressPlugin" />
     </type>
 
+    <!--
+        Wires the sync-log grid's data provider to a SearchResult-backed
+        collection. The DataProvider resolves collections by name from this
+        factory's map, keyed by the listing's data-source name.
+    -->
+    <type name="Magento\Framework\View\Element\UiComponent\DataProvider\CollectionFactory">
+        <arguments>
+            <argument name="collections" xsi:type="array">
+                <item name="bobgo_sync_log_listing_data_source" xsi:type="string">
+                    BobGroup\BobGo\Model\ResourceModel\SyncLog\Grid\Collection
+                </item>
+            </argument>
+        </arguments>
+    </type>
+
     <type name="BobGroup\BobGo\Api\BobGoApiClient">
         <arguments>
             <argument name="curlFactory" xsi:type="object">Magento\Framework\HTTP\Client\CurlFactory</argument>
             <argument name="logger" xsi:type="object">Psr\Log\LoggerInterface</argument>
             <argument name="storeManager" xsi:type="object">Magento\Store\Model\StoreManagerInterface</argument>
+            <argument name="connectionHealth" xsi:type="object">BobGroup\BobGo\Service\ConnectionHealth</argument>
         </arguments>
     </type>
 

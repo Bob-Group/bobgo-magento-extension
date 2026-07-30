@@ -6,6 +6,7 @@ namespace BobGroup\BobGo\Test\Unit\Api;
 use BobGroup\BobGo\Api\BobGoApiClient;
 use BobGroup\BobGo\Api\BobGoApiException;
 use BobGroup\BobGo\Model\Config\ApiConfig;
+use BobGroup\BobGo\Service\ConnectionHealth;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Magento\Store\Api\Data\StoreInterface;
@@ -40,6 +41,11 @@ class BobGoApiClientTest extends TestCase
      */
     private $loggerMock;
 
+    /**
+     * @var \PHPUnit\Framework\MockObject\MockObject
+     */
+    private $connectionHealthMock;
+
     protected function setUp(): void
     {
         $this->apiConfigMock = $this->createMock(ApiConfig::class);
@@ -54,11 +60,14 @@ class BobGoApiClientTest extends TestCase
         $storeManagerMock = $this->createMock(StoreManagerInterface::class);
         $storeManagerMock->method('getStore')->willReturn($storeMock);
 
+        $this->connectionHealthMock = $this->createMock(ConnectionHealth::class);
+
         $this->client = new BobGoApiClient(
             $this->apiConfigMock,
             $this->curlFactoryMock,
             $this->loggerMock,
-            $storeManagerMock
+            $storeManagerMock,
+            $this->connectionHealthMock
         );
     }
 
@@ -98,7 +107,8 @@ class BobGoApiClientTest extends TestCase
             $this->apiConfigMock,
             $this->curlFactoryMock,
             $this->loggerMock,
-            $storeManagerMock
+            $storeManagerMock,
+            $this->connectionHealthMock
         );
 
         $this->apiConfigMock->method('getApiKey')->willReturn('test-key');
@@ -278,5 +288,60 @@ class BobGoApiClientTest extends TestCase
             'patch' => ['patch', ['orders', ['id' => 1]]],
             'delete' => ['delete', ['webhooks']],
         ];
+    }
+
+    /**
+     * "A key is saved" is not "we can talk to Bob Go". A key revoked on the Bob Go
+     * side left the config page looking healthy while every call 401'd, so the
+     * state is fed from ordinary traffic rather than from a Test button.
+     *
+     * @dataProvider healthObservationProvider
+     */
+    public function testConnectionHealthObservesTheResponseStatus(int $status): void
+    {
+        $this->apiConfigMock->method('getApiKey')->willReturn('test-key');
+        $this->apiConfigMock->method('getBaseUrl')->willReturn(ApiConfig::BASE_URL_SANDBOX);
+        $this->curlMock->method('getStatus')->willReturn($status);
+        $this->curlMock->method('getBody')->willReturn('{}');
+
+        $this->connectionHealthMock->expects($this->once())->method('observe')->with($status);
+
+        try {
+            $this->client->get('webhooks');
+        } catch (BobGoApiException $e) {
+            // 4xx/5xx still throw; we only care that the status was observed.
+        }
+    }
+
+    /**
+     * @return array<string,array{0:int}>
+     */
+    public function healthObservationProvider(): array
+    {
+        return [
+            'success' => [200],
+            'unauthorised' => [401],
+            'not enrolled' => [404],
+            'server error' => [500],
+        ];
+    }
+
+    /**
+     * A transport failure produced no response, so it is reported as status 0 —
+     * ConnectionHealth treats that as inconclusive and leaves the last known
+     * state alone rather than crying wolf on every network blip.
+     */
+    public function testTransportFailureIsObservedAsInconclusive(): void
+    {
+        $this->apiConfigMock->method('getApiKey')->willReturn('test-key');
+        $this->apiConfigMock->method('getBaseUrl')->willReturn(ApiConfig::BASE_URL_SANDBOX);
+        $this->curlMock->method('get')->willReturnCallback(static function (): void {
+            throw new \Exception('Operation timed out');
+        });
+
+        $this->connectionHealthMock->expects($this->once())->method('observe')->with(0);
+
+        $this->expectException(BobGoApiException::class);
+        $this->client->get('webhooks');
     }
 }
