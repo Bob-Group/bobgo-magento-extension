@@ -150,7 +150,8 @@ BobGroup/BobGo/
 │   └── Webhook/
 │       └── Receive.php             # Unified webhook controller (HMAC verify, event_id dedup, route)
 ├── Cron/
-│   ├── Reconcile.php               # Hourly cron entry — thin wrapper over ReconciliationService
+│   ├── PushOrders.php              # Every minute — drains the order-push outbox
+│   ├── Reconcile.php               # Hourly cron entry — reconciliation + webhook health check
 │   └── PruneSyncLog.php            # Daily cron — deletes bobgo_sync_log rows older than 30 days
 ├── Helper/
 │   └── Data.php                    # Module helper (version, debug logging)
@@ -189,6 +190,10 @@ BobGroup/BobGo/
 │   ├── OrderPushService.php           # POST/PATCH orders to Bob Go (with sync-hash dirty check); returns bool
 │   ├── OrderResolution.php            # Value object: matched / no-reference / unresolved
 │   ├── OrderResolver.php              # Maps an inbound webhook payload to a local order (never guesses)
+│   ├── FulfilmentSyncService.php      # Re-fetches authoritative fulfilment state and reconciles locally
+│   ├── OrderSyncPolicy.php            # Which orders Bob Go hears about, and what status to forward
+│   ├── OrderSyncQueue.php             # Outbox between the save observer and the push cron
+│   ├── RateCache.php                  # Rates-at-checkout cache (memo + TTL by address precision)
 │   ├── ReconciliationService.php      # Hourly safety net: re-fetch authoritative shipments
 │   ├── SyncLogger.php                 # Single writer for bobgo_sync_log + race-safe claim/release dedup
 │   ├── SyncLogRetentionService.php    # Prunes bobgo_sync_log rows older than 30 days
@@ -1025,6 +1030,9 @@ The delivery URL is built from `StoreManagerInterface::getStore()->getBaseUrl()`
 `etc/crontab.xml`:
 
 ```xml
+<job name="bobgo_push_orders" instance="BobGroup\BobGo\Cron\PushOrders" method="execute">
+    <schedule>* * * * *</schedule>
+</job>
 <job name="bobgo_reconcile_fulfillments" instance="BobGroup\BobGo\Cron\Reconcile" method="execute">
     <schedule>0 * * * *</schedule>
 </job>
@@ -1802,7 +1810,7 @@ vendor/bin/phpunit --prepend Test/stubs/autoload-prepend.php \
                    Test/Unit/Model/Carrier/BobGoTest.php
 ```
 
-**Status:** 182 tests / 350 assertions passing. PHPStan: 0 errors at level 2. `composer check` runs both (the `stan` script passes `--memory-limit=1G`; the default 128M crashes the analyser).
+**Status:** 262 tests / 478 assertions passing. PHPStan: 0 errors at level 2. `composer check` runs both (the `stan` script passes `--memory-limit=1G`; the default 128M crashes the analyser).
 
 ### Test Files
 
@@ -1882,7 +1890,7 @@ The script updates both `composer.json` and `etc/module.xml`.
 
 2. **Tracking Page Hidden** — `enable_track_order` is hidden in admin (`showInDefault="0"`). When enabled, the controller is doubly gated (form_key + local-order match) but the feature should still be considered experimental until a merchant explicitly opts in.
 
-3. **Order Push is Synchronous** — `OrderSaveObserver` calls Bob Go inline on `sales_order_save_after`. API timeouts (15 s default; 5 s connect) bound the worst case, and the sync-hash dirty-check avoids redundant calls, but the first save is still inline. Async queue is on the roadmap.
+3. ~~**Order Push is Synchronous**~~ — resolved. `OrderSaveObserver` writes to the `bobgo_order_sync_queue` outbox; `Cron\PushOrders` does the POST/PATCH a minute later, with backoff on failure. A table rather than Magento's message queue, so there are no consumer processes to keep alive and the pending set is inspectable with one SELECT.
 
 4. **Single Carrier Instance** — One Bob Go carrier configuration per store. Multi-store setups share the carrier code `bobgo`.
 
@@ -1890,7 +1898,7 @@ The script updates both `composer.json` and `etc/module.xml`.
 
 6. **Registry Deprecation** — `TrackingBlock` and `Controller\Tracking\Index` use `Magento\Framework\Registry`, deprecated since Magento 2.3. Should migrate to view models or request parameters.
 
-7. **No Rate Caching** — Every checkout address change triggers a new API call. The 8 s `rates-at-checkout` timeout caps the user-visible cost of that, but a cache layer would still be a win.
+7. ~~**No Rate Caching**~~ — resolved. `Service\RateCache` adds an in-request memo, a persistent entry keyed on the payload hash with the TTL split by address precision (2 h for coarse cart-page estimates, 15 min for a complete checkout address), and a 30 s negative entry for errors and empty results.
 
 8. **`bobgo_order_ref` field-name guesswork** — `OrderPushService::applySuccess()` tries `response['reference']` then `response['order_ref']`. If Bob Go's actual response key for the immutable string ref is neither, `bobgo_order_ref` stays null forever. Worth verifying against sandbox.
 
@@ -1900,7 +1908,11 @@ The script updates both `composer.json` and `etc/module.xml`.
 
 11. **Throwable-on-webhook keeps the claim** — Any exception other than `TransientWebhookException` leaves the dedup claim in the table, so retries return 200 at the dedup gate. Intentional (don't loop on crash bugs) but means an operator has to manually clear the claim row to allow a replay after fixing the underlying issue.
 
-12. **Reconciliation does not create shipments** — It refreshes `bobgo_shipments` for the admin panel, but the webhook is still the only path that creates a Magento shipment. A `fulfillment/created` that is never processed (order on hold, unresolvable reference, unexpected exception) therefore leaves the order unshipped with no automatic recovery. See `docs/todo.md` P1-6.
+12. ~~**Reconciliation does not create shipments**~~ — resolved. Reconciliation and both webhook handlers now share `FulfilmentSyncService::syncOrder()`, so a fulfilment whose webhook was never processed has its Magento shipment created on the next hourly tick.
+
+14. **A fulfilment cancelled after we shipped it is not reflected** — Magento shipments can't be un-shipped. The cancelled status appears in `bobgo_shipments` (and so in the admin panel), but no order comment or notice is raised. See `docs/todo.md`.
+
+15. **The fulfilments response item shape is unverified** — `FulfilmentSyncService` tolerates several keys for a fulfilment's line items, but which one Bob Go actually uses hasn't been confirmed against sandbox. When none is present the service refuses to guess the scope unless there is exactly one live fulfilment for the order.
 
 13. **Order-number resolution is still enabled** — Rung 4 of the resolution ladder accepts a match on `increment_id` alone when the order has no stored Bob Go link. It is logged at warning level. Once `channel_ref_id` is confirmed present on every inbound payload, this rung can be dropped.
 
@@ -1983,6 +1995,11 @@ The extension has idempotency checks (tracking number matching). If duplicates s
 | `Service\OrderPushService` | POST/PATCH orders to Bob Go (sync-hash dirty-check); returns `bool`. A 2xx with no usable order id is recorded as a failure |
 | `Service\OrderResolution` | Outcome of webhook order resolution — drives the HTTP status |
 | `Service\OrderResolver` | Resolves an inbound payload to a local order via a strict ladder; refuses to guess |
+| `Service\FulfilmentSyncService` | Re-fetches `GET /v2/order-fulfillments` and reconciles: full-replaces the shipments blob and creates any missing Magento shipment |
+| `Service\OrderSyncPolicy` | Which orders are pushed, and which status transitions are forwarded |
+| `Service\OrderSyncQueue` | Outbox table between the save observer and `Cron\PushOrders` |
+| `Service\RateCache` | Rates cache: in-request memo, TTL split by address precision, short negative entry |
+| `Cron\PushOrders` | Every minute — drains the order-push outbox, then forwards terminal statuses |
 | `Service\ReconciliationService` | Hourly reconciliation — re-fetch authoritative shipments; two scoped queries (active + complete lookback) |
 | `Service\SyncLogger` | Single writer for `bobgo_sync_log` + atomic claim/release dedup + PII redaction |
 | `Service\SyncLogRetentionService` | Prunes `bobgo_sync_log` rows older than 30 days |

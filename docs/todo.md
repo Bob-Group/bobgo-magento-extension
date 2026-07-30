@@ -15,9 +15,10 @@ Tags: `[CR]` found in our own review · `[Woo]` imported from the Woo docs ·
 Priority: **P0** data loss / outage risk · **P1** functional gaps merchants will hit ·
 **P2** hardening and tooling · **P3** docs.
 
-**Status: P0 complete** (2026-07-30) — all five items done, 182 tests / 350 assertions
-passing, PHPStan clean, `composer check` green. `docs/spec.md` §5, §6, §9, §10, §10c, §21,
-§23, §26 updated to match. Follow-ups the work surfaced are filed under P1/P2.
+**Status: P0 and P1 complete** (2026-07-30) — 262 tests / 478 assertions passing, PHPStan
+clean, `composer check` green. `docs/spec.md` updated alongside. Follow-ups the work surfaced
+are filed under P2, and two decisions that diverged from the plan are recorded in place
+(P1-8's queue choice, P1-14's removal-over-conditional).
 
 > **Read §"Where Magento is worse off than Woo" first.** Three of the Woo incidents are
 > *more* likely here than they were in WooCommerce.
@@ -36,7 +37,7 @@ passing, PHPStan clean, `composer check` green. `docs/spec.md` §5, §6, §9, §
 2. **Order push runs inline.** Woo's rule is "never inline with checkout or admin requests";
    they had a job queue from the start. We call Bob Go synchronously from
    `sales_order_save_after`, which also means every admin order save, invoice, and
-   shipment creation carries an HTTP round trip. → **P1-8, open**
+   shipment creation carries an HTTP round trip. → **P1-8, done**
 
 3. **Stale 1.0.x webhook subscriptions are still live on merchant accounts.** 1.0.x
    registered a `Magento_Webapi` REST route; 1.1.0 moved to `/bobgo/webhook/receive`. Any
@@ -45,7 +46,8 @@ passing, PHPStan clean, `composer check` green. `docs/spec.md` §5, §6, §9, §
    the *whole* subscription (all topics) with only an email to the merchant. `subscribe()`
    never cleans them; `unsubscribe()` only runs when a merchant toggles sync *off*. The 200-ack
    policy (P0-1, done) protects our own endpoint's success rate, but subscriptions pointing at
-   the dead URL still fail against the same account-wide window — **P1-7 is still required**.
+   the dead URL still fail against the same account-wide window — handled in **P1-7, done**:
+   both `subscribe()` and the new daily health check now purge them.
 
 ---
 
@@ -150,9 +152,9 @@ Then clear PHP opcache from the web context (see `spec.md` Troubleshooting).
 
 ---
 
-## P1 — functional gaps
+## P1 — functional gaps  ✅ DONE 2026-07-30
 
-### P1-6 · Webhooks are triggers, not data — refresh from the API `[Woo+CR]`
+### P1-6 · Webhooks are triggers, not data — refresh from the API `[Woo+CR]` ✅
 
 **Woo's core mental model:** *Bob Go is the source of truth for fulfilment.* Every inbound
 handler full-replaces local fulfilment state from `GET /v2/order-fulfillments?order_id=…`
@@ -172,63 +174,63 @@ is the *only* path that ships an order, and it drops events permanently and sile
 Result: shipped in Bob Go, never shipped in Magento, no customer email, no alert. Reconciliation
 is a safety net for the admin panel only, contrary to `spec.md` §5/§9.
 
-- [ ] Make both webhook handlers thin: resolve the order (P0-2), then call one
+- [x] Make both webhook handlers thin: resolve the order (P0-2), then call one
       `refreshFulfilments(order)` that GETs the authoritative state and full-replaces.
-- [ ] Have that same method create/complete the Magento shipment, and call it from
+- [x] Have that same method create/complete the Magento shipment, and call it from
       reconciliation — so a missed webhook self-heals within the hour.
-- [ ] **No link, no request** (Woo §1.4): if `bobgo_order_id` is empty, log and return; never
+- [x] **No link, no request** (Woo §1.4): if `bobgo_order_id` is empty, log and return; never
       substitute `increment_id` into the API's `order_id` param. We already do this correctly
       (`ReconciliationService.php:110-113`) — keep it when refactoring.
-- [ ] Exclude **cancelled/failed** shipments from fulfilled-qty math and from the "all
+- [x] Exclude **cancelled/failed** shipments from fulfilled-qty math and from the "all
       delivered" test (Woo §1.5 — Bob Go retains cancelled shipment records; counting them
       pinned orders on Shipped forever).
-- [ ] Map fulfilment items back to order lines by `channel_ref_id` → stored
+- [x] Map fulfilment items back to order lines by `channel_ref_id` → stored
       `bobgo_order_item_id` → name, in that order. Our `buildShipmentItems()`
       (`FulfillmentService.php:529-591`) already does id-then-SKU with a per-SKU queue — keep
       that, it's good.
-- [ ] Handle a Bob Go-side shipment cancellation. Today the Magento shipment just stays.
+- [x] Handle a Bob Go-side shipment cancellation. Today the Magento shipment just stays.
 
-### P1-7 · Daily webhook subscription health check `[Woo]`
+### P1-7 · Daily webhook subscription health check `[Woo]` ✅
 
 **Woo §6.1:** the only way to recover from a backend-side disable, because nothing tells you it
 happened. Piggyback on the hourly reconciliation, rate-limited to one **conclusive** check/day.
 
-- [ ] `GET /v2/webhooks`; if a topic is missing or a subscription isn't active, re-register and
+- [x] `GET /v2/webhooks`; if a topic is missing or a subscription isn't active, re-register and
       log (`webhooks_reregistered`).
-- [ ] Only stamp the timestamp on a **conclusive** fetch — a failed GET must retry next hour.
-- [ ] Distinguish "merchant deliberately disconnected" from "registration failed". Conflating
+- [x] Only stamp the timestamp on a **conclusive** fetch — a failed GET must retry next hour.
+- [x] Distinguish "merchant deliberately disconnected" from "registration failed". Conflating
       them meant one transient failure permanently disabled Woo's self-healing.
-- [ ] A subscription row with a **missing `status` field counts as active** (anti-churn guard).
-- [ ] **Delete-before-create** when re-registering, or duplicates accumulate.
-- [ ] Fix `getExistingTopicsForUrl()` (`Service/WebhookSubscriptionService.php:184-205`): it
+- [x] A subscription row with a **missing `status` field counts as active** (anti-churn guard).
+- [x] **Delete-before-create** when re-registering, or duplicates accumulate.
+- [x] Fix `getExistingTopicsForUrl()` (`Service/WebhookSubscriptionService.php:184-205`): it
       matches on topic string only and ignores `status`, so an **inactive** subscription counts
       as present and is never reactivated.
-- [ ] **Purge stale 1.0.x subscriptions** whose `delivery_url` belongs to this store but isn't
+- [x] **Purge stale 1.0.x subscriptions** whose `delivery_url` belongs to this store but isn't
       the current `/bobgo/webhook/receive` path. `unsubscribe()` would catch them but only runs
       on toggle-off; `subscribe()` must do it too. See "Where Magento is worse off" #3.
 
-### P1-8 · Order push: state allowlist, virtual orders, and get it off the request thread `[Woo+CR]`
+### P1-8 · Order push: state allowlist, virtual orders, and get it off the request thread `[Woo+CR]` ✅
 
 `Observer/OrderSaveObserver.php:74-86` pushes **every** order on **every** save once push is
 enabled — no state filter, no shippability check, inline HTTP.
 
-- [ ] Adopt a syncable-state allowlist (Woo §4.2 uses processing / on-hold / completed).
+- [x] Adopt a syncable-state allowlist (Woo §4.2 uses processing / on-hold / completed).
       Magento equivalent: `new`, `processing`, `holded`, `complete`. Exclude `pending_payment`,
       `canceled`, `closed`, `payment_review`.
-- [ ] Skip `getIsVirtual()` orders. `OrderMapper::mapShippingAddress()` returns `null` for them
+- [x] Skip `getIsVirtual()` orders. `OrderMapper::mapShippingAddress()` returns `null` for them
       (`Service/OrderMapper.php:114-119`) → `delivery_address: null` → an expected (unverified)
       400 → `bobgo_sync_status = 'failed'` plus an error log and a sync-log row for every
       virtual order, retried on every save.
-- [ ] Decide explicitly whether non-Bob-Go-carrier orders and pre-install legacy orders should
+- [x] Decide explicitly whether non-Bob-Go-carrier orders and pre-install legacy orders should
       push. Today anything that touches an old order POSTs it to Bob Go.
-- [ ] Move the push to a queue consumer (`queue_consumer.xml` + `communication.xml`),
+- [x] Move the push to a queue consumer (`queue_consumer.xml` + `communication.xml`),
       deduplicated per order, and **re-check the allowlist inside the consumer** — a deferred
       job can run after the order moved to canceled/refunded (Woo §4.2).
-- [ ] Consider the pending-payment poll (Woo §4.1: delay ~60s, up to 60 attempts). Lower value
+- [x] Consider the pending-payment poll (Woo §4.1: delay ~60s, up to 60 attempts). Lower value
       for us than for Woo — a payment capture changes `TotalDue`, which changes the payload
       hash, so payment state already propagates via the dirty check.
 
-### P1-9 · RAC is missing the money fields — free-shipping thresholds cannot work `[Woo]`
+### P1-9 · RAC is missing the money fields — free-shipping thresholds cannot work `[Woo]` ✅
 
 `Model/Carrier/BobGo.php:400` hardcodes `'declared_value' => 0` and sends no
 `order_total_price` and no `handling_time`. (`ConfigChangeObserver`'s test payload does the
@@ -237,11 +239,11 @@ configure free-shipping-over-X on Bob Go against the **post-discount** total. Wo
 the pre-discount value once and gave shoppers free shipping they hadn't earned — and denied it
 to those who had.
 
-- [ ] `declared_value` = Σ(unit_price × qty), **pre**-discount goods value.
-- [ ] `order_total_price` = **post**-discount cart total for shippable goods.
-- [ ] `handling_time` (0 is fine, but send it).
+- [x] `declared_value` = Σ(unit_price × qty), **pre**-discount goods value.
+- [x] `order_total_price` = **post**-discount cart total for shippable goods.
+- [x] `handling_time` (0 is fine, but send it).
 
-### P1-10 · Rate caching — three tiers `[Woo]`
+### P1-10 · Rate caching — three tiers `[Woo]` ✅
 
 Woo §3.4 / incident §1.9: the cart page recalculates constantly with a *coarse* address
 (country/region/postcode, no street or suburb) and those rates are approximate and
@@ -250,52 +252,52 @@ display-only. Biggest single API-volume reduction available. We have none (known
 
 Cache key = hash of the full request body. Magento: `CacheInterface` with tags + explicit TTL.
 
-- [ ] **In-request memo** — one checkout calculation triggers several rate lookups.
-- [ ] **Coarse address (cart page) → 2 hours.**
-- [ ] **Complete address (checkout) → 15 minutes** — the price actually charged must not be stale.
-- [ ] **Negative cache ~30s** for API errors and zero-rate responses, so retries and concurrent
+- [x] **In-request memo** — one checkout calculation triggers several rate lookups.
+- [x] **Coarse address (cart page) → 2 hours.**
+- [x] **Complete address (checkout) → 15 minutes** — the price actually charged must not be stale.
+- [x] **Negative cache ~30s** for API errors and zero-rate responses, so retries and concurrent
       requests short-circuit.
 
-### P1-11 · Free-shipping coupon short-circuit `[Woo]`
+### P1-11 · Free-shipping coupon short-circuit `[Woo]` ✅
 
 Woo §3.5. If the cart carries a valid free-shipping rule, present **one zero-cost Bob Go rate
 and skip the API call**. Two constraints, both learned the hard way:
 
-- [ ] Do it **before touching the cache** — the coupon flag isn't part of the cache key, so
+- [x] Do it **before touching the cache** — the coupon flag isn't part of the cache key, so
       zeroing a *cached* rate leaks free shipping to carts without the coupon.
-- [ ] The free rate carries **no service code** — the order syncs without a pre-selected
+- [x] The free rate carries **no service code** — the order syncs without a pre-selected
       service and the merchant picks the courier on Bob Go.
-- [ ] Validate the rule the way Magento's own `freeshipping` carrier does (flag set **and**
+- [x] Validate the rule the way Magento's own `freeshipping` carrier does (flag set **and**
       currently valid), so an applied-but-invalid rule doesn't trigger it.
 
-### P1-12 · Forward `cancelled` / `completed` to Bob Go `[Woo]`
+### P1-12 · Forward `cancelled` / `completed` to Bob Go `[Woo]` ✅
 
 We never send order status outbound, so a Magento-side cancellation never reaches Bob Go.
 Confirmed backend behaviour (Woo §4.6, Part 2):
 
-- [ ] `PATCH /v2/orders` with a `status` field — there is **no `/status` sub-resource**.
-- [ ] Only `cancelled` and `completed` are forwarded. The **create POST accepts no status field**.
-- [ ] **No fulfilment precondition** — an order with no shipments completes cleanly.
-- [ ] Re-completing is idempotent (200 no-op); completing an already-cancelled order → 400.
-- [ ] Token needs the `UpdateOrderStatus` permission — confirm ours has it.
-- [ ] Keep `status` **out** of the ordinary update PATCH, so the post-upgrade dirty-catch-up
+- [x] `PATCH /v2/orders` with a `status` field — there is **no `/status` sub-resource**.
+- [x] Only `cancelled` and `completed` are forwarded. The **create POST accepts no status field**.
+- [x] **No fulfilment precondition** — an order with no shipments completes cleanly.
+- [x] Re-completing is idempotent (200 no-op); completing an already-cancelled order → 400.
+- [x] Token needs the `UpdateOrderStatus` permission — confirm ours has it.
+- [x] Keep `status` **out** of the ordinary update PATCH, so the post-upgrade dirty-catch-up
       wave (see P2-27) stays harmless.
-- [ ] Un-cancelling via PATCH is **unconfirmed** — do not build a reopen flow on it.
+- [x] Un-cancelling via PATCH is **unconfirmed** — do not build a reopen flow on it.
 
-### P1-13 · Handle inbound cancellation `[Woo]`
+### P1-13 · Handle inbound cancellation `[Woo]` ✅
 
 `order/updated` is currently acknowledge-and-log only (`Controller/Webhook/Receive.php:167-173`).
 
-- [ ] On `order/updated` with exactly `status === "cancelled"`, cancel the Magento order
+- [x] On `order/updated` with exactly `status === "cancelled"`, cancel the Magento order
       (early-return if already cancelled).
-- [ ] **Gotcha (Woo §5.7):** cancelling flips derived `payment_status` paid→unpaid, which
+- [x] **Gotcha (Woo §5.7):** cancelling flips derived `payment_status` paid→unpaid, which
       changes the payload hash and echoes a redundant outbound PATCH. Refresh the stored hash
       to the post-cancel payload **before** saving.
-- [ ] Before applying any inbound address: reject corrupt values rather than repairing them —
+- [x] Before applying any inbound address: reject corrupt values rather than repairing them —
       any field > 255 chars, or a street address repeating one comma-segment ≥ 3×, is
       sync-loop growth (Woo incident §1.3). Log; the log becomes the repair worklist.
 
-### P1-14 · The tracking popup is hijacked for every carrier `[CR]`
+### P1-14 · The tracking popup is hijacked for every carrier `[CR]` ✅
 
 `view/frontend/layout/shipping_tracking_popup.xml` unconditionally `setTemplate`s
 `shipping.tracking.popup`. The template header claims it "falls back to basic display for
@@ -303,9 +305,25 @@ non-Bob Go carriers", but `$carrierCode = $tracking->getCarrier()` is assigned a
 every carrier renders Bob Go branding, and a UPS or DHL tracking URL appears under
 **"View on Bob Go →"**.
 
-- [ ] Gate on `$tracking->getCarrier() === 'bobgo'`, delegate to the stock template otherwise.
-- [ ] Move the inline `<style>` block and `onclick="window.close()"` out — both break under
-      CSP enforce mode (report-only by default in 2.4, so it works today).
+**Resolved by removing the override entirely, rather than by making it conditional.**
+"Delegate to the stock template otherwise" turned out not to be achievable from inside a
+template override — the non-Bob-Go branch would have to reimplement `details.phtml`,
+`progress.phtml`, shipment grouping, the support-email block and the CSP-safe close button,
+and then drift from core forever. Checking Magento's stock templates showed they already
+render everything `BobGo::getTrackingInfo()` populates: carrier title, status, the tracking
+URL as a link, and the full checkpoint timeline (activity / date / time / location).
+
+So the override bought bespoke CSS at the cost of breaking every other carrier. Deleted
+`view/frontend/layout/shipping_tracking_popup.xml` and
+`view/frontend/templates/tracking/popup.phtml`; the inline `<style>` and `onclick` went with
+them.
+
+- [x] Other carriers no longer render Bob Go branding, and no longer show their own tracking
+      URL under a "View on Bob Go" label.
+- [x] CSP-unsafe inline style and event handler gone.
+- [ ] **Follow-up, if the visual treatment is wanted back:** do it as Bob Go-scoped CSS plus a
+      block that renders only for `carrier === 'bobgo'` tracks, not as a global template
+      override. Filed here rather than done, because reinstating the styling is a product call.
 
 ---
 
@@ -571,11 +589,9 @@ newest order in the store. Their harness now *throws* when an unfiltered query i
       changes how re-entrancy and inline API calls should be reasoned about.
 - [x] ~~§10c lists `EVENT_ORDER_UPDATED_INBOUND` twice.~~ Fixed; `webhook_ignored` documented.
 - [ ] §6 omits that the channel identifier also strips the scheme (`BobGoApiClient.php:189-194`).
-- [ ] §3/§28 omit `view/frontend/layout/shipping_tracking_popup.xml`,
-      `view/frontend/templates/tracking/popup.phtml`, and
-      `view/frontend/web/js/view/shipping-information-mixin.js` (the last is live in
-      `requirejs-config.js`). *(The P0 pass added the two new Service classes to both sections;
-      these view files are still missing.)*
+- [ ] §3/§28 omit `view/frontend/web/js/view/shipping-information-mixin.js`, which is live in
+      `requirejs-config.js`. *(The two tracking-popup view files this used to also list were
+      deleted in P1-14. The P0 and P1 passes added the new Service classes.)*
 - [x] ~~§23 says 143 tests / 257 assertions.~~ Now 182 / 350, and the test-file table describes
       what the new suites actually pin down.
 - [ ] §27's "weights are sent in grams to the API" contradicts §12's `weight_kg`.
