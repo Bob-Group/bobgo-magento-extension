@@ -323,6 +323,74 @@ class OrderPushServiceTest extends TestCase
         $this->assertArrayNotHasKey('bobgo_sync_hash', $writes);
     }
 
+    /**
+     * Status travels on its own PATCH, never on the routine update: Bob Go's
+     * create POST accepts no status field, and keeping it out of the ordinary
+     * payload means the catch-up wave after any payload-shape change can't
+     * re-assert a terminal status as a side effect.
+     */
+    public function testPushStatusPatchesOnlyIdAndStatus(): void
+    {
+        $writes = [];
+        $order = $this->makeOrder(100, '000000100', ['bobgo_order_id' => '987'], $writes);
+
+        $this->apiClientMock->expects($this->once())
+            ->method('patch')
+            ->with('orders', ['id' => 987, 'status' => 'cancelled'])
+            ->willReturn([]);
+        $this->orderRepositoryMock->expects($this->once())->method('save');
+
+        $this->assertTrue($this->service->pushStatus($order, 'cancelled'));
+
+        // Recorded so we don't spend the call again next time round.
+        $this->assertSame('cancelled', $writes['bobgo_status_synced']);
+    }
+
+    public function testPushStatusFailsWithoutAnOrderLink(): void
+    {
+        $order = $this->makeOrder(100, '000000100');
+
+        $this->apiClientMock->expects($this->never())->method('patch');
+        $this->loggerMock->expects($this->once())->method('warning');
+
+        $this->assertFalse($this->service->pushStatus($order, 'completed'));
+    }
+
+    public function testPushStatusReportsApiFailure(): void
+    {
+        $writes = [];
+        $order = $this->makeOrder(100, '000000100', ['bobgo_order_id' => '987'], $writes);
+
+        $this->apiClientMock->method('patch')->willThrowException(new \Exception('400 Bad Request'));
+        $this->loggerMock->expects($this->once())->method('error');
+        $this->syncLoggerMock->expects($this->once())->method('logOutbound')
+            ->with($this->anything(), $this->anything(), $this->anything(), $this->anything(), false);
+
+        $this->assertFalse($this->service->pushStatus($order, 'completed'));
+        $this->assertArrayNotHasKey('bobgo_status_synced', $writes);
+    }
+
+    public function testRefreshSyncHashStoresTheCurrentPayloadHashWithoutCallingTheApi(): void
+    {
+        $writes = [];
+        $order = $this->makeOrder(100, '000000100', ['bobgo_order_id' => '987'], $writes);
+
+        $payload = ['id' => 987, 'channel_ref_id' => '100'];
+        $this->orderMapperMock->method('mapOrderToUpdatePayload')->willReturn($payload);
+
+        $this->apiClientMock->expects($this->never())->method('patch');
+        $this->orderRepositoryMock->expects($this->once())->method('save');
+
+        $this->service->refreshSyncHash($order);
+
+        $this->assertNotEmpty($writes['bobgo_sync_hash']);
+
+        // And that hash must be the one updateOrder would compute, or the
+        // dirty check won't actually suppress the echo.
+        $this->apiClientMock->expects($this->never())->method('patch');
+        $this->assertTrue($this->service->updateOrder($order));
+    }
+
     public function testPushOrderSavesIdOnSimpleChildNotConfigurableParent(): void
     {
         // Configurable parent — must NOT receive the bobgo id; we map the simple

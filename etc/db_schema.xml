@@ -15,6 +15,8 @@
                 comment="Timestamp of last inbound Bob Go webhook"/>
         <column xsi:type="text" name="bobgo_shipments" nullable="true"
                 comment="JSON-encoded shipments array from Bob Go (authoritative)"/>
+        <column xsi:type="varchar" name="bobgo_status_synced" nullable="true" length="32"
+                comment="Last order status forwarded to Bob Go (cancelled|completed)"/>
     </table>
     <table name="sales_order_item" resource="sales" comment="Sales Order Item">
         <column xsi:type="varchar" name="bobgo_order_item_id" nullable="true" length="255"
@@ -23,6 +25,44 @@
     <table name="sales_shipment" resource="sales" comment="Sales Shipment">
         <column xsi:type="varchar" name="bobgo_fulfillment_id" nullable="true" length="128"
                 comment="Bob Go fulfilment id (idempotency)"/>
+    </table>
+
+    <!--
+        Outbox for order pushes. The observer on sales_order_save_after only
+        writes a row here; the actual POST/PATCH happens on a cron a moment
+        later. Keeping the HTTP call off the request thread matters because that
+        observer fires on checkout, on every admin order save, and on invoice
+        and shipment creation.
+
+        A dedicated table rather than a flag on sales_order, because the observer
+        runs *inside* the order's own save: setting a column would mean saving the
+        order again from within its afterSave, and re-entering every other
+        module's observers with it. One tiny insert avoids all of that.
+
+        UNIQUE on order_id makes enqueueing idempotent — an order saved ten times
+        in one request is pushed once.
+    -->
+    <table name="bobgo_order_sync_queue" resource="default" engine="innodb"
+           comment="Bob Go pending order pushes">
+        <column xsi:type="int" name="entity_id" identity="true" nullable="false" unsigned="true"
+                comment="Entity ID"/>
+        <column xsi:type="int" name="order_id" nullable="false" unsigned="true"
+                comment="Magento sales_order entity_id"/>
+        <column xsi:type="smallint" name="attempts" nullable="false" default="0" unsigned="true"
+                comment="Failed attempts so far, drives the backoff"/>
+        <column xsi:type="timestamp" name="next_attempt_at" nullable="true"
+                comment="Do not attempt before this time (null = immediately)"/>
+        <column xsi:type="timestamp" name="created_at" nullable="false" default="CURRENT_TIMESTAMP"
+                comment="Queued at"/>
+        <constraint xsi:type="primary" referenceId="PRIMARY">
+            <column name="entity_id"/>
+        </constraint>
+        <constraint xsi:type="unique" referenceId="BOBGO_ORDER_SYNC_QUEUE_ORDER_ID_UNQ">
+            <column name="order_id"/>
+        </constraint>
+        <index referenceId="BOBGO_ORDER_SYNC_QUEUE_NEXT_ATTEMPT_AT" indexType="btree">
+            <column name="next_attempt_at"/>
+        </index>
     </table>
 
     <table name="bobgo_sync_log" resource="default" engine="innodb" comment="Bob Go inbound/outbound sync log">

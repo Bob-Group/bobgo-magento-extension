@@ -7,7 +7,8 @@
             "bobgo_sync_hash": true,
             "bobgo_last_synced": true,
             "bobgo_last_webhook": true,
-            "bobgo_shipments": true
+            "bobgo_shipments": true,
+            "bobgo_status_synced": true
         }
     },
     "sales_order_item": {
@@ -41,6 +42,22 @@
         "constraint": {
             "PRIMARY": true,
             "BOBGO_SYNC_LOG_EVENT_ID_DIRECTION_UNQ": true
+        }
+    },
+    "bobgo_order_sync_queue": {
+        "column": {
+            "entity_id": true,
+            "order_id": true,
+            "attempts": true,
+            "next_attempt_at": true,
+            "created_at": true
+        },
+        "index": {
+            "BOBGO_ORDER_SYNC_QUEUE_NEXT_ATTEMPT_AT": true
+        },
+        "constraint": {
+            "PRIMARY": true,
+            "BOBGO_ORDER_SYNC_QUEUE_ORDER_ID_UNQ": true
         }
     }
 }

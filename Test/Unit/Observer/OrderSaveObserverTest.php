@@ -5,182 +5,153 @@ namespace BobGroup\BobGo\Test\Unit\Observer;
 
 use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Observer\OrderSaveObserver;
-use BobGroup\BobGo\Service\OrderPushService;
+use BobGroup\BobGo\Service\OrderSyncPolicy;
+use BobGroup\BobGo\Service\OrderSyncQueue;
+use Magento\Framework\Event;
 use Magento\Framework\Event\Observer;
-use Magento\Sales\Api\Data\OrderInterface;
+use Magento\Sales\Model\Order;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
+/**
+ * The observer's whole job is now: decide cheaply, then write one queue row.
+ *
+ * It must not talk to Bob Go. `sales_order_save_after` fires on checkout, on
+ * every admin order save, on invoice and shipment creation, and from our own
+ * webhook handlers — doing the HTTP call here meant the customer placing the
+ * order paid for a slow or unreachable API.
+ */
 class OrderSaveObserverTest extends TestCase
 {
-    /**
-     * @var \PHPUnit\Framework\MockObject\MockObject
-     */
-    private $orderPushServiceMock;
-
-    /**
-     * @var \PHPUnit\Framework\MockObject\MockObject
-     */
-    private $apiConfigMock;
-
-    /**
-     * @var \PHPUnit\Framework\MockObject\MockObject
-     */
-    private $loggerMock;
-
-    /**
-     * @var OrderSaveObserver
-     */
+    private $queue;
+    private $apiConfig;
+    private $logger;
+    /** @var OrderSaveObserver */
     private $observer;
 
     protected function setUp(): void
     {
-        $this->orderPushServiceMock = $this->createMock(OrderPushService::class);
-        $this->apiConfigMock = $this->createMock(ApiConfig::class);
-        $this->loggerMock = $this->createMock(LoggerInterface::class);
+        $this->queue = $this->createMock(OrderSyncQueue::class);
+        $this->apiConfig = $this->createMock(ApiConfig::class);
+        $this->logger = $this->createMock(LoggerInterface::class);
 
         $this->observer = new OrderSaveObserver(
-            $this->orderPushServiceMock,
-            $this->apiConfigMock,
-            $this->loggerMock
+            $this->queue,
+            new OrderSyncPolicy(),
+            $this->apiConfig,
+            $this->logger
         );
     }
 
-    public function testExecutePushesNewOrder(): void
+    public function testQueuesAnEligibleOrder(): void
     {
-        $order = $this->createMock(OrderInterface::class);
-        $order->method('getData')
-            ->with('bobgo_order_id')
-            ->willReturn(null);
+        $this->enable();
 
-        $eventObserver = $this->createObserverWithOrder($order);
+        $this->queue->expects($this->once())->method('enqueue')->with(42);
 
-        $this->apiConfigMock->method('isOrderPushEnabled')->willReturn(true);
-        $this->apiConfigMock->method('isConfigured')->willReturn(true);
-
-        $this->orderPushServiceMock->expects($this->once())
-            ->method('pushOrder')
-            ->with($order);
-
-        $this->orderPushServiceMock->expects($this->never())
-            ->method('updateOrder');
-
-        $this->observer->execute($eventObserver);
+        $this->observer->execute($this->eventFor($this->order(Order::STATE_PROCESSING)));
     }
 
-    public function testExecuteUpdatesExistingOrder(): void
+    public function testDoesNotQueueWhenOrderPushIsDisabled(): void
     {
-        $order = $this->createMock(OrderInterface::class);
-        $order->method('getData')
-            ->with('bobgo_order_id')
-            ->willReturn('bg-order-abc-123');
+        $this->apiConfig->method('isOrderPushEnabled')->willReturn(false);
 
-        $eventObserver = $this->createObserverWithOrder($order);
+        $this->queue->expects($this->never())->method('enqueue');
 
-        $this->apiConfigMock->method('isOrderPushEnabled')->willReturn(true);
-        $this->apiConfigMock->method('isConfigured')->willReturn(true);
-
-        $this->orderPushServiceMock->expects($this->never())
-            ->method('pushOrder');
-
-        $this->orderPushServiceMock->expects($this->once())
-            ->method('updateOrder')
-            ->with($order);
-
-        $this->observer->execute($eventObserver);
+        $this->observer->execute($this->eventFor($this->order(Order::STATE_PROCESSING)));
     }
 
-    public function testExecuteSkipsWhenDisabled(): void
+    public function testDoesNotQueueWhenNotConfigured(): void
     {
-        $order = $this->createMock(OrderInterface::class);
-        $eventObserver = $this->createObserverWithOrder($order);
+        $this->apiConfig->method('isOrderPushEnabled')->willReturn(true);
+        $this->apiConfig->method('isConfigured')->willReturn(false);
 
-        $this->apiConfigMock->method('isOrderPushEnabled')->willReturn(false);
-        $this->apiConfigMock->method('isConfigured')->willReturn(true);
+        $this->queue->expects($this->never())->method('enqueue');
 
-        $this->orderPushServiceMock->expects($this->never())
-            ->method('pushOrder');
-        $this->orderPushServiceMock->expects($this->never())
-            ->method('updateOrder');
-
-        $this->observer->execute($eventObserver);
-    }
-
-    public function testExecuteSkipsWhenNotConfigured(): void
-    {
-        $order = $this->createMock(OrderInterface::class);
-        $eventObserver = $this->createObserverWithOrder($order);
-
-        $this->apiConfigMock->method('isOrderPushEnabled')->willReturn(true);
-        $this->apiConfigMock->method('isConfigured')->willReturn(false);
-
-        $this->orderPushServiceMock->expects($this->never())
-            ->method('pushOrder');
-        $this->orderPushServiceMock->expects($this->never())
-            ->method('updateOrder');
-
-        $this->observer->execute($eventObserver);
-    }
-
-    public function testExecuteSkipsReentrantCall(): void
-    {
-        $order = $this->createMock(OrderInterface::class);
-        $order->method('getData')
-            ->with('bobgo_order_id')
-            ->willReturn(null);
-
-        $eventObserver = $this->createObserverWithOrder($order);
-
-        $this->apiConfigMock->method('isOrderPushEnabled')->willReturn(true);
-        $this->apiConfigMock->method('isConfigured')->willReturn(true);
-
-        // Simulate pushOrder() saving the order, which re-triggers the observer.
-        // The re-entrant call should be skipped entirely.
-        $this->orderPushServiceMock->expects($this->once())
-            ->method('pushOrder')
-            ->with($order)
-            ->willReturnCallback(function () use ($eventObserver): bool {
-                // This simulates the nested sales_order_save_after event
-                $this->observer->execute($eventObserver);
-                return true;
-            });
-
-        $this->orderPushServiceMock->expects($this->never())
-            ->method('updateOrder');
-
-        $this->observer->execute($eventObserver);
-    }
-
-    public function testExecuteHandlesException(): void
-    {
-        $eventObserver = $this->createMock(Observer::class);
-        $eventMock = $this->getMockBuilder(\Magento\Framework\Event::class)
-            ->disableOriginalConstructor()
-            ->addMethods(['getOrder'])
-            ->getMock();
-        $eventMock->method('getOrder')->willThrowException(new \Exception('Unexpected error'));
-        $eventObserver->method('getEvent')->willReturn($eventMock);
-
-        $this->loggerMock->expects($this->once())
-            ->method('error');
-
-        // Should not throw
-        $this->observer->execute($eventObserver);
+        $this->observer->execute($this->eventFor($this->order(Order::STATE_PROCESSING)));
     }
 
     /**
-     * Helper: create an Observer mock that returns an order from getEvent()->getOrder().
+     * A virtual order has no shipping address, so it would fail on every single
+     * save. Filtering here keeps the queue clean; the job re-checks too.
      */
-    private function createObserverWithOrder(OrderInterface $order): Observer
+    public function testDoesNotQueueAVirtualOrder(): void
     {
-        $eventObserver = $this->createMock(Observer::class);
-        $eventMock = $this->getMockBuilder(\Magento\Framework\Event::class)
-            ->disableOriginalConstructor()
-            ->addMethods(['getOrder'])
-            ->getMock();
-        $eventMock->method('getOrder')->willReturn($order);
-        $eventObserver->method('getEvent')->willReturn($eventMock);
+        $this->enable();
 
-        return $eventObserver;
+        $this->queue->expects($this->never())->method('enqueue');
+
+        $this->observer->execute($this->eventFor($this->order(Order::STATE_PROCESSING, [], true)));
+    }
+
+    public function testDoesNotQueueAnUnlinkedOrderAwaitingPayment(): void
+    {
+        $this->enable();
+
+        $this->queue->expects($this->never())->method('enqueue');
+
+        $this->observer->execute($this->eventFor($this->order('pending_payment')));
+    }
+
+    public function testHandlesAnEventWithoutAnOrder(): void
+    {
+        $event = $this->getMockBuilder(Event::class)->addMethods(['getOrder'])->getMock();
+        $event->method('getOrder')->willReturn(null);
+        $observerArg = new Observer();
+        $observerArg->setEvent($event);
+
+        $this->logger->expects($this->once())->method('warning');
+        $this->queue->expects($this->never())->method('enqueue');
+
+        $this->observer->execute($observerArg);
+    }
+
+    /**
+     * Order saving is never blocked by Bob Go.
+     */
+    public function testSwallowsUnexpectedFailures(): void
+    {
+        $this->enable();
+        $this->queue->method('enqueue')->willThrowException(new \RuntimeException('boom'));
+
+        $this->logger->expects($this->once())->method('error');
+
+        $this->observer->execute($this->eventFor($this->order(Order::STATE_PROCESSING)));
+    }
+
+    // ----------------------------------------------------------------------- helpers
+
+    private function enable(): void
+    {
+        $this->apiConfig->method('isOrderPushEnabled')->willReturn(true);
+        $this->apiConfig->method('isConfigured')->willReturn(true);
+    }
+
+    /**
+     * @param \PHPUnit\Framework\MockObject\MockObject $order
+     */
+    private function eventFor($order): Observer
+    {
+        $event = $this->getMockBuilder(Event::class)->addMethods(['getOrder'])->getMock();
+        $event->method('getOrder')->willReturn($order);
+        $observer = new Observer();
+        $observer->setEvent($event);
+        return $observer;
+    }
+
+    /**
+     * @param array<string,mixed> $data
+     * @return \PHPUnit\Framework\MockObject\MockObject
+     */
+    private function order(string $state, array $data = [], bool $isVirtual = false)
+    {
+        $order = $this->createMock(Order::class);
+        $order->method('getEntityId')->willReturn(42);
+        $order->method('getState')->willReturn($state);
+        $order->method('getIsVirtual')->willReturn($isVirtual);
+        $order->method('getData')->willReturnCallback(static function ($key = null) use ($data) {
+            return $key === null ? $data : ($data[$key] ?? null);
+        });
+        return $order;
     }
 }

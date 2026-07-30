@@ -165,6 +165,70 @@ class OrderPushService
     }
 
     /**
+     * Forward a terminal order status to Bob Go via PATCH /v2/orders.
+     *
+     * Separate from updateOrder() on purpose:
+     *  - the create POST accepts no status field at all, so status can only ever
+     *    travel on a PATCH;
+     *  - keeping `status` out of the routine update payload means the catch-up
+     *    PATCH wave that follows any payload-shape change can't re-assert a
+     *    terminal status as a side effect.
+     *
+     * Bob Go treats a repeated `completed` as a 200 no-op, but completing an
+     * already-cancelled order is a 400 — so the caller checks what it has
+     * already sent (see OrderSyncPolicy::statusToForward) rather than relying on
+     * idempotency.
+     */
+    public function pushStatus(OrderInterface $order, string $status): bool
+    {
+        $bobgoOrderId = $this->resolveBobGoOrderId($order, []);
+        if ($bobgoOrderId === null) {
+            $this->logger->warning('Bob Go: cannot forward status without an order link', [
+                'order_id' => $order->getEntityId(),
+                'status' => $status,
+            ]);
+            return false;
+        }
+
+        $payload = ['id' => (int) $bobgoOrderId, 'status' => $status];
+
+        try {
+            $this->apiClient->patch('orders', $payload);
+
+            $order->setData('bobgo_status_synced', $status);
+            $order->setData('bobgo_last_synced', $this->dateTime->gmtDate());
+            $this->orderRepository->save($order);
+
+            $this->syncLogger->logOutbound(
+                SyncLog::EVENT_STATUS_UPDATED,
+                ['request' => $payload],
+                (int) $order->getEntityId(),
+                200,
+                true
+            );
+            $this->logger->info('Bob Go: order status forwarded', [
+                'order_id' => $order->getEntityId(),
+                'status' => $status,
+            ]);
+            return true;
+        } catch (\Exception $e) {
+            $this->syncLogger->logOutbound(
+                SyncLog::EVENT_STATUS_UPDATED,
+                ['request' => $payload, 'error' => $e->getMessage()],
+                (int) $order->getEntityId(),
+                $e instanceof BobGoApiException ? $e->getStatusCode() : null,
+                false
+            );
+            $this->logger->error('Bob Go: failed to forward order status', [
+                'order_id' => $order->getEntityId(),
+                'status' => $status,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
+    /**
      * Re-baseline the stored sync hash against the order's current payload,
      * without calling Bob Go.
      *

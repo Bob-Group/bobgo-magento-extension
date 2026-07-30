@@ -30,6 +30,7 @@ class SyncLog extends AbstractModel
     public const EVENT_ORDER_UPDATED_INBOUND   = 'order_updated_inbound';
     public const EVENT_ORDER_CREATED           = 'order_created';
     public const EVENT_ORDER_UPDATED_OUTBOUND  = 'order_updated_outbound';
+    public const EVENT_STATUS_UPDATED          = 'status_updated';
     public const EVENT_RECONCILIATION_FETCHED  = 'reconciliation_fetched';
 
     protected function _construct(): void
