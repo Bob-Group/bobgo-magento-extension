@@ -28,6 +28,7 @@ use Magento\Framework\App\Request\Http as MagentoHttp;
 use BobGroup\BobGo\Api\BobGoApiClient;
 use BobGroup\BobGo\Api\BobGoApiException;
 use BobGroup\BobGo\Model\Config\ApiConfig;
+use BobGroup\BobGo\Service\RateCache;
 
 /**
  * Bob Go shipping implementation
@@ -49,6 +50,15 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @var int
      */
     public const UNITS = 100;
+
+    /**
+     * Method code for the rate we present when a cart rule already grants free
+     * shipping. Deliberately not a Bob Go service code — the merchant picks the
+     * courier on Bob Go for these, so OrderMapper omits
+     * buyer_selected_service_code rather than sending something the API can't
+     * resolve.
+     */
+    public const FREE_SHIPPING_METHOD = 'free';
 
     private const MAX_WEIGHT_KG = 500;
     private const SECONDS_PER_DAY = 86400;
@@ -119,6 +129,11 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
     protected ApiConfig $apiConfig;
 
     /**
+     * @var RateCache
+     */
+    protected RateCache $rateCache;
+
+    /**
      * BobGo constructor.
      *
      * @param ScopeConfigInterface $scopeConfig
@@ -141,6 +156,7 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * @param MagentoHttp $httpRequest
      * @param BobGoApiClient $apiClient
      * @param ApiConfig $apiConfig
+     * @param RateCache $rateCache
      * @param array<string,mixed> $data
      */
     public function __construct(
@@ -164,8 +180,10 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         MagentoHttp $httpRequest,
         BobGoApiClient $apiClient,
         ApiConfig $apiConfig,
+        RateCache $rateCache,
         array $data = []
     ) {
+        $this->rateCache = $rateCache;
         $this->httpRequest = $httpRequest;
         $this->_storeManager = $storeManager;
         $this->_productCollectionFactory = $productCollectionFactory;
@@ -362,6 +380,19 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     private function collectBobGoRates(RateRequest $request): Result
     {
+        // A cart rule already grants free shipping on this address, so there is
+        // nothing to price. Present one zero-cost rate and skip the API entirely.
+        //
+        // This has to happen BEFORE the cache is touched: the free-shipping flag
+        // is not part of the cache key, so zeroing a cached rate would leak free
+        // shipping to the next cart with the same basket and address and no
+        // coupon. Magento's address-level free_shipping flag is itself the output
+        // of cart-rule validation, so checking it is the same test Magento's own
+        // free-shipping carrier applies.
+        if ($request->getFreeShipping()) {
+            return $this->freeShippingResult();
+        }
+
         /**
          * Gets the destination company name from Company Name field in the checkout page.
          * This method is used as the last resort to get the company name since the company name is
@@ -423,12 +454,96 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
                 'code' => $destination,
             ],
             'items' => $itemsArray,
-            'declared_value' => 0,
+            // Two different numbers, both required.
+            //
+            // declared_value is the PRE-discount value of the shippable goods —
+            // what the parcel is worth, for insurance and customs.
+            //
+            // order_total_price is the POST-discount total, and it is what Bob Go
+            // evaluates free-shipping-over-X thresholds against. Sending only the
+            // pre-discount value gave WooCommerce shoppers free shipping they
+            // hadn't earned, and denied it to those who had. Until this release we
+            // sent a hardcoded 0 for declared_value and nothing at all for
+            // order_total_price, so those thresholds could not work.
+            'declared_value' => $this->declaredValue($request, $itemsArray),
+            'order_total_price' => $this->orderTotalPrice($request, $itemsArray),
+            'handling_time' => 0,
         ];
 
         $this->_getRates($payload, $result);
 
         return $result;
+    }
+
+    /**
+     * One zero-cost rate, for when a cart rule has already granted free shipping.
+     */
+    private function freeShippingResult(): Result
+    {
+        /** @var Result $result */
+        $result = $this->_rateFactory->create();
+
+        $method = $this->_rateMethodFactory->create();
+        $method->setCarrier(self::CODE);
+        $method->setCarrierTitle('');
+        $method->setMethod(self::FREE_SHIPPING_METHOD);
+        $method->setMethodTitle((string) __('Free shipping'));
+        $method->setPrice(0.0);
+        $method->setCost(0.0);
+
+        $result->append($method);
+
+        return $result;
+    }
+
+    /**
+     * Pre-discount value of the shippable goods.
+     *
+     * Prefers Magento's own figures: package_physical_value excludes virtual
+     * items, package_value is the whole address subtotal. Falls back to summing
+     * the payload items for flows that don't populate either.
+     *
+     * @param array<int,array<string,mixed>> $items
+     */
+    private function declaredValue(RateRequest $request, array $items): float
+    {
+        foreach ([$request->getPackagePhysicalValue(), $request->getPackageValue()] as $candidate) {
+            if (is_numeric($candidate) && (float) $candidate > 0.0) {
+                return round((float) $candidate, 2);
+            }
+        }
+        return $this->sumItemValue($items);
+    }
+
+    /**
+     * Post-discount cart total — the figure Bob Go's free-shipping thresholds
+     * are configured against.
+     *
+     * Magento exposes package_value_with_discount for the whole address; there is
+     * no post-discount physical-only equivalent, which only diverges on a mixed
+     * physical/virtual cart.
+     *
+     * @param array<int,array<string,mixed>> $items
+     */
+    private function orderTotalPrice(RateRequest $request, array $items): float
+    {
+        $withDiscount = $request->getPackageValueWithDiscount();
+        if (is_numeric($withDiscount) && (float) $withDiscount >= 0.0) {
+            return round((float) $withDiscount, 2);
+        }
+        return $this->declaredValue($request, $items);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $items
+     */
+    private function sumItemValue(array $items): float
+    {
+        $total = 0.0;
+        foreach ($items as $item) {
+            $total += ((float) ($item['price'] ?? 0)) * ((int) ($item['quantity'] ?? 0));
+        }
+        return round($total, 2);
     }
 
     /**
@@ -975,12 +1090,24 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      */
     protected function uRates(array $payload): ?array
     {
+        $cached = $this->rateCache->load($payload);
+        if ($cached !== null) {
+            return $this->rateCache->isNegative($cached) ? null : $cached;
+        }
+
         try {
-            return $this->apiClient->post('rates-at-checkout', $payload);
+            $rates = $this->apiClient->post('rates-at-checkout', $payload);
         } catch (BobGoApiException $e) {
             $this->_logger->error('Bob Go rates API error: ' . $e->getMessage());
+            // Brief negative entry so an outage costs one call per 30s rather
+            // than one per cart recalculation.
+            $this->rateCache->saveFailure($payload);
             return null;
         }
+
+        $this->rateCache->save($payload, $rates);
+
+        return $rates;
     }
 
     /**

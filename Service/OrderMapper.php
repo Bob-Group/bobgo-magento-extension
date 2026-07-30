@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace BobGroup\BobGo\Service;
 
 use BobGroup\BobGo\Api\OrderMapperInterface;
+use BobGroup\BobGo\Model\Carrier\BobGo;
 use Magento\Catalog\Api\ProductRepositoryInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Exception\NoSuchEntityException;
@@ -83,13 +84,31 @@ class OrderMapper implements OrderMapperInterface
             'customer_email'                    => $order->getCustomerEmail() ?: '',
             'customer_phone'                    => $billingAddress ? ($billingAddress->getTelephone() ?: '') : '',
             'currency'                          => $order->getOrderCurrencyCode(),
-            'buyer_selected_service_code'       => $order->getShippingMethod(),
+            'buyer_selected_service_code'       => $this->serviceCode($order),
             'buyer_selected_shipping_cost'      => (float) $order->getData('shipping_incl_tax'),
             'buyer_selected_shipping_method'    => $order->getShippingDescription(),
             'payment_status'                    => $this->mapPaymentStatus($order),
             'delivery_address'                  => $this->mapShippingAddress($order),
             'order_items'                       => $this->mapItems($order),
         ];
+    }
+
+    /**
+     * The Bob Go service code the shopper picked, or null when there isn't one.
+     *
+     * The stored shipping method round-trips as the service code because
+     * _formatRates() strips the `bobgo_` prefix Bob Go sends and Magento
+     * re-prepends the carrier code. The exception is our free-shipping rate,
+     * which is a local sentinel rather than anything Bob Go can resolve — for
+     * those the field is omitted and the merchant picks the courier on Bob Go.
+     */
+    private function serviceCode(OrderInterface $order): ?string
+    {
+        $method = (string) ($order->getShippingMethod() ?: '');
+        if ($method === '' || $method === BobGo::CODE . '_' . BobGo::FREE_SHIPPING_METHOD) {
+            return null;
+        }
+        return $method;
     }
 
     /**

@@ -182,7 +182,7 @@ $stubs = [
         'Magento\Catalog\Model\ResourceModel\Product\CollectionFactory' => ['create'],
         'Magento\Framework\App\Request\Http' => ['getContent', 'getParam'],
         'Magento\Catalog\Model\Product' => ['isVirtual', 'getWeight', 'getImage', 'getId'],
-        'Magento\Quote\Model\Quote\Item' => ['getProduct'],
+        'Magento\Quote\Model\Quote\Item' => ['getProduct', 'getName', 'getSku', 'getQty', 'getPrice', 'getWeight', 'getStore'],
     ],
 ];
 
@@ -284,6 +284,9 @@ if (!interface_exists(\Magento\Framework\App\Action\HttpPostActionInterface::cla
 }
 if (!interface_exists(\Magento\Sales\Api\ShipmentRepositoryInterface::class, false)) {
     eval('namespace Magento\Sales\Api; interface ShipmentRepositoryInterface { public function get($id); public function save($shipment); }');
+}
+if (!interface_exists(\Magento\Framework\App\CacheInterface::class, false)) {
+    eval('namespace Magento\Framework\App; interface CacheInterface { public function load($identifier); public function save($data, $identifier, $tags = [], $lifeTime = null); public function remove($identifier); public function clean($tags = []); }');
 }
 if (!class_exists(\Magento\Framework\App\ResourceConnection::class, false)) {
     eval('namespace Magento\Framework\App; class ResourceConnection { public function getConnection($name = null) { return null; } public function getTableName($name) { return $name; } }');

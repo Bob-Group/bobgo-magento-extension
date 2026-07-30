@@ -28,6 +28,7 @@
             <argument name="httpRequest" xsi:type="object">Magento\Framework\App\Request\Http</argument>
             <argument name="apiClient" xsi:type="object">BobGroup\BobGo\Api\BobGoApiClient</argument>
             <argument name="apiConfig" xsi:type="object">BobGroup\BobGo\Model\Config\ApiConfig</argument>
+            <argument name="rateCache" xsi:type="object">BobGroup\BobGo\Service\RateCache</argument>
         </arguments>
     </type>
 </config>
