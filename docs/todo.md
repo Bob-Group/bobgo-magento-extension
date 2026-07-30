@@ -15,14 +15,19 @@ Tags: `[CR]` found in our own review · `[Woo]` imported from the Woo docs ·
 Priority: **P0** data loss / outage risk · **P1** functional gaps merchants will hit ·
 **P2** hardening and tooling · **P3** docs.
 
-**Status: P0, P1 and P2 complete** (2026-07-30) — 305 tests / 550 assertions passing,
-PHPStan clean, `composer check` green. `docs/spec.md` updated alongside. Decisions that
+**Status: all four tiers complete** (2026-07-30) — 305 tests / 550 assertions passing,
+PHPStan clean, `composer check` green. Version bumped to **1.2.0**. Decisions that
 diverged from the plan are recorded in place (P1-8's queue choice, P1-14's
 removal-over-conditional, P2-25's declined API lookup, P2-30/P2-21's deferred scope).
 
-Nothing has been exercised against a live Bob Go sandbox yet. The one thing in this work
-that could not be verified from the code is the shape of the `GET /v2/order-fulfillments`
-item array — see `spec.md` known limitation #15 and open question Q9.
+**Nothing has been exercised against a live Bob Go sandbox.** Three passes restructured
+the inbound path, moved the outbound path onto cron, and added admin surfaces. The one
+thing that could not be verified from the code at all is the shape of the
+`GET /v2/order-fulfillments` item array — `spec.md` limitation #10, Appendix C Q9. Start
+there.
+
+15 checkboxes remain open below. Every one is a deliberate deferral with a stated
+reason, not something missed.
 
 > **Read §"Where Magento is worse off than Woo" first.** Three of the Woo incidents are
 > *more* likely here than they were in WooCommerce.
@@ -597,33 +602,45 @@ newest order in the store. Their harness now *throws* when an unfiltered query i
 
 ---
 
-## P3 — documentation drift (`docs/spec.md`)
+## P3 — documentation drift  ✅ DONE 2026-07-30
 
 - [x] ~~**§9 is wrong about the fulfillment payload.**~~ Fixed in the P0 pass: §9's flow, JSON
       sample and `processTrackingUpdate` description now match the code, with a note that the
       old `fulfillment_id` / `tracking_numbers[]` / `line_items[]` shape was never real.
-- [ ] §10b says the admin panel renders `bobgo_order_ref` — `bobgo_info.phtml` never does.
-- [ ] §10 and the endpoint table say unsubscribe is `DELETE /v2/webhooks/{id}` per subscription;
+- [x] §10b says the admin panel renders `bobgo_order_ref` — `bobgo_info.phtml` never does.
+- [x] §10 and the endpoint table say unsubscribe is `DELETE /v2/webhooks/{id}` per subscription;
       the code does one bulk `DELETE /v2/webhooks` with `{"ids":[…]}`
       (`WebhookSubscriptionService.php:154`). The Woo doc's Appendix A confirms **bulk by ids**
       is correct — so fix the spec, not the code.
-- [ ] §14 calls `etc/events.xml` "Scope: Frontend". A root `events.xml` is **global** —
+- [x] §14 calls `etc/events.xml` "Scope: Frontend". A root `events.xml` is **global** —
       `OrderSaveObserver` also fires in adminhtml, cron, webhook and REST contexts. That
       changes how re-entrancy and inline API calls should be reasoned about.
 - [x] ~~§10c lists `EVENT_ORDER_UPDATED_INBOUND` twice.~~ Fixed; `webhook_ignored` documented.
-- [ ] §6 omits that the channel identifier also strips the scheme (`BobGoApiClient.php:189-194`).
-- [ ] §3/§28 omit `view/frontend/web/js/view/shipping-information-mixin.js`, which is live in
+- [x] §6 omits that the channel identifier also strips the scheme (`BobGoApiClient.php:189-194`).
+- [x] §3/§28 omit `view/frontend/web/js/view/shipping-information-mixin.js`, which is live in
       `requirejs-config.js`. *(The two tracking-popup view files this used to also list were
       deleted in P1-14. The P0 and P1 passes added the new Service classes.)*
 - [x] ~~§23 says 143 tests / 257 assertions.~~ Now 182 / 350, and the test-file table describes
       what the new suites actually pin down.
-- [ ] §27's "weights are sent in grams to the API" contradicts §12's `weight_kg`.
+- [x] §27's "weights are sent in grams to the API" contradicts §12's `weight_kg`.
 - [x] ~~Restate §5 design decision 5 and §9 honestly about reconciliation.~~ Added as `spec.md`
       known limitation #12: reconciliation refreshes the shipments blob but does **not** create
       Magento shipments, so a dropped `fulfillment/created` has no automatic recovery until P1-6.
-- [ ] Add the endpoint table from the Woo spec's Appendix A — several routes we'll need
-      (`GET /v2/orders?id=`, `?tracking_reference=`, `?channel_order_number=`) aren't documented
-      here at all.
+- [x] Added as `spec.md` **Appendix A**, including the routes we don't call yet, because
+      their shape is non-obvious (`/v2/orders/{id}` is not a registered route; the by-id
+      branch is account-scoped, not channel-scoped). **Appendix B** is the address shape;
+      **Appendix C** consolidates the open questions for Bob Go, now nine of them.
+
+The pass went well beyond the seven items listed here, because three tiers of work had
+left the spec describing an architecture that no longer existed. Rewritten: §4 (all the
+new config plus the `flag`-table state), §8 (order push is now asynchronous), §9
+(webhooks-are-triggers), §10a (paging, store scope, health check), §14 (the observer only
+queues), §16 (and an honest note that the JS rate validator is inert), §17/§18 (new table,
+column and DI wiring), §19 (the config screen and the sync-log grid), §20 (the whole order
+lifecycle), §21 (the log-prefix table), §26 (split into current vs resolved — it had
+accumulated a duplicate and three out-of-order entries). `Readme.md` got the same
+treatment for the user-facing half. Version bumped to 1.2.0 and `Magento_Backend` /
+`Magento_Ui` added to the module sequence, since the admin grid genuinely depends on them.
 
 ---
 
