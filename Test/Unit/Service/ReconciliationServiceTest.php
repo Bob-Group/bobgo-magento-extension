@@ -68,23 +68,22 @@ class ReconciliationServiceTest extends TestCase
         );
     }
 
-    public function testRunSkipsWhenFulfillmentSyncDisabled(): void
+    public function testSkipsAnOrderWhoseStoreHasFulfilmentSyncDisabled(): void
     {
         $this->apiConfigMock->method('isFulfillmentSyncEnabled')->willReturn(false);
-        $this->apiConfigMock->expects($this->never())->method('isConfigured');
-        $this->orderRepositoryMock->expects($this->never())->method('getList');
-        $this->webhookSubscriptionsMock->expects($this->never())->method('verifyAndRepair');
+        $this->apiConfigMock->method('isConfigured')->willReturn(true);
+        $this->fulfilmentSyncMock->expects($this->never())->method('syncOrder');
 
-        $this->service->run();
+        $this->service->reconcileOrder($this->order(42));
     }
 
-    public function testRunSkipsWhenNotConfigured(): void
+    public function testSkipsAnOrderWhoseStoreHasNoApiKey(): void
     {
         $this->apiConfigMock->method('isFulfillmentSyncEnabled')->willReturn(true);
         $this->apiConfigMock->method('isConfigured')->willReturn(false);
-        $this->orderRepositoryMock->expects($this->never())->method('getList');
+        $this->fulfilmentSyncMock->expects($this->never())->method('syncOrder');
 
-        $this->service->run();
+        $this->service->reconcileOrder($this->order(42));
     }
 
     /**
@@ -131,6 +130,7 @@ class ReconciliationServiceTest extends TestCase
      */
     public function testReconcileOrderIsolatesFailures(): void
     {
+        $this->enable();
         $order = $this->order(42);
         $this->fulfilmentSyncMock->method('syncOrder')
             ->willThrowException(new \RuntimeException('shipment creation blew up'));

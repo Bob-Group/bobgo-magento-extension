@@ -5,6 +5,7 @@ namespace BobGroup\BobGo\Controller\Adminhtml\Order;
 
 use BobGroup\BobGo\Service\OrderPushService;
 use BobGroup\BobGo\Service\ReconciliationService;
+use BobGroup\BobGo\Service\StoreScope;
 use Magento\Backend\App\Action;
 use Magento\Backend\App\Action\Context;
 use Magento\Framework\App\Action\HttpPostActionInterface;
@@ -31,19 +32,22 @@ class Resync extends Action implements HttpPostActionInterface
     private OrderPushService $orderPushService;
     private ReconciliationService $reconciliationService;
     private LoggerInterface $bobgoLogger;
+    private StoreScope $storeScope;
 
     public function __construct(
         Context $context,
         OrderRepositoryInterface $orderRepository,
         OrderPushService $orderPushService,
         ReconciliationService $reconciliationService,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        StoreScope $storeScope
     ) {
         parent::__construct($context);
         $this->orderRepository = $orderRepository;
         $this->orderPushService = $orderPushService;
         $this->reconciliationService = $reconciliationService;
         $this->bobgoLogger = $logger;
+        $this->storeScope = $storeScope;
     }
 
     public function execute()
@@ -60,9 +64,14 @@ class Resync extends Action implements HttpPostActionInterface
             // Clear the sync hash so updateOrder definitely fires.
             $order->setData('bobgo_sync_hash', null);
 
-            $pushSucceeded = $order->getData('bobgo_order_id')
-                ? $this->orderPushService->updateOrder($order)
-                : $this->orderPushService->pushOrder($order);
+            // In the order's own store, as the push cron does. The admin runs in
+            // the default scope, so without this a multi-website order was pushed
+            // with the default website's API key and channel.
+            $pushSucceeded = (bool) $this->storeScope->forOrder($order, function () use ($order) {
+                return $order->getData('bobgo_order_id')
+                    ? $this->orderPushService->updateOrder($order)
+                    : $this->orderPushService->pushOrder($order);
+            });
 
             // Reconciliation is best-effort and runs even on push failure so
             // the panel can still reflect shipment state Bob Go knows about.

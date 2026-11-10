@@ -53,10 +53,12 @@ class ShippingInformationPlugin
             return null;
         }
 
+        // Written even when there is none, as null. Quote::setShippingAddress()
+        // merges onto the address already on the quote, so leaving the key out
+        // kept the last address's suburb: type a Sandton address, switch to a
+        // saved Cape Town one, and the order went out as Sandton, Cape Town.
         $suburb = $this->extractSuburb($address);
-        if ($suburb !== '') {
-            $address->setData('suburb', $suburb);
-        }
+        $address->setData('suburb', $suburb !== '' ? $suburb : null);
 
         return null;
     }

@@ -80,7 +80,7 @@ class ReceiveTest extends TestCase
         //   1. The claim is released (DELETE) so the retry can re-claim.
         $this->syncLogger->expects($this->once())
             ->method('releaseEventIdClaim')
-            ->with($eventId);
+            ->with($this->stringStartsWith($eventId . ':fulfillment/created:'));
 
         //   2. The failure row carries event_id = NULL.
         $this->syncLogger->expects($this->once())
@@ -88,7 +88,8 @@ class ReceiveTest extends TestCase
             ->with(
                 SyncLog::EVENT_WEBHOOK_RECEIVED,
                 $this->callback(function ($payload) use ($eventId) {
-                    return is_array($payload) && ($payload['event_id'] ?? null) === $eventId;
+                    return is_array($payload)
+                        && strpos((string) ($payload['event_id'] ?? ''), $eventId . ':') === 0;
                 }),
                 42,
                 null, // <-- the assertion that pins down the fix
@@ -204,12 +205,32 @@ class ReceiveTest extends TestCase
     public function testDisabledFulfillmentSyncDoesNotProcess(): void
     {
         $this->signatureVerifier->method('verify')->willReturn(true);
+        $this->resolvesTo($this->anOrder());
         $this->apiConfig->method('isFulfillmentSyncEnabled')->willReturn(false);
 
         $this->syncLogger->expects($this->never())->method('claimEventId');
         $this->fulfillmentService->expects($this->never())->method('processFulfillment');
 
         $this->runController('evt_anything', 'fulfillment/created', 200);
+    }
+
+    /**
+     * Fulfilment sync is set per website. The delivery URL resolves to one store,
+     * but the order may belong to another, and that store's setting decides.
+     */
+    public function testFulfillmentSyncIsCheckedForTheOrdersOwnStore(): void
+    {
+        $this->passSignature();
+        $this->resolvesTo($this->anOrder());
+        $this->syncLogger->method('claimEventId')->willReturn(true);
+
+        $this->apiConfig->expects($this->atLeastOnce())
+            ->method('isFulfillmentSyncEnabled')
+            ->with(1)
+            ->willReturn(true);
+        $this->fulfillmentService->expects($this->once())->method('processFulfillment');
+
+        $this->runController('evt_scoped', 'fulfillment/created', 200);
     }
 
     // ------------------------------------------------- subscription-disable window
@@ -311,7 +332,7 @@ class ReceiveTest extends TestCase
 
         $this->syncLogger->expects($this->once())
             ->method('claimEventId')
-            ->with('evt_from_body', 'fulfillment/created')
+            ->with($this->stringStartsWith('evt_from_body:fulfillment/created:'), 'fulfillment/created')
             ->willReturn(true);
 
         $body = json_encode([
@@ -342,9 +363,60 @@ class ReceiveTest extends TestCase
 
         $this->syncLogger->expects($this->once())
             ->method('logInbound')
-            ->with(SyncLog::EVENT_FULFILLMENT_RECEIVED, $this->anything(), 42, 'evt_ok', 200, true);
+            ->with(
+                SyncLog::EVENT_FULFILLMENT_RECEIVED,
+                $this->anything(),
+                42,
+                $this->stringStartsWith('evt_ok:fulfillment/created:'),
+                200,
+                true
+            );
 
         $this->runController('evt_ok', 'fulfillment/created', 200);
+    }
+
+    /**
+     * Caught end to end against the sandbox: fulfilling one order sent
+     * order/updated, fulfillment/created and tracking/updated, all with the same
+     * Bob-Go-Request-Id. Keyed on that id, the second and third were dropped as
+     * duplicates and no shipment was created. Each must get its own key, while an
+     * exact retry of one delivery must still get the same key.
+     */
+    public function testOneBobGoRequestIdAcrossTopicsIsNotADuplicate(): void
+    {
+        $this->passSignature();
+        $this->resolvesTo($this->anOrder());
+
+        $claimed = [];
+        $this->syncLogger->method('claimEventId')->willReturnCallback(
+            function ($key) use (&$claimed) {
+                $claimed[] = $key;
+                return true;
+            }
+        );
+
+        $requestId = '126ff5f8-b8c8-49ba-9fa0-e9e0871ee140';
+        $deliveries = [
+            ['order/updated', '{"id":17688,"channel_ref_id":"42","status":"processing"}'],
+            ['fulfillment/created', '{"order_id":17688,"channel_ref_id":"42","method_reference":"UASDTZXQ"}'],
+            ['fulfillment/created', '{"order_id":17688,"channel_ref_id":"42","method_reference":"UASDTZXQ"}'],
+        ];
+        foreach ($deliveries as [$topic, $body]) {
+            $this->runControllerWithHeaders(
+                [
+                    'Bobgo-Webhook-Signature' => 'sig',
+                    'Bob-Go-Request-Id' => $requestId,
+                    'X-Bobgroup-Topic' => $topic,
+                ],
+                $body,
+                200
+            );
+        }
+
+        $this->assertCount(3, $claimed);
+        $this->assertNotSame($claimed[0], $claimed[1], 'Different topics from one Bob Go action are different events');
+        $this->assertSame($claimed[1], $claimed[2], 'A retry of the same delivery is still a duplicate');
+        $this->assertLessThanOrEqual(128, strlen($claimed[1]));
     }
 
     // ---------------------------------------------------------------- helpers

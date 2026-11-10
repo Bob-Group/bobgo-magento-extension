@@ -87,18 +87,19 @@ class ShippingInformationPluginTest extends TestCase
     }
 
     /**
-     * Never write an empty suburb: OrderMapper falls back to the city when the
-     * suburb is absent, and an empty string is not absent.
+     * No suburb is written as null, never as an empty string: OrderMapper falls
+     * back to the city when the suburb is absent, and an empty string is not
+     * absent. It is still written, so the previous address's suburb is cleared.
      *
      * @dataProvider emptyValueProvider
      * @param mixed $value
      */
-    public function testDoesNotWriteAnEmptySuburb($value): void
+    public function testClearsTheSuburbWhenNoneIsSupplied($value): void
     {
         $address = $this->address();
         $address->method('getExtensionAttributes')->willReturn($this->extensionWith($value));
         $address->method('getCustomAttribute')->willReturn(null);
-        $address->expects($this->never())->method('setData');
+        $address->expects($this->once())->method('setData')->with('suburb', null);
 
         $this->plugin->beforeSaveAddressInformation($this->subject(), 1, $this->information($address));
     }
@@ -115,12 +116,16 @@ class ShippingInformationPluginTest extends TestCase
         ];
     }
 
-    public function testLeavesTheAddressAloneWhenNoSuburbIsSupplied(): void
+    /**
+     * Quote::setShippingAddress() merges onto the old address, so a key left out
+     * keeps the last address's suburb.
+     */
+    public function testClearsAStaleSuburbWhenTheNewAddressHasNone(): void
     {
         $address = $this->address();
         $address->method('getExtensionAttributes')->willReturn(null);
         $address->method('getCustomAttribute')->willReturn(null);
-        $address->expects($this->never())->method('setData');
+        $address->expects($this->once())->method('setData')->with('suburb', null);
 
         $this->plugin->beforeSaveAddressInformation($this->subject(), 1, $this->information($address));
     }

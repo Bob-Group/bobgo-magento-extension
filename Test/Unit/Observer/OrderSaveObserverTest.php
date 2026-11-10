@@ -123,6 +123,22 @@ class OrderSaveObserverTest extends TestCase
         $this->observer->execute($this->eventFor($this->order(Order::STATE_PROCESSING)));
     }
 
+    /**
+     * An admin save runs in the default scope, but push is set per website, so
+     * the order's own store must decide.
+     */
+    public function testChecksPushSettingsForTheOrdersOwnStore(): void
+    {
+        $order = $this->order(Order::STATE_PROCESSING);
+        $order->method('getStoreId')->willReturn(3);
+
+        $this->apiConfig->expects($this->once())->method('isOrderPushEnabled')->with(3)->willReturn(true);
+        $this->apiConfig->expects($this->once())->method('isConfigured')->with(3)->willReturn(true);
+        $this->queue->expects($this->once())->method('enqueue')->with(42);
+
+        $this->observer->execute($this->eventFor($order));
+    }
+
     // ----------------------------------------------------------------------- helpers
 
     private function enable(): void

@@ -94,19 +94,43 @@ class PushOrdersTest extends TestCase
         return $scope;
     }
 
-    public function testDoesNothingWhenOrderPushIsDisabled(): void
+    public function testDropsAnOrderWhoseStoreHasPushDisabled(): void
     {
         $this->apiConfig->method('isOrderPushEnabled')->willReturn(false);
-        $this->queue->expects($this->never())->method('claim');
+        $this->queue->method('claim')->willReturn([42]);
+        $this->orderRepository->method('get')->willReturn($this->order(Order::STATE_PROCESSING));
+
+        $this->orderPushService->expects($this->never())->method('pushOrder');
+        $this->queue->expects($this->once())->method('release')->with(42);
 
         $this->cron->execute();
     }
 
-    public function testDoesNothingWithoutAnApiKey(): void
+    public function testDropsAnOrderWhoseStoreHasNoApiKey(): void
     {
         $this->apiConfig->method('isOrderPushEnabled')->willReturn(true);
         $this->apiConfig->method('isConfigured')->willReturn(false);
-        $this->queue->expects($this->never())->method('claim');
+        $this->queue->method('claim')->willReturn([42]);
+        $this->orderRepository->method('get')->willReturn($this->order(Order::STATE_PROCESSING));
+
+        $this->orderPushService->expects($this->never())->method('pushOrder');
+        $this->queue->expects($this->once())->method('release')->with(42);
+
+        $this->cron->execute();
+    }
+
+    /**
+     * Push is set per website and cron runs in the default scope, so the
+     * default store's setting used to decide for every order.
+     */
+    public function testChecksPushSettingsForTheOrdersOwnStore(): void
+    {
+        $this->queue->method('claim')->willReturn([42]);
+        $this->orderRepository->method('get')->willReturn($this->order(Order::STATE_PROCESSING));
+
+        $this->apiConfig->expects($this->once())->method('isOrderPushEnabled')->with(1)->willReturn(true);
+        $this->apiConfig->expects($this->once())->method('isConfigured')->with(1)->willReturn(true);
+        $this->orderPushService->expects($this->once())->method('pushOrder')->willReturn(true);
 
         $this->cron->execute();
     }

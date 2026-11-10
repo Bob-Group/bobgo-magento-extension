@@ -457,13 +457,15 @@ class BobGoTest extends TestCase
      * @param callable $prepare Receives the RateRequest before collection
      * @param array<int,object> $items
      * @param bool $withApiKey False to take the keyless 1.0.x route
+     * @param \Throwable|null $apiFailure Thrown by the rates call instead of answering
      * @return array<string,mixed>
      */
     private function captureRatePayload(
         callable $prepare,
         array $items = [],
         bool $withApiKey = true,
-        string $storeBaseUrl = 'https://example.com/'
+        string $storeBaseUrl = 'https://example.com/',
+        ?\Throwable $apiFailure = null
     ): array {
         $this->scopeConfigMock->method('getValue')->willReturn('test_value');
         $this->scopeConfigMock->method('isSetFlag')->willReturn(true);
@@ -483,8 +485,11 @@ class BobGoTest extends TestCase
         $this->apiConfigMock->method('isConfigured')->willReturn($withApiKey);
 
         $captured = [];
-        $capture = function ($endpointOrPayload, $payload = null) use (&$captured) {
+        $capture = function ($endpointOrPayload, $payload = null) use (&$captured, $apiFailure) {
             $captured = $payload ?? $endpointOrPayload;
+            if ($apiFailure !== null) {
+                throw $apiFailure;
+            }
             return ['rates' => [['service_name' => 'Standard', 'total_price' => 100.0]]];
         };
         if ($withApiKey) {
@@ -621,6 +626,38 @@ class BobGoTest extends TestCase
         }, [], false, 'https://www.shop.co.za/index.php/');
 
         $this->assertSame('shop.co.za', $captured['identifier']);
+    }
+
+    /**
+     * While Bob Go is known to be down, no cart waits out the timeout for it.
+     */
+    public function testDoesNotCallBobGoWhileItIsKnownToBeDown(): void
+    {
+        $this->rateCacheMock->method('isUnavailable')->willReturn(true);
+
+        $captured = $this->captureRatePayload(static function (RateRequest $request) {
+        });
+
+        $this->assertSame([], $captured);
+    }
+
+    public function testAnOutageMarksBobGoUnavailableForEveryCart(): void
+    {
+        $this->rateCacheMock->expects($this->once())->method('markUnavailable');
+
+        $this->captureRatePayload(static function (RateRequest $request) {
+        }, [], true, 'https://example.com/', new BobGoApiException('timed out', 0, '', 'rates-at-checkout'));
+    }
+
+    /**
+     * A 4xx refuses this one request. Other carts are still worth asking for.
+     */
+    public function testARefusedRequestDoesNotMarkBobGoUnavailable(): void
+    {
+        $this->rateCacheMock->expects($this->never())->method('markUnavailable');
+
+        $this->captureRatePayload(static function (RateRequest $request) {
+        }, [], true, 'https://example.com/', new BobGoApiException('bad address', 422, '', 'rates-at-checkout'));
     }
 
     /**
