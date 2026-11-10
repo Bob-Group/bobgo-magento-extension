@@ -446,6 +446,10 @@ class ReceiveTest extends TestCase
 
         $reflection = new \ReflectionClass($controller);
         $requestProperty = $reflection->getParentClass()->getProperty('_request');
+        if (PHP_VERSION_ID < 80100) {
+            // Required before PHP 8.1; a no-op after.
+            $requestProperty->setAccessible(true);
+        }
         $requestProperty->setValue($controller, $request);
 
         $controller->execute();
