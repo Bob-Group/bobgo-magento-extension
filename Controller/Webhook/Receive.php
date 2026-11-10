@@ -94,9 +94,7 @@ class Receive extends Action implements CsrfAwareActionInterface
         OrderResolver::TOPIC_ORDER_UPDATED,
     ];
 
-    /** Cap on how much of a rejected body we persist — anyone who fails signature
-     *  verification can spray 64 KB requests at us, so we keep just enough to
-     *  diagnose the rejection without giving them a free log-bloat vector. */
+    /** Cap on how much of a signed but unparseable body we persist. */
     private const REJECTED_BODY_CAP_BYTES = 256;
 
     private FulfillmentService $fulfillmentService;
@@ -146,11 +144,15 @@ class Receive extends Action implements CsrfAwareActionInterface
         // 1. Signature verification — first gate. Never inspect the body before this.
         $providedSignature = $request->getHeader(self::SIGNATURE_HEADER);
         if (!$this->signatureVerifier->verify($rawBody, is_string($providedSignature) ? $providedSignature : null)) {
+            // Record the refusal, never the body: an unsigned body is anyone's
+            // text, and the sync log is read by staff in the admin.
             $this->logWithoutClaimingEventId(
                 SyncLog::EVENT_WEBHOOK_REJECTED,
-                substr($rawBody, 0, self::REJECTED_BODY_CAP_BYTES),
+                null,
                 $eventId,
-                403
+                403,
+                null,
+                sprintf('invalid or missing signature, %d byte body discarded', strlen($rawBody))
             );
             return $result->setHttpResponseCode(403)->setData(['error' => 'Invalid signature']);
         }

@@ -148,7 +148,6 @@
                 <label translate="true">Payload (PII redacted)</label>
                 <filter>false</filter>
                 <sortable>false</sortable>
-                <bodyTmpl>ui/grid/cells/html</bodyTmpl>
             </settings>
         </column>
     </columns>

@@ -5,6 +5,7 @@ namespace BobGroup\BobGo\Test\Unit\Cron;
 
 use BobGroup\BobGo\Cron\PushOrders;
 use BobGroup\BobGo\Model\Config\ApiConfig;
+use BobGroup\BobGo\Service\InboundGuard;
 use BobGroup\BobGo\Service\OrderPushService;
 use BobGroup\BobGo\Service\OrderSyncPolicy;
 use BobGroup\BobGo\Service\OrderSyncQueue;
@@ -28,6 +29,8 @@ class PushOrdersTest extends TestCase
     private $orderPushService;
     private $apiConfig;
     private $logger;
+    /** @var InboundGuard */
+    private $guard;
     /** @var PushOrders */
     private $cron;
 
@@ -39,6 +42,8 @@ class PushOrdersTest extends TestCase
         $this->apiConfig = $this->createMock(ApiConfig::class);
         $this->logger = $this->createMock(LoggerInterface::class);
 
+        $this->guard = new InboundGuard();
+
         $this->cron = new PushOrders(
             $this->queue,
             $this->orderRepository,
@@ -46,8 +51,32 @@ class PushOrdersTest extends TestCase
             new OrderSyncPolicy(),
             $this->apiConfig,
             $this->passThroughStoreScope(),
-            $this->logger
+            $this->logger,
+            $this->guard
         );
+    }
+
+    /**
+     * The push saves the order (failure marker, link, hash), and every order save
+     * runs the observer. If that re-queued the order, the attempt count reset to
+     * zero on each failure and the backoff and retry limit never took effect.
+     */
+    public function testOrderIsGuardedAgainstRequeueingWhileItIsPushed(): void
+    {
+        $this->enable();
+        $this->queue->method('claim')->willReturn([42]);
+        $this->orderRepository->method('get')->willReturn($this->order(Order::STATE_PROCESSING));
+
+        $guardedDuringPush = null;
+        $this->orderPushService->method('pushOrder')->willReturnCallback(function () use (&$guardedDuringPush) {
+            $guardedDuringPush = $this->guard->isActive(42);
+            return false;
+        });
+
+        $this->cron->execute();
+
+        $this->assertTrue($guardedDuringPush);
+        $this->assertFalse($this->guard->isActive(42));
     }
 
     /**

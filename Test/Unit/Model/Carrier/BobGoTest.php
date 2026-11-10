@@ -540,19 +540,19 @@ class BobGoTest extends TestCase
     }
 
     /**
-     * Configurable parents carry the price but no weight; the simple child
-     * carries the variant and the weight. Sending both gave Bob Go a duplicate
-     * zero-weight line for every configurable in the cart, and disagreed with
-     * what OrderMapper sends on push.
+     * In a quote, a configurable's child row always has quantity 1 and price 0;
+     * the parent holds what the customer is buying. Five hoodies were quoted as
+     * one free hoodie when the child was sent instead.
      */
-    public function testRatePayloadSkipsConfigurableParents(): void
+    public function testRatePayloadSendsConfigurableParentNotChild(): void
     {
         $parent = $this->createMock(\Magento\Quote\Model\Quote\Item::class);
         $parent->method('getProductType')->willReturn('configurable');
         $parent->method('getName')->willReturn('Hoodie');
-        $parent->method('getQty')->willReturn(1);
+        $parent->method('getQty')->willReturn(5);
         $parent->method('getPrice')->willReturn(500.00);
-        $parent->method('getWeight')->willReturn(0.0);
+        $parent->method('getWeight')->willReturn(1.5);
+        $parent->method('getParentItem')->willReturn(null);
 
         $child = $this->createMock(\Magento\Quote\Model\Quote\Item::class);
         $child->method('getProductType')->willReturn('simple');
@@ -560,12 +560,15 @@ class BobGoTest extends TestCase
         $child->method('getQty')->willReturn(1);
         $child->method('getPrice')->willReturn(0.0);
         $child->method('getWeight')->willReturn(1.5);
+        $child->method('getParentItem')->willReturn($parent);
 
         $captured = $this->captureRatePayload(static function (RateRequest $request) {
         }, [$parent, $child]);
 
         $this->assertCount(1, $captured['items']);
-        $this->assertSame('Hoodie-M-Blue', $captured['items'][0]['description']);
+        $this->assertSame('Hoodie', $captured['items'][0]['description']);
+        $this->assertSame(5.0, $captured['items'][0]['quantity']);
+        $this->assertSame(500.0, $captured['items'][0]['price']);
     }
 
     /**

@@ -16,8 +16,11 @@ namespace BobGroup\BobGo\Service;
  * touches a field that appears in the outbound payload. Inbound field mapping is
  * on the roadmap, and the day it lands the accident stops holding.
  *
+ * The push job (Cron\PushOrders) uses it for the same purpose from the other side:
+ * its own bookkeeping saves must not put the order back in the queue.
+ *
  * Request-scoped, which is all that is needed: the guard only has to span a single
- * inbound handler's own saves.
+ * handler's own saves.
  *
  * Re-entrant, because the scopes legitimately nest: the webhook controller marks
  * the whole delivery inbound, and FulfilmentSyncService marks its own refresh —

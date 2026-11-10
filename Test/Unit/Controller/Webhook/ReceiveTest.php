@@ -128,6 +128,33 @@ class ReceiveTest extends TestCase
         $this->runController($eventId, 'fulfillment/created', 403);
     }
 
+    /**
+     * The sync log is shown to staff, so text from a caller who failed the
+     * signature check must never reach it.
+     */
+    public function testRejectedSignatureDoesNotPersistTheBody(): void
+    {
+        $this->signatureVerifier->method('verify')->willReturn(false);
+        $unsignedBody = '<b>not from Bob Go</b>';
+
+        $this->syncLogger->expects($this->once())
+            ->method('logInbound')
+            ->with(
+                SyncLog::EVENT_WEBHOOK_REJECTED,
+                $this->callback(function ($payload) {
+                    return is_array($payload)
+                        && $payload['body'] === null
+                        && strpos((string) json_encode($payload), 'not from Bob Go') === false;
+                }),
+                null,
+                null,
+                403,
+                false
+            );
+
+        $this->runController('evt_forged', 'fulfillment/created', 403, $unsignedBody);
+    }
+
     public function testUnparseableBodyLogsWithoutEventId(): void
     {
         $eventId = 'evt_garbage';
