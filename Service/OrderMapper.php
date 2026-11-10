@@ -25,6 +25,9 @@ class OrderMapper implements OrderMapperInterface
 {
     private const LBS_TO_KG = 0.45359237;
 
+    /** Magento's shipment_type for a bundle whose parts ship separately. */
+    private const BUNDLE_SHIPS_SEPARATELY = 1;
+
     /** @var ProductRepositoryInterface */
     private $productRepository;
 
@@ -219,7 +222,11 @@ class OrderMapper implements OrderMapperInterface
     private function serviceCode(OrderInterface $order): ?string
     {
         $method = (string) ($order->getShippingMethod() ?: '');
-        if ($method === '' || $method === BobGo::CODE . '_' . BobGo::FREE_SHIPPING_METHOD) {
+        // Only a Bob Go rate has a Bob Go service code. Another carrier's method
+        // (flatrate_flatrate, say) used to go out as if it were one.
+        if (strpos($method, BobGo::CODE . '_') !== 0
+            || $method === BobGo::CODE . '_' . BobGo::FREE_SHIPPING_METHOD
+        ) {
             return null;
         }
         return $method;
@@ -323,43 +330,89 @@ class OrderMapper implements OrderMapperInterface
      */
     private function mapItems(OrderInterface $order): array
     {
-        $allItems = $order->getItems() ?: [];
-
-        // Build id → item lookup so children can find their parent for price.
-        $byId = [];
-        foreach ($allItems as $item) {
-            $byId[(int) $item->getItemId()] = $item;
-        }
-
         $mapped = [];
-        foreach ($allItems as $item) {
-            // Skip configurable parents — the simple child carries the variant
-            // name and SKU and is what should be shipped/fulfilled.
-            if ($item->getProductType() === 'configurable') {
-                continue;
-            }
+        foreach (self::pushedItems($order->getItems() ?: []) as [$item, $parent]) {
+            $configurableParent = ($parent !== null && $parent->getProductType() === 'configurable')
+                ? $parent
+                : null;
 
             // The configurable parent is where Magento records what the customer
             // actually chose (`attributes_info` in product_options) — the simple
             // child we send carries only info_buyRequest. Hand the parent over so
             // display_options isn't empty for exactly the case it exists for.
-            $parentItemId = $item->getParentItemId();
-            $parent = ($parentItemId !== null && $parentItemId !== '' && isset($byId[(int) $parentItemId]))
-                ? $byId[(int) $parentItemId]
-                : null;
+            $entry = $this->mapItem($item, $configurableParent);
 
-            $entry = $this->mapItem($item, $parent);
-
-            // If this simple is a child of a configurable, the customer-paid price
-            // sits on the parent (child's price is 0). Mirror it over.
-            if ($parent !== null && (float) $entry['unit_price'] === 0.0) {
-                $entry['unit_price'] = (float) $parent->getPriceInclTax();
+            // A configurable's child has price 0; the customer-paid price sits on
+            // the parent. Mirror it over. Not for a bundle's parts: a fixed-price
+            // bundle's parts have no price of their own, and copying the bundle
+            // price onto each one counted the bundle once per part.
+            if ($configurableParent !== null && (float) $entry['unit_price'] === 0.0) {
+                $entry['unit_price'] = (float) $configurableParent->getPriceInclTax();
             }
 
             $mapped[] = $entry;
         }
 
         return $mapped;
+    }
+
+    /**
+     * The order lines that go to Bob Go, each with its parent line (or null).
+     *
+     * OrderPushService matches Bob Go's item ids back onto these same lines, so
+     * both must use this one list.
+     *
+     * @param OrderItemInterface[] $allItems
+     * @return array<int,array{0:OrderItemInterface,1:OrderItemInterface|null}>
+     */
+    public static function pushedItems(array $allItems): array
+    {
+        $byId = [];
+        foreach ($allItems as $item) {
+            $byId[(int) $item->getItemId()] = $item;
+        }
+
+        $pushed = [];
+        foreach ($allItems as $item) {
+            $parentItemId = $item->getParentItemId();
+            $parent = ($parentItemId !== null && $parentItemId !== '' && isset($byId[(int) $parentItemId]))
+                ? $byId[(int) $parentItemId]
+                : null;
+
+            if (self::isPushedLine($item, $parent)) {
+                $pushed[] = [$item, $parent];
+            }
+        }
+
+        return $pushed;
+    }
+
+    /**
+     * A configurable goes out as its simple child, which names the variant. A
+     * bundle goes out as the lines Magento ships: the bundle itself when it ships
+     * together, its parts when they ship separately. Sending both counted every
+     * part twice.
+     */
+    private static function isPushedLine(OrderItemInterface $item, ?OrderItemInterface $parent): bool
+    {
+        $type = $item->getProductType();
+        if ($type === 'configurable') {
+            return false;
+        }
+        if ($type === 'bundle') {
+            return !self::shipsSeparately($item);
+        }
+        if ($parent !== null && $parent->getProductType() === 'bundle') {
+            return self::shipsSeparately($parent);
+        }
+        return true;
+    }
+
+    private static function shipsSeparately(OrderItemInterface $bundle): bool
+    {
+        $options = $bundle->getProductOptions();
+        return is_array($options)
+            && (int) ($options['shipment_type'] ?? 0) === self::BUNDLE_SHIPS_SEPARATELY;
     }
 
     /**
