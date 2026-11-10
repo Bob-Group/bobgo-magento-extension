@@ -22,38 +22,108 @@
                     <label>Environment</label>
                     <source_model>BobGroup\BobGo\Model\Source\Environment</source_model>
                 </field>
-                <field id="api_key" translate="label" type="obscure" sortOrder="2" showInDefault="1" showInWebsite="1" showInStore="0">
+                <field id="connection_status" translate="label comment" type="label" sortOrder="2" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Connection</label>
+                    <frontend_model>BobGroup\BobGo\Block\Adminhtml\System\Config\ConnectionStatus</frontend_model>
+                    <comment>Reflects what Bob Go last said to us on real traffic, not just whether a key is saved.</comment>
+                </field>
+                <field id="api_key" translate="label" type="obscure" sortOrder="3" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>API Key</label>
                     <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
                     <comment>Enter your Bob Go API key.</comment>
                 </field>
-                <field id="active" translate="label" type="select" sortOrder="3" showInDefault="1" showInWebsite="1" showInStore="0">
+                <field id="webhook_secret" translate="label comment" type="obscure" sortOrder="9" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Webhook Signing Secret</label>
+                    <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
+                    <comment>Merchant-issued HMAC secret used to verify inbound Bob Go webhooks. Set this before enabling fulfillment sync above — until it is set, inbound webhooks are rejected.</comment>
+                </field>
+                <field id="active" translate="label" type="select" sortOrder="4" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Enable Bob Go rates at checkout</label>
                     <comment>When enabled, your customers will be presented with shipping rates at checkout, as configured on the Bob Go platform under Rates at checkout.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
-                <field id="additional_info" translate="label" type="select" sortOrder="4" showInDefault="1" showInWebsite="1">
+                <field id="additional_info" translate="label" type="select" sortOrder="5" showInDefault="1" showInWebsite="1">
                     <label>Show additional rate information</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <comment>Displays the delivery timeframe and additional service level description, as configured on Bob Go.</comment>
                 </field>
-                <field id="enable_order_push" translate="label" type="select" sortOrder="5" showInDefault="1" showInWebsite="1" showInStore="0">
+                <field id="max_rates" translate="label comment" type="text" sortOrder="6" showInDefault="1" showInWebsite="1">
+                    <label>Maximum rates to show</label>
+                    <comment>How many Bob Go rates to display at checkout, at most. Leave blank for 20.</comment>
+                    <validate>validate-digits</validate>
+                </field>
+                <field id="enable_order_push" translate="label" type="select" sortOrder="7" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Enable order push</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <comment>When enabled, orders will be pushed to Bob Go for fulfillment.</comment>
                 </field>
-                <field id="enable_fulfillment_sync" translate="label" type="select" sortOrder="6" showInDefault="1" showInWebsite="1" showInStore="0">
+                <field id="enable_fulfillment_sync" translate="label" type="select" sortOrder="8" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Enable fulfillment sync</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <comment>When enabled, fulfillments from Bob Go will be synced back to create shipments in Magento.</comment>
                 </field>
-                <field id="notify_customer_on_shipment" translate="label" type="select" sortOrder="7" showInDefault="1" showInWebsite="1" showInStore="0">
+                <field id="notify_customer_on_shipment" translate="label" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Notify customer on shipment</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <comment>When enabled, customers will receive an email notification when a shipment is created.</comment>
                 </field>
-<!--                Hiding the `Enable Track My Order` setting for now-->
-                <field id="enable_track_order" translate="label" type="select" sortOrder="10" showInDefault="0" showInWebsite="0" showInStore="0">
+                <field id="send_display_options" translate="label comment" type="select" sortOrder="11" showInDefault="1" showInWebsite="1">
+                    <label>Send product options to Bob Go</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>Forwards the variant, custom options and personalisation text the customer chose, so they appear on the Bob Go picking list.</comment>
+                </field>
+                <field id="display_options_blocklist" translate="label comment" type="textarea" sortOrder="12" showInDefault="1" showInWebsite="1">
+                    <label>Product options not to send</label>
+                    <comment>Comma- or newline-separated option keys to withhold, e.g. internal_note. Everything else is sent, so newly added product options flow without changing this.</comment>
+                    <depends><field id="send_display_options">1</field></depends>
+                </field>
+                <field id="dimension_attribute_length" translate="label comment" type="text" sortOrder="13" showInDefault="1" showInWebsite="1">
+                    <label>Length attribute code</label>
+                    <comment>Product attribute holding length in cm. Magento has no native dimension attributes; leave blank if you don't have one.</comment>
+                </field>
+                <field id="dimension_attribute_width" translate="label" type="text" sortOrder="14" showInDefault="1" showInWebsite="1">
+                    <label>Width attribute code</label>
+                </field>
+                <field id="dimension_attribute_height" translate="label" type="text" sortOrder="15" showInDefault="1" showInWebsite="1">
+                    <label>Height attribute code</label>
+                </field>
+                <group id="origin" translate="label" sortOrder="16" showInDefault="1" showInWebsite="1">
+                    <label>Collection address (optional)</label>
+                    <comment>Goods rarely ship from the address on the invoice. Anything left blank here falls back to Stores &gt; Configuration &gt; General &gt; Store Information.</comment>
+                    <field id="company" translate="label" type="text" sortOrder="1" showInDefault="1" showInWebsite="1">
+                        <label>Company</label>
+                    </field>
+                    <field id="street" translate="label" type="text" sortOrder="2" showInDefault="1" showInWebsite="1">
+                        <label>Street address</label>
+                    </field>
+                    <field id="suburb" translate="label" type="text" sortOrder="3" showInDefault="1" showInWebsite="1">
+                        <label>Suburb</label>
+                    </field>
+                    <field id="city" translate="label" type="text" sortOrder="4" showInDefault="1" showInWebsite="1">
+                        <label>City</label>
+                    </field>
+                    <field id="region" translate="label comment" type="text" sortOrder="5" showInDefault="1" showInWebsite="1">
+                        <label>Province</label>
+                        <comment>Province code, e.g. GP or WC.</comment>
+                    </field>
+                    <field id="postcode" translate="label" type="text" sortOrder="6" showInDefault="1" showInWebsite="1">
+                        <label>Postal code</label>
+                    </field>
+                    <field id="country_id" translate="label comment" type="text" sortOrder="7" showInDefault="1" showInWebsite="1">
+                        <label>Country</label>
+                        <comment>Two-letter country code, e.g. ZA.</comment>
+                    </field>
+                </group>
+                <field id="suburb_label" translate="label comment" type="text" sortOrder="17" showInDefault="1" showInWebsite="1">
+                    <label>Suburb field label</label>
+                    <comment>Shown on the checkout address form. Defaults to "Suburb".</comment>
+                </field>
+                <field id="suburb_tooltip" translate="label comment" type="text" sortOrder="18" showInDefault="1" showInWebsite="1">
+                    <label>Suburb field help text</label>
+                    <comment>Defaults to "Required for shipping accuracy".</comment>
+                </field>
+<!-- Hidden: Track My Order feature not yet available -->
+                <field id="enable_track_order" translate="label" type="select" sortOrder="20" showInDefault="0" showInWebsite="0" showInStore="0">
                     <label>Enable Track my order</label>
                     <comment>When this setting is enabled, your customers will be presented with a page to track orders.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>

@@ -2,8 +2,20 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Cron:etc/crontab.xsd">
     <group id="default">
-        <job name="bobgo_fulfillment_sync" instance="BobGroup\BobGo\Service\FulfillmentCronService" method="execute">
-            <schedule>*/15 * * * *</schedule>
+        <!--
+            Drains the order-push outbox. Every minute, because this is the path
+            an order takes to reach Bob Go after checkout: the observer only
+            queues, this sends. Anything longer is latency the merchant feels.
+        -->
+        <job name="bobgo_push_orders" instance="BobGroup\BobGo\Cron\PushOrders" method="execute">
+            <schedule>* * * * *</schedule>
+        </job>
+        <job name="bobgo_reconcile_fulfillments" instance="BobGroup\BobGo\Cron\Reconcile" method="execute">
+            <schedule>0 * * * *</schedule>
+        </job>
+        <!-- Daily at 03:15 UTC — off-peak for most SA-facing stores. -->
+        <job name="bobgo_prune_sync_log" instance="BobGroup\BobGo\Cron\PruneSyncLog" method="execute">
+            <schedule>15 3 * * *</schedule>
         </job>
     </group>
 </config>

@@ -1,0 +1,90 @@
+parameters:
+    level: 2
+    paths:
+        - Api
+        - Block
+        - Controller
+        - Cron
+        - Helper
+        - Model
+        - Observer
+        - Plugin
+        - Service
+    excludePaths:
+        - vendor/*
+        - Test/*
+    bootstrapFiles:
+        - Test/stubs/autoload-prepend.php
+        - Test/bootstrap.php
+    treatPhpDocTypesAsCertain: false
+    reportUnmatchedIgnoredErrors: false
+    ignoreErrors:
+        # -- Stub-environment noise (real APIs that exist in Magento at runtime
+        # but aren't declared in our minimal test stubs)
+        - '#Method Magento\\.*::.*\(\) invoked with \d+ parameters?, 0 required#'
+        - '#Call to method \w+\(\) on an unknown class .*Factory\.#'
+        - '#unknown class .*Factory#'
+        - '#has invalid type .*Factory\.#'
+        - '#Class .*BobGroup\\BobGo\\.* extends unknown class Magento\\#'
+        - '#Class .*BobGroup\\BobGo\\.* implements unknown interface Magento\\#'
+        - '#calls .* but BobGroup\\BobGo\\.* does not extend any class#'
+        - '#Access to an undefined property BobGroup\\BobGo\\.*::\$(messageManager|_logger|_scopeConfig|_rateErrorFactory|_rateFactory|_rateMethodFactory|_request|_trackFactory|_trackStatusFactory|_numBoxes|_debugReplacePrivateDataKeys|stockRegistry)#'
+        - '#Call to an undefined method BobGroup\\BobGo\\.*::(getUrl|getRequest|getStoreConfig|getConfigData|getConfigFlag|isActive|getAllItems|_redirect|isZipCodeRequired)#'
+        - '#PHPDoc tag @var for variable .* contains unknown class Magento\\#'
+        - '#PHPDoc tag @var for variable .* contains unknown class BobGroup\\BobGo\\Model\\Carrier\\(Store|Item)#'
+        - '#Variable \$\w+ in PHPDoc tag @var does not match any variable in the foreach loop#'
+        # Magento OrderInterface vs concrete Order: real Order class exposes
+        # canShip()/getState()/getAllItems()/getExtensionAttributes() but our
+        # stub only stubs the interface.
+        - '#Call to an undefined method Magento\\Sales\\Api\\Data\\OrderInterface::(canShip|getState|getAllItems|getExtensionAttributes|setExtensionAttributes)\(\)#'
+        # RateRequest extends DataObject so getDest*/getAllItems work via __call.
+        - '#Call to an undefined method Magento\\Quote\\Model\\Quote\\Address\\RateRequest::#'
+        # Quote\Item: same — magic methods on DataObject base.
+        - '#Call to (an undefined )?method (getSku|getName|getItemId|getQty|getPrice|getWeight|getProduct|getStore|getBaseUrl)\(\) on an unknown class Magento\\(Quote|Sales)\\#'
+        - '#Call to an undefined method Magento\\Quote\\Model\\Quote\\Item::#'
+        # AbstractCarrier base constants we inherit.
+        - '#Access to undefined constant .*::(HANDLING_TYPE_PERCENT|DEBUG_KEYS_MASK)#'
+        # Result/Redirect/Page/Status — Magento controller return types and tracking.
+        - '#has invalid return type Magento\\Framework\\Controller\\Result\\#'
+        - '#has invalid return type Magento\\Framework\\View\\Result\\#'
+        - '#has invalid return type Magento\\Shipping\\Model\\Tracking\\#'
+        - '#Call to an undefined static method Magento\\Framework\\View\\Element\\Html\\Link\\Current::_toHtml#'
+        # Magento class types used as constructor / plugin signatures — exist in real Magento.
+        - '#has invalid type Magento\\Framework\\View\\Element\\Template\\Context#'
+        - '#has invalid type Magento\\Framework\\App\\DefaultPathInterface#'
+        - '#has invalid type Magento\\Checkout\\Block\\Checkout\\LayoutProcessor#'
+        - '#has invalid type Magento\\Sales\\Api\\ShipmentRepositoryInterface#'
+        - '#has invalid type Magento\\Framework\\Data\\Form\\FormKey#'
+        - '#has invalid type Magento\\Framework\\Data\\Form\\FormKey\\Validator#'
+        - '#has invalid type Magento\\Quote\\Model\\Quote\\Address\\ToOrderAddress#'
+        - '#has invalid type Magento\\Quote\\Api\\Data\\AddressInterface#'
+        - '#has invalid type Magento\\Sales\\Api\\Data\\OrderAddressExtensionFactory#'
+        - '#Property BobGroup\\BobGo\\.* has unknown class Magento\\Sales\\Api\\ShipmentRepositoryInterface as its type#'
+        - '#Property BobGroup\\BobGo\\.* has unknown class Magento\\Framework\\Data\\Form\\FormKey as its type#'
+        - '#Property BobGroup\\BobGo\\.* has unknown class Magento\\Framework\\Data\\Form\\FormKey\\Validator as its type#'
+        - '#Property BobGroup\\BobGo\\.* has unknown class Magento\\Sales\\Api\\Data\\OrderAddressExtensionFactory as its type#'
+        - '#Call to an undefined method BobGroup\\BobGo\\Block\\Adminhtml\\.*::escapeHtml(Attr)?#'
+        # Backend page result: Magento\Backend\Model\View\Result\Page, only the
+        # base controller is stubbed.
+        - '#has invalid return type Magento\\Backend\\Model\\View\\Result\\Page#'
+        - '#Call to method (setActiveMenu|getConfig)\(\) on an unknown class Magento\\Backend\\Model\\View\\Result\\Page#'
+        - '#Call to method getFormKey\(\) on an unknown class Magento\\Framework\\Data\\Form\\FormKey#'
+        - '#Call to method validate\(\) on an unknown class Magento\\Framework\\Data\\Form\\FormKey\\Validator#'
+        - '#Call to (an undefined |)method (getExtensionAttributes|setExtensionAttributes|getCustomAttribute|getData|setData|create)\(\) on an unknown class Magento\\(Quote|Sales)\\#'
+        - '#Call to an undefined method Magento\\Sales\\Api\\Data\\OrderAddressInterface::(getExtensionAttributes|setExtensionAttributes|getCustomAttribute|getData|setData)#'
+        - '#Call to an undefined method Magento\\Quote\\Api\\Data\\AddressInterface::(getExtensionAttributes|getCustomAttribute|getData)#'
+        - '#Access to an undefined property BobGroup\\BobGo\\Model\\Carrier\\BobGo::\$_regionFactory#'
+        - '#Call to method getId\(\) on an unknown class Magento\\Directory\\Model\\Region#'
+        - '#Call to method (getCode|getName)\(\) on an unknown class Magento\\Directory\\Model\\Region#'
+        # Resource model methods inherited from AbstractDb — our stub omits them.
+        - '#Call to an undefined method BobGroup\\BobGo\\Model\\ResourceModel\\SyncLog::(getConnection|getMainTable|delete)\(\)#'
+        - '#Caught class Magento\\Framework\\Exception\\AlreadyExistsException not found#'
+        # OrderAddressInterface inherits getData()/getCustomAttribute() via the AbstractExtensibleObject base — our stub interface omits them.
+        - '#Call to an undefined method Magento\\Sales\\Api\\Data\\OrderAddressInterface::(getData|getCustomAttribute)#'
+        # ShipmentRepositoryInterface stubs lack the methods we exercise.
+        - '#Call to an undefined method Magento\\Sales\\Api\\ShipmentRepositoryInterface::#'
+        # Order::STATE_COMPLETE referenced through the stub Order class
+        - '#Access to undefined constant Magento\\Sales\\Model\\Order::STATE_COMPLETE#'
+        # ProductInterface is implemented by Product, which extends AbstractModel
+        # and so has getData(); our stub only stubs the interface.
+        - '#Call to an undefined method Magento\\Catalog\\Api\\Data\\ProductInterface::getData\(\)#'

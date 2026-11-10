@@ -1,77 +1,62 @@
 <?php
+declare(strict_types=1);
 
 namespace BobGroup\BobGo\Observer;
 
-use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Event\Observer;
-use Psr\Log\LoggerInterface;
+use Magento\Framework\Event\ObserverInterface;
 
 /**
- * Simplifies the shipping description before an order is placed.
+ * Simplifies the shipping description on Bob Go orders before they are placed.
  *
  * Magento stores the full carrier + method title (e.g. "Bob Go - Delivery in 3 - 5 days - Standard Delivery").
  * This observer extracts only the method title portion after the last " - " separator
  * so the stored description is cleaner (e.g. "Standard Delivery").
+ *
+ * Only runs for orders shipped by the Bob Go carrier — descriptions for other
+ * carriers (DHL, UPS, flat rate, etc.) that happen to contain " - " are left alone.
  */
 class ModifyShippingDescription implements ObserverInterface
 {
     public const CODE = 'bobgo';
 
-    /**
-     * @var LoggerInterface
-     */
-    protected $logger;
+    private const DESCRIPTION_SEPARATOR = ' - ';
 
     /**
-     * @param LoggerInterface $logger
-     */
-    public function __construct(LoggerInterface $logger)
-    {
-        $this->logger = $logger;
-    }
-
-    /**
-     * Extract the method title from the shipping description before order placement.
-     *
      * @param Observer $observer
      * @return void
      */
-    public function execute(Observer $observer)
+    public function execute(Observer $observer): void
     {
-        // Get the order object from the event
         $order = $observer->getEvent()->getOrder();
+        if ($order === null) {
+            return;
+        }
 
-        // Get the current shipping description
-        $shippingDescription = $order->getShippingDescription();
+        $method = (string) ($order->getShippingMethod() ?: '');
+        if (strpos($method, self::CODE . '_') !== 0) {
+            return;
+        }
 
-        // Get the method title from the shipping description
-        $methodTitle = $this->extractMethodTitle($shippingDescription);
+        $description = $order->getShippingDescription();
+        if ($description === null || $description === '') {
+            return;
+        }
 
-        // Set the new shipping description based only on MethodTitle
-        $newDescription = $methodTitle;
-
-        // Update the shipping description in the order
-        $order->setShippingDescription($newDescription);
+        $order->setShippingDescription($this->extractMethodTitle((string) $description));
     }
 
     /**
-     * Helper function to extract the method title from the original shipping description
-     *
-     * @param string $shippingDescription
-     * @return string
+     * Extract the method title after the last " - " separator, or return the full description as fallback.
      */
-    private function extractMethodTitle($shippingDescription)
+    private function extractMethodTitle(string $shippingDescription): string
     {
-        // Find the position of the last dash in the string
-        $lastDashPosition = strrpos($shippingDescription, ' - ');
+        $lastSeparatorPos = strrpos($shippingDescription, self::DESCRIPTION_SEPARATOR);
 
-        // If a dash is found, extract the part after the last dash
-        if ($lastDashPosition !== false) {
-            return trim(substr($shippingDescription, $lastDashPosition + 3)); // +3 to skip the ' - ' part
+        if ($lastSeparatorPos !== false) {
+            return trim(substr($shippingDescription, $lastSeparatorPos + strlen(self::DESCRIPTION_SEPARATOR)));
         }
 
-        // If no dash is found, return the full description (fallback)
         return $shippingDescription;
     }
-
 }

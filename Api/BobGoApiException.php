@@ -40,7 +40,7 @@ class BobGoApiException extends LocalizedException
         int $statusCode = 0,
         string $responseBody = '',
         string $endpoint = '',
-        \Exception $previous = null
+        ?\Exception $previous = null
     ) {
         $this->statusCode = $statusCode;
         $this->responseBody = $responseBody;

@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 
 namespace BobGroup\BobGo\Block;
 
@@ -11,12 +12,12 @@ use Magento\Framework\Registry;
  * Retrieves shipment tracking data from the Magento registry (populated by
  * the Tracking\Index controller) and makes it available to the template.
  */
-class TrackingBlock extends \Magento\Framework\View\Element\Template
+class TrackingBlock extends Template
 {
     /**
      * @var Registry
      */
-    protected $registry;
+    private Registry $registry;
 
     /**
      * @param Template\Context $context
@@ -37,9 +38,8 @@ class TrackingBlock extends \Magento\Framework\View\Element\Template
      *
      * @return array<string, mixed>|null Tracking data array, or null if not available
      */
-    public function getResponse()
+    public function getTrackingData(): ?array
     {
         return $this->registry->registry('shipment_data');
     }
 }
-

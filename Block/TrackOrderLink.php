@@ -1,7 +1,9 @@
 <?php
+declare(strict_types=1);
 
 namespace BobGroup\BobGo\Block;
 
+use BobGroup\BobGo\Model\Config\ApiConfig;
 use Magento\Framework\View\Element\Html\Link\Current;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 
@@ -16,7 +18,7 @@ class TrackOrderLink extends Current
     /**
      * @var ScopeConfigInterface
      */
-    protected $scopeConfig;
+    private ScopeConfigInterface $bobgoScopeConfig;
 
     /**
      * @param \Magento\Framework\View\Element\Template\Context $context
@@ -30,7 +32,7 @@ class TrackOrderLink extends Current
         \Magento\Framework\App\DefaultPathInterface $defaultPath,
         array $data = []
     ) {
-        $this->scopeConfig = $scopeConfig;
+        $this->bobgoScopeConfig = $scopeConfig;
         parent::__construct($context, $defaultPath, $data);
     }
 
@@ -39,23 +41,17 @@ class TrackOrderLink extends Current
      *
      * @return string HTML output, or empty string if feature is disabled
      */
-    protected function _toHtml()
+    protected function _toHtml(): string
     {
-        // Check if the Track My Order feature is enabled
-        $isEnabled = $this->scopeConfig->isSetFlag(
-            'carriers/bobgo/enable_track_order',
+        $isEnabled = $this->bobgoScopeConfig->isSetFlag(
+            ApiConfig::XML_PATH_ENABLE_TRACK_ORDER,
             \Magento\Store\Model\ScopeInterface::SCOPE_STORE
         );
 
-        // Return an empty string if the feature is disabled
         if (!$isEnabled) {
             return '';
         }
 
-        // Use the parent class's rendering method
         return parent::_toHtml();
     }
 }
-
-
-

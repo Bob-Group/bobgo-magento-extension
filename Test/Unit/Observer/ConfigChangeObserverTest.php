@@ -9,6 +9,7 @@ use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Observer\ConfigChangeObserver;
 use BobGroup\BobGo\Service\WebhookSubscriptionService;
 use Magento\Framework\Event\Observer;
+use Magento\Framework\App\Config\ReinitableConfigInterface;
 use Magento\Framework\Message\ManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -33,6 +34,9 @@ class ConfigChangeObserverTest extends TestCase
     /** @var ManagerInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $messageManagerMock;
 
+    /** @var ReinitableConfigInterface|\PHPUnit\Framework\MockObject\MockObject */
+    private $reinitableConfigMock;
+
     protected function setUp(): void
     {
         $this->apiClientMock = $this->createMock(BobGoApiClient::class);
@@ -40,23 +44,37 @@ class ConfigChangeObserverTest extends TestCase
         $this->webhookServiceMock = $this->createMock(WebhookSubscriptionService::class);
         $this->loggerMock = $this->createMock(LoggerInterface::class);
         $this->messageManagerMock = $this->createMock(ManagerInterface::class);
+        $this->reinitableConfigMock = $this->createMock(ReinitableConfigInterface::class);
 
         $this->observer = new ConfigChangeObserver(
             $this->apiClientMock,
             $this->apiConfigMock,
             $this->webhookServiceMock,
             $this->loggerMock,
-            $this->messageManagerMock
+            $this->messageManagerMock,
+            $this->reinitableConfigMock
         );
+    }
+
+    /**
+     * Create an Observer mock with an Event that returns given changed_paths.
+     */
+    private function createObserverWithChangedPaths(?array $changedPaths): Observer
+    {
+        $eventMock = $this->createMock(\Magento\Framework\Event::class);
+        $eventMock->method('getData')
+            ->with('changed_paths')
+            ->willReturn($changedPaths);
+
+        $observerMock = $this->createMock(Observer::class);
+        $observerMock->method('getEvent')->willReturn($eventMock);
+
+        return $observerMock;
     }
 
     public function testApiKeyChangeTestsConnectivity(): void
     {
-        $observerMock = $this->createMock(Observer::class);
-        $observerMock->method('getEvent')->willReturnSelf();
-        $observerMock->method('getData')
-            ->with('changed_paths')
-            ->willReturn(['carriers/bobgo/api_key']);
+        $observerMock = $this->createObserverWithChangedPaths(['carriers/bobgo/api_key']);
 
         $this->apiConfigMock->method('isConfigured')->willReturn(true);
         $this->apiConfigMock->method('getEnvironment')->willReturn('sandbox');
@@ -75,11 +93,7 @@ class ConfigChangeObserverTest extends TestCase
 
     public function testApiKeyChangeConnectivityFailure(): void
     {
-        $observerMock = $this->createMock(Observer::class);
-        $observerMock->method('getEvent')->willReturnSelf();
-        $observerMock->method('getData')
-            ->with('changed_paths')
-            ->willReturn(['carriers/bobgo/api_key']);
+        $observerMock = $this->createObserverWithChangedPaths(['carriers/bobgo/api_key']);
 
         $this->apiConfigMock->method('isConfigured')->willReturn(true);
         $this->apiConfigMock->method('isFulfillmentSyncEnabled')->willReturn(false);
@@ -95,11 +109,7 @@ class ConfigChangeObserverTest extends TestCase
 
     public function testActiveToggleTestsRac(): void
     {
-        $observerMock = $this->createMock(Observer::class);
-        $observerMock->method('getEvent')->willReturnSelf();
-        $observerMock->method('getData')
-            ->with('changed_paths')
-            ->willReturn(['carriers/bobgo/active']);
+        $observerMock = $this->createObserverWithChangedPaths(['carriers/bobgo/active']);
 
         $this->apiConfigMock->method('isActive')->willReturn(true);
         $this->apiConfigMock->method('isConfigured')->willReturn(true);
@@ -117,11 +127,7 @@ class ConfigChangeObserverTest extends TestCase
 
     public function testActiveToggleNoApiKey(): void
     {
-        $observerMock = $this->createMock(Observer::class);
-        $observerMock->method('getEvent')->willReturnSelf();
-        $observerMock->method('getData')
-            ->with('changed_paths')
-            ->willReturn(['carriers/bobgo/active']);
+        $observerMock = $this->createObserverWithChangedPaths(['carriers/bobgo/active']);
 
         $this->apiConfigMock->method('isActive')->willReturn(true);
         $this->apiConfigMock->method('isConfigured')->willReturn(false);
@@ -135,11 +141,7 @@ class ConfigChangeObserverTest extends TestCase
 
     public function testFulfillmentSyncEnableSubscribesWebhooks(): void
     {
-        $observerMock = $this->createMock(Observer::class);
-        $observerMock->method('getEvent')->willReturnSelf();
-        $observerMock->method('getData')
-            ->with('changed_paths')
-            ->willReturn(['carriers/bobgo/enable_fulfillment_sync']);
+        $observerMock = $this->createObserverWithChangedPaths(['carriers/bobgo/enable_fulfillment_sync']);
 
         $this->apiConfigMock->method('isConfigured')->willReturn(true);
         $this->apiConfigMock->method('isFulfillmentSyncEnabled')->willReturn(true);
@@ -155,11 +157,7 @@ class ConfigChangeObserverTest extends TestCase
 
     public function testFulfillmentSyncDisableUnsubscribesWebhooks(): void
     {
-        $observerMock = $this->createMock(Observer::class);
-        $observerMock->method('getEvent')->willReturnSelf();
-        $observerMock->method('getData')
-            ->with('changed_paths')
-            ->willReturn(['carriers/bobgo/enable_fulfillment_sync']);
+        $observerMock = $this->createObserverWithChangedPaths(['carriers/bobgo/enable_fulfillment_sync']);
 
         $this->apiConfigMock->method('isConfigured')->willReturn(true);
         $this->apiConfigMock->method('isFulfillmentSyncEnabled')->willReturn(false);
@@ -172,11 +170,7 @@ class ConfigChangeObserverTest extends TestCase
 
     public function testNoChangedPathsDoesNothing(): void
     {
-        $observerMock = $this->createMock(Observer::class);
-        $observerMock->method('getEvent')->willReturnSelf();
-        $observerMock->method('getData')
-            ->with('changed_paths')
-            ->willReturn(null);
+        $observerMock = $this->createObserverWithChangedPaths(null);
 
         $this->apiClientMock->expects($this->never())->method('get');
         $this->apiClientMock->expects($this->never())->method('post');

@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Backend:etc/menu.xsd">
+    <menu>
+        <add id="BobGroup_BobGo::sync_log"
+             title="Bob Go Sync Log"
+             module="BobGroup_BobGo"
+             sortOrder="100"
+             parent="Magento_Sales::sales_operation"
+             action="bobgo/synclog/index"
+             resource="BobGroup_BobGo::sync_log"/>
+    </menu>
+</config>
