@@ -478,6 +478,42 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
 
         /** Get all items in cart */
         $items = $request->getAllItems();
+
+        // A store upgraded from 1.0.x has no API key. 1.0.x priced checkout
+        // through a keyless route that recognises the store by its host, so keep
+        // using that route, in 1.0.x's shape, until a key is saved. Without it,
+        // upgrading takes Bob Go off the checkout.
+        if (!$this->apiConfig->isConfigured()) {
+            $this->_getRates([
+                'identifier' => $this->getBaseUrl(),
+                'rate' => [
+                    'origin' => [
+                        'company' => $storeName,
+                        'address1' => $originStreet1,
+                        'address2' => $originStreet2,
+                        'city' => $originCity,
+                        'suburb' => $originSuburb,
+                        'province' => $originRegion,
+                        'country_code' => $originCountry,
+                        'postal_code' => $originStreet,
+                    ],
+                    'destination' => [
+                        'company' => $destComp,
+                        'address1' => $destStreet1,
+                        'address2' => $destStreet2,
+                        'suburb' => $destSuburb,
+                        'city' => $destCity,
+                        'province' => $destRegion,
+                        'country_code' => $destCountry,
+                        'postal_code' => $destination,
+                    ],
+                    'items' => $this->getKeylessItems($items, $weightUnit),
+                ],
+            ], $result, true);
+
+            return $result;
+        }
+
         $itemsArray = [];
         $itemsArray = $this->getStoreItems($items, $weightUnit, $itemsArray);
 
@@ -990,11 +1026,12 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      *
      * @param array<string,mixed> $payload The payload for the API request.
      * @param Result $result The result object to append the rates.
+     * @param bool $keyless True for the 1.0.x keyless route and payload
      * @return void
      */
-    protected function _getRates(array $payload, Result $result): void
+    protected function _getRates(array $payload, Result $result, bool $keyless = false): void
     {
-        $rates = $this->uRates($payload);
+        $rates = $this->uRates($payload, $keyless);
 
         // Ensure $rates is an array before passing it to _formatRates
         if (is_array($rates)) {
@@ -1136,10 +1173,11 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
      * Build the payload for Bob Go API request and return the response.
      *
      * @param array<string,mixed> $payload The payload for the API request.
+     * @param bool $keyless True for the 1.0.x keyless route and payload
      * @return array<int|string, mixed>|null The decoded response, or null if the response could not be decoded
      * or is not an array.
      */
-    protected function uRates(array $payload): ?array
+    protected function uRates(array $payload, bool $keyless = false): ?array
     {
         $cached = $this->rateCache->load($payload);
         if ($cached !== null) {
@@ -1147,7 +1185,9 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         }
 
         try {
-            $rates = $this->apiClient->post('rates-at-checkout', $payload);
+            $rates = $keyless
+                ? $this->apiClient->postKeylessRates($payload)
+                : $this->apiClient->post('rates-at-checkout', $payload);
         } catch (BobGoApiException $e) {
             $this->_logger->error('Bob Go rates API error: ' . $e->getMessage());
             // Brief negative entry so an outage costs one call per 30s rather
@@ -1288,6 +1328,32 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         }
 
         return $itemsArray;
+    }
+
+    /**
+     * Cart items in the shape the keyless 1.0.x route expects: SKU, and weight in
+     * grams. Configurables are sent once, as the parent, as in getStoreItems().
+     *
+     * @param \Magento\Quote\Model\Quote\Item[] $items
+     * @return array<int,array<string,mixed>>
+     */
+    private function getKeylessItems(array $items, string $weightUnit): array
+    {
+        $keylessItems = [];
+        foreach ($items as $item) {
+            if ($this->isConfigurableChild($item)) {
+                continue;
+            }
+
+            $keylessItems[] = [
+                'sku' => $item->getSku(),
+                'quantity' => (float) $item->getQty(),
+                'price' => (float) $item->getPrice(),
+                'weight' => round($this->getItemWeight($weightUnit, $item)),
+            ];
+        }
+
+        return $keylessItems;
     }
 
     private function isConfigurableChild(\Magento\Quote\Model\Quote\Item $item): bool

@@ -510,6 +510,11 @@ Extract origin info from store configuration
   - general/locale/weight_unit (KGS or LBS)
          │
          ▼
+No API key? ── yes ──▶ keyless 1.0.x route: POST https://api.bobgo.co.za/rates-at-checkout/magento
+         │               { identifier: host without www./path, rate: { origin, destination, items } }
+         │               items: { sku, quantity, price, weight (grams) }; same response, same _formatRates()
+         │ no
+         ▼
 Build items array via getStoreItems()
   - For each cart item: { description, quantity, price, weight_kg, length_cm, width_cm, height_cm }
          │
