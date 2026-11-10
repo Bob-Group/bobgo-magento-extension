@@ -10,6 +10,7 @@ use BobGroup\BobGo\Service\FulfilmentSyncService;
 use BobGroup\BobGo\Service\InboundGuard;
 use BobGroup\BobGo\Service\SyncLogger;
 use BobGroup\BobGo\Service\TransientWebhookException;
+use Magento\Framework\Lock\LockManagerInterface;
 use Magento\Framework\Stdlib\DateTime\DateTime;
 use Magento\Sales\Api\Data\ShipmentItemCreationInterface;
 use Magento\Sales\Api\Data\ShipmentItemCreationInterfaceFactory;
@@ -49,6 +50,7 @@ class FulfilmentSyncServiceTest extends TestCase
     private $apiConfig;
     private $syncLogger;
     private $logger;
+    private $lockManager;
     /** @var InboundGuard */
     private $inboundGuard;
     /** @var array<int,\stdClass> */
@@ -103,6 +105,9 @@ class FulfilmentSyncServiceTest extends TestCase
                 return $item;
             });
 
+        $this->lockManager = $this->createMock(LockManagerInterface::class);
+        $this->lockManager->method('lock')->willReturn(true);
+
         $this->service = new FulfilmentSyncService(
             $this->apiClient,
             $this->orderRepository,
@@ -114,8 +119,42 @@ class FulfilmentSyncServiceTest extends TestCase
             $this->syncLogger,
             $this->inboundGuard,
             $dateTime,
-            $this->logger
+            $this->logger,
+            $this->lockManager
         );
+    }
+
+    // ------------------------------------------------------------ one sync at a time
+
+    /**
+     * Two syncs of one order at once both found no shipment and both created
+     * one. The second now waits for the first, and gives up to a retry.
+     */
+    public function testRefusesToRunWhileAnotherSyncHoldsTheOrder(): void
+    {
+        $lockManager = $this->createMock(LockManagerInterface::class);
+        $lockManager->method('lock')->willReturn(false);
+        $service = $this->serviceWithLock($lockManager);
+
+        $this->apiClient->expects($this->never())->method('get');
+
+        $this->expectException(TransientWebhookException::class);
+        $service->syncOrder($this->order(7, '987'));
+    }
+
+    public function testReleasesTheOrderLockEvenWhenTheSyncFails(): void
+    {
+        $order = $this->order(7, '987');
+        $this->apiClient->method('get')
+            ->willThrowException(new BobGoApiException('down', 503, '', 'order-fulfillments'));
+
+        $this->lockManager->expects($this->once())->method('unlock')->with('bobgo_fulfilment_sync_7');
+
+        try {
+            $this->service->syncOrder($order);
+        } catch (TransientWebhookException $e) {
+            // Expected; the lock is what this test is about.
+        }
     }
 
     // ------------------------------------------------------------ no link, no request
@@ -245,7 +284,44 @@ class FulfilmentSyncServiceTest extends TestCase
         $this->syncLogger->expects($this->once())->method('logOutboundFailure')
             ->with($this->anything(), ['order_id' => '987'], $exception, 7);
 
-        $this->assertFalse($this->service->syncOrder($order));
+        $this->expectException(TransientWebhookException::class);
+        $this->service->syncOrder($order);
+    }
+
+    /**
+     * A fetch that failed for a reason a retry can fix must not let the webhook
+     * answer 200: Bob Go would never redeliver, and the shipment would wait for
+     * reconciliation.
+     *
+     * @dataProvider retryableFetchFailures
+     */
+    public function testRetryableFetchFailureIsTransient(int $status): void
+    {
+        $this->apiClient->method('get')
+            ->willThrowException(new BobGoApiException('fetch failed', $status, '', 'order-fulfillments'));
+
+        $this->expectException(TransientWebhookException::class);
+        $this->service->syncOrder($this->order(7, '987'));
+    }
+
+    /**
+     * @return array<string,array{int}>
+     */
+    public function retryableFetchFailures(): array
+    {
+        return [
+            'no response' => [0],
+            'rate limited' => [429],
+            'server error' => [503],
+        ];
+    }
+
+    public function testPermanentFetchFailureIsNotRetried(): void
+    {
+        $this->apiClient->method('get')
+            ->willThrowException(new BobGoApiException('not found', 404, '', 'order-fulfillments'));
+
+        $this->assertFalse($this->service->syncOrder($this->order(7, '987')));
     }
 
     // ------------------------------------------------------------ shipment creation
@@ -702,7 +778,88 @@ class FulfilmentSyncServiceTest extends TestCase
         $this->service->syncOrder($order);
     }
 
+    /**
+     * A fulfilment that cannot be shipped used to abort the loop on every
+     * attempt, so the order's later fulfilments never got a shipment.
+     */
+    public function testOneFailingFulfilmentDoesNotBlockTheOthers(): void
+    {
+        $order = $this->order(7, '987');
+        $order->method('canShip')->willReturn(true);
+        $this->noShipmentsYet($order);
+        $order->method('getAllItems')->willReturn([$this->orderItem(21, 'A'), $this->orderItem(23, 'B')]);
+
+        $this->apiClient->method('get')->willReturn([
+            'order_fulfillments' => [
+                $this->fulfilmentWithItems([$this->realItemRow(3398, 19795, 21, 'A', 1)], 'TRK-A', 2814),
+                $this->fulfilmentWithItems([$this->realItemRow(3399, 19796, 23, 'B', 1)], 'TRK-B', 2815),
+            ],
+        ]);
+
+        $calls = 0;
+        $this->shipOrder->method('execute')->willReturnCallback(function () use (&$calls) {
+            $calls++;
+            if ($calls === 1) {
+                throw new \Exception('Deadlock found');
+            }
+            return 501;
+        });
+
+        try {
+            $this->service->syncOrder($order);
+            $this->fail('The failure should still surface, so a webhook is retried');
+        } catch (TransientWebhookException $e) {
+            $this->assertSame(2, $calls, 'The second fulfilment must still be shipped');
+        }
+    }
+
+    /**
+     * The merchant shipped the line by hand in Magento before Bob Go's
+     * fulfilment arrived. Asking ShipOrder for it again fails on every retry.
+     */
+    public function testSkipsAFulfilmentWhoseItemsAreAlreadyShipped(): void
+    {
+        $order = $this->order(7, '987');
+        $order->method('canShip')->willReturn(true);
+        $this->noShipmentsYet($order);
+        $shippedByHand = $this->createMock(\Magento\Sales\Model\Order\Item::class);
+        $shippedByHand->method('getItemId')->willReturn(21);
+        $shippedByHand->method('getSku')->willReturn('A');
+        $shippedByHand->method('getQtyToShip')->willReturn(0.0);
+        $shippedByHand->method('getData')->willReturn(null);
+        $order->method('getAllItems')->willReturn([$shippedByHand]);
+
+        $this->apiClient->method('get')->willReturn([
+            'order_fulfillments' => [
+                $this->fulfilmentWithItems([$this->realItemRow(3398, 19795, 21, 'A', 1)], 'TRK-A', 2814),
+            ],
+        ]);
+
+        $this->shipOrder->expects($this->never())->method('execute');
+
+        $this->assertTrue($this->service->syncOrder($order));
+    }
+
     // ----------------------------------------------------------------------- helpers
+
+    private function serviceWithLock(LockManagerInterface $lockManager): FulfilmentSyncService
+    {
+        $dateTime = $this->createMock(DateTime::class);
+        return new FulfilmentSyncService(
+            $this->apiClient,
+            $this->orderRepository,
+            $this->shipOrder,
+            $this->trackCreationFactory,
+            $this->itemCreationFactory,
+            $this->shipmentRepository,
+            $this->apiConfig,
+            $this->syncLogger,
+            $this->inboundGuard,
+            $dateTime,
+            $this->logger,
+            $lockManager
+        );
+    }
 
     /**
      * @return array<string,mixed>

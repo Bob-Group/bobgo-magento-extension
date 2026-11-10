@@ -7,6 +7,7 @@ use BobGroup\BobGo\Api\BobGoApiClient;
 use BobGroup\BobGo\Api\BobGoApiException;
 use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Model\SyncLog;
+use Magento\Framework\Lock\LockManagerInterface;
 use Magento\Framework\Stdlib\DateTime\DateTime;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\Data\ShipmentItemCreationInterfaceFactory;
@@ -60,6 +61,15 @@ class FulfilmentSyncService
     /** Keys under which a fulfilment record has carried its line items. */
     private const ITEM_KEYS = ['items', 'order_items', 'fulfillment_items', 'line_items'];
 
+    private const LOCK_PREFIX = 'bobgo_fulfilment_sync_';
+
+    /**
+     * Bob Go abandons a webhook delivery after 20 seconds and does not retry a
+     * timeout, and the fetch behind the lock can take 15. A webhook that cannot
+     * get the lock in time answers 500 instead, which Bob Go retries.
+     */
+    private const LOCK_WAIT_SECONDS = 5;
+
     private BobGoApiClient $apiClient;
     private OrderRepositoryInterface $orderRepository;
     private ShipOrderInterface $shipOrder;
@@ -71,6 +81,7 @@ class FulfilmentSyncService
     private InboundGuard $inboundGuard;
     private DateTime $dateTime;
     private LoggerInterface $logger;
+    private LockManagerInterface $lockManager;
 
     public function __construct(
         BobGoApiClient $apiClient,
@@ -83,8 +94,10 @@ class FulfilmentSyncService
         SyncLogger $syncLogger,
         InboundGuard $inboundGuard,
         DateTime $dateTime,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        LockManagerInterface $lockManager
     ) {
+        $this->lockManager = $lockManager;
         $this->apiClient = $apiClient;
         $this->orderRepository = $orderRepository;
         $this->shipOrder = $shipOrder;
@@ -107,9 +120,10 @@ class FulfilmentSyncService
      *        webhook body, used only as a fallback when the authoritative record
      *        doesn't enumerate its items (see resolveItemRows).
      * @return bool True when the fetch succeeded (whether or not anything changed)
-     * @throws TransientWebhookException When creating a shipment failed in a way
-     *         a retry could fix. Callers on the webhook path let this become a
-     *         500 so Bob Go retries; the cron path catches it per order.
+     * @throws TransientWebhookException When the fetch or a shipment failed in a
+     *         way a retry could fix, or another sync of this order held the lock.
+     *         Callers on the webhook path let this become a 500 so Bob Go
+     *         retries; the cron path catches it per order.
      */
     public function syncOrder(OrderInterface $order, array $webhookItems = []): bool
     {
@@ -122,20 +136,33 @@ class FulfilmentSyncService
             return false;
         }
 
-        // Everything below writes Bob Go's own state back onto the order, and every
-        // order save queues an outbound push. Guarding here rather than at each
-        // caller is what makes this structural: the webhook controller already
-        // marks its deliveries, but reconciliation — cron and the admin Resync
-        // button — came through unmarked, so each hourly pass re-queued every order
-        // it touched and the next push cron PATCHed them all back with nothing
-        // changed. On a store with real volume that is a PATCH per order per hour,
-        // forever. The guard nests, so the webhook path is unaffected.
-        return (bool) $this->inboundGuard->around(
-            (int) $order->getEntityId(),
-            function () use ($order, $webhookItems, $bobgoOrderId): bool {
-                return $this->refresh($order, $webhookItems, (string) $bobgoOrderId);
-            }
-        );
+        // One sync per order at a time. Two webhooks for the same shipment, or a
+        // webhook and the hourly reconcile, otherwise both find no shipment and
+        // both create one. The lock is taken before the order's shipments are
+        // first read, because Magento caches that collection on the order.
+        $lockName = self::LOCK_PREFIX . (int) $order->getEntityId();
+        if (!$this->lockManager->lock($lockName, self::LOCK_WAIT_SECONDS)) {
+            throw new TransientWebhookException('Another Bob Go sync of this order is still running');
+        }
+
+        try {
+            // Everything below writes Bob Go's own state back onto the order, and every
+            // order save queues an outbound push. Guarding here rather than at each
+            // caller is what makes this structural: the webhook controller already
+            // marks its deliveries, but reconciliation — cron and the admin Resync
+            // button — came through unmarked, so each hourly pass re-queued every order
+            // it touched and the next push cron PATCHed them all back with nothing
+            // changed. On a store with real volume that is a PATCH per order per hour,
+            // forever. The guard nests, so the webhook path is unaffected.
+            return (bool) $this->inboundGuard->around(
+                (int) $order->getEntityId(),
+                function () use ($order, $webhookItems, $bobgoOrderId): bool {
+                    return $this->refresh($order, $webhookItems, (string) $bobgoOrderId);
+                }
+            );
+        } finally {
+            $this->lockManager->unlock($lockName);
+        }
     }
 
     /**
@@ -162,6 +189,15 @@ class FulfilmentSyncService
                 $e,
                 (int) $order->getEntityId()
             );
+            if ($e->isTransient()) {
+                // Returning false here let fulfillment/created answer 200, so Bob
+                // Go never retried and the shipment waited for reconciliation.
+                throw new TransientWebhookException(
+                    'Bob Go fulfilment fetch failed: ' . $e->getMessage(),
+                    0,
+                    $e
+                );
+            }
             return false;
         }
 
@@ -223,6 +259,11 @@ class FulfilmentSyncService
         // records sharing a tracking number would then produce two shipments.
         $created = [];
 
+        // One fulfilment that cannot be shipped must not stop the others: a
+        // failure on the first used to abort the loop on every attempt, so later
+        // fulfilments on the same order never got a shipment at all.
+        $firstFailure = null;
+
         foreach ($fulfilments as $fulfilment) {
             if ($this->isCancelled($fulfilment)) {
                 // Bob Go keeps cancelled fulfilment records. Creating a shipment
@@ -230,9 +271,18 @@ class FulfilmentSyncService
                 // pinned WooCommerce orders on "shipped" forever.
                 continue;
             }
-            $this->applyFulfilment($order, $fulfilment, $webhookItems, $liveCount, $created);
+            try {
+                $this->applyFulfilment($order, $fulfilment, $webhookItems, $liveCount, $created);
+            } catch (TransientWebhookException $e) {
+                $firstFailure = $firstFailure ?? $e;
+            }
+        }
+
+        if ($firstFailure !== null) {
+            throw $firstFailure;
         }
     }
+
 
     /**
      * @param array<string,mixed> $fulfilment
@@ -295,7 +345,17 @@ class FulfilmentSyncService
             return;
         }
 
-        $items = $this->buildShipmentItems($order, $itemRows);
+        $alreadyShipped = 0;
+        $items = $this->buildShipmentItems($order, $itemRows, $alreadyShipped);
+        if (!empty($itemRows) && empty($items) && $alreadyShipped > 0) {
+            // Everything this fulfilment names is already shipped in Magento.
+            // Nothing to create, and nothing a retry would change.
+            $this->logger->info('Bob Go fulfilment sync: items already shipped in Magento, skipping', [
+                'order_id' => $order->getEntityId(),
+                'fulfillment_id' => $fulfilmentId,
+            ]);
+            return;
+        }
         if (!empty($itemRows) && empty($items)) {
             // ShipOrderInterface treats an empty item list as "ship everything",
             // so a fulfilment naming items we can't match must not fall through
@@ -533,10 +593,12 @@ class FulfilmentSyncService
      * a per-SKU queue so duplicate SKUs don't collapse onto one line.
      *
      * @param array<int,array<string,mixed>> $itemRows
+     * @param int $alreadyShipped Set to the number of matched lines with nothing left to ship
      * @return array<\Magento\Sales\Api\Data\ShipmentItemCreationInterface>
      */
-    private function buildShipmentItems(OrderInterface $order, array $itemRows): array
+    private function buildShipmentItems(OrderInterface $order, array $itemRows, int &$alreadyShipped = 0): array
     {
+        $alreadyShipped = 0;
         if (empty($itemRows)) {
             return [];
         }
@@ -600,13 +662,17 @@ class FulfilmentSyncService
         $items = [];
         foreach ($qtyByItemId as $itemId => $qty) {
             // Clamp with Magento's own notion of what is left to ship, so a
-            // collapsed bundle cannot ask for more than the line holds.
+            // collapsed bundle cannot ask for more than the line holds. A line
+            // with nothing left (shipped by hand in Magento, say) is left out:
+            // asking ShipOrder for it fails on every retry.
             $orderItem = $resolved[$itemId];
-            if (method_exists($orderItem, 'getQtyToShip')) {
-                $shippable = (float) $orderItem->getQtyToShip();
-                if ($shippable > 0.0 && $qty > $shippable) {
-                    $qty = $shippable;
+            $remaining = method_exists($orderItem, 'getQtyToShip') ? $orderItem->getQtyToShip() : null;
+            if (is_numeric($remaining)) {
+                if ((float) $remaining <= 0.0) {
+                    $alreadyShipped++;
+                    continue;
                 }
+                $qty = min($qty, (float) $remaining);
             }
 
             $shipmentItem = $this->itemCreationFactory->create();
