@@ -32,6 +32,10 @@
                     <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
                     <comment>Enter your Bob Go API key.</comment>
                 </field>
+                <field id="channel_identifier" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Channel identifier</label>
+                    <comment>The store address your Bob Go channel was set up with, without https:// (for example shop.co.za). Bob Go must match it exactly, www. included, or it rejects the API key. Leave empty to use this store's URL.</comment>
+                </field>
                 <field id="webhook_secret" translate="label comment" type="obscure" sortOrder="9" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Webhook Signing Secret</label>
                     <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>

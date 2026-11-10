@@ -37,6 +37,9 @@ class ApiConfig
     /** @var string Config path for the carrier active toggle (rates at checkout) */
     const XML_PATH_ACTIVE = 'carriers/bobgo/active';
 
+    /** @var string Config path for the channel identifier override */
+    const XML_PATH_CHANNEL_IDENTIFIER = 'carriers/bobgo/channel_identifier';
+
     /** @var string Config path for the track order feature toggle */
     const XML_PATH_ENABLE_TRACK_ORDER = 'carriers/bobgo/enable_track_order';
 
@@ -175,5 +178,21 @@ class ApiConfig
     public function isActive(): bool
     {
         return $this->scopeConfig->isSetFlag(self::XML_PATH_ACTIVE, ScopeInterface::SCOPE_STORE);
+    }
+
+    /**
+     * The channel identifier the merchant set to match their Bob Go channel, or
+     * null to use the store URL. Bob Go ignores a scheme and a trailing slash and
+     * compares the rest exactly, so only those are removed.
+     */
+    public function getChannelIdentifier(): ?string
+    {
+        $value = $this->scopeConfig->getValue(self::XML_PATH_CHANNEL_IDENTIFIER, ScopeInterface::SCOPE_STORE);
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $identifier = rtrim((string) preg_replace('#^https?://#i', '', trim($value)), '/');
+        return $identifier === '' ? null : $identifier;
     }
 }

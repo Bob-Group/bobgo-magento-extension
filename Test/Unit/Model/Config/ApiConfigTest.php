@@ -46,6 +46,38 @@ class ApiConfigTest extends TestCase
         $this->assertSame('test-api-key-123', $this->apiConfig->getApiKey());
     }
 
+    /**
+     * Bob Go ignores a scheme and a trailing slash and compares the rest
+     * exactly, so only those are removed: www. and a path are kept.
+     *
+     * @dataProvider channelIdentifierValues
+     * @param mixed $stored
+     */
+    public function testChannelIdentifier($stored, ?string $expected): void
+    {
+        $this->scopeConfigMock->method('getValue')
+            ->with(ApiConfig::XML_PATH_CHANNEL_IDENTIFIER, ScopeInterface::SCOPE_STORE)
+            ->willReturn($stored);
+
+        $this->assertSame($expected, $this->apiConfig->getChannelIdentifier());
+    }
+
+    /**
+     * @return array<string,array{0:mixed,1:?string}>
+     */
+    public function channelIdentifierValues(): array
+    {
+        return [
+            'not set' => [null, null],
+            'empty' => ['', null],
+            'only spaces' => ['   ', null],
+            'bare host' => ['shop.co.za', 'shop.co.za'],
+            'scheme and trailing slash removed' => ['https://shop.co.za/', 'shop.co.za'],
+            'www kept' => [' www.shop.co.za ', 'www.shop.co.za'],
+            'path kept' => ['http://example.com/shop/', 'example.com/shop'],
+        ];
+    }
+
     public function testGetApiKeyReturnsNullWhenEmpty(): void
     {
         $this->scopeConfigMock->method('getValue')
