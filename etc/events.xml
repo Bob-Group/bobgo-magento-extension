@@ -3,6 +3,10 @@
     <event name="sales_order_save_after">
         <observer name="bobgo_order_save_observer" instance="BobGroup\BobGo\Observer\OrderSaveObserver"/>
     </event>
+    <!-- After commit, not after save: Bob Go fetches the order as soon as it is told. -->
+    <event name="sales_order_save_commit_after">
+        <observer name="bobgo_legacy_order_notification" instance="BobGroup\BobGo\Observer\LegacyOrderNotification"/>
+    </event>
     <event name="sales_order_place_before">
         <observer name="modify_shipping_description" instance="BobGroup\BobGo\Observer\ModifyShippingDescription"/>
     </event>

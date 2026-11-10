@@ -172,6 +172,8 @@ For the destination side, customers fill in a suburb field that the extension in
 
 ### Order push
 
+**Upgraded from 1.0.x?** Until order push is on with an API key, a store that had 1.0.x's *Enable webhooks* and *Webhook authentication key* saved keeps notifying Bob Go the 1.0.x way: after each order save, `Observer\LegacyOrderNotification` posts a small signed `order_updated` notice to `https://api.bobgo.co.za/webhook/channel/magento`, and Bob Go fetches the order itself. Those two settings are no longer shown in the admin; the saved values are still used. It stops as soon as order push is enabled with a key, so an order is never announced both ways.
+
 Order push is **asynchronous**. Nothing talks to Bob Go while a customer or an admin
 is waiting.
 
@@ -505,6 +507,7 @@ And two new tables:
 
 1. Verify **Enable order push** is set to **Yes**
 2. Check that the API key is valid for the selected environment
+   (A store upgraded from 1.0.x with no key relies on the 1.0.x notice instead; look for "1.0.x order notification" in `var/log/system.log`.)
 3. Inspect `bobgo_sync_log` filtered by `direction = 'outbound'` and `success = 0` for failures
 4. Orders are never blocked by API errors — failed pushes are flagged with `bobgo_sync_status = 'failed'` on the order row
 
