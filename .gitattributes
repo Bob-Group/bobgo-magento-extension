@@ -8,3 +8,4 @@
 /bump-version.sh export-ignore
 /phpstan.neon export-ignore
 /.claude export-ignore
+/.github export-ignore

@@ -44,6 +44,10 @@ class VersionTest extends TestCase
     {
         $reflection = new \ReflectionClass($object);
         $method = $reflection->getMethod($methodName);
+        if (PHP_VERSION_ID < 80100) {
+            // Required before PHP 8.1; a no-op after.
+            $method->setAccessible(true);
+        }
 
         return $method->invokeArgs($object, $parameters);
     }
