@@ -132,6 +132,7 @@ All settings live under `carriers/bobgo/*`.
 |---|---|---|---|
 | **Environment** | Select | Sandbox | `Sandbox` (testing) or `Production` (live). Sandbox uses `api.sandbox.bobgo.co.za`, production uses `api.bobgo.co.za`. |
 | **API key** | Encrypted text | — | Your Bob Go API key. Stored encrypted with Magento's `EncryptorInterface`. |
+| **Channel identifier** | Text | Store URL | Sent as `bobgo-channel-identifier` on every API call. Bob Go compares it exactly (ignoring only a scheme and a trailing slash), so set it when your Bob Go channel was set up under a different address, for example without `www.`. |
 | **Webhook signing secret** | Encrypted text | — | Merchant-issued HMAC secret used to verify inbound webhooks. **Required** for fulfillment sync — without it every webhook is rejected with a 403. |
 | **Enable Bob Go rates at checkout** | Yes/No | No | Customers see live shipping rates at checkout. |
 | **Show additional rate information** | Yes/No | No | Displays delivery timeframes and additional service level descriptions alongside rates. |
@@ -531,6 +532,8 @@ The most common cause is a mismatched signing secret. Check:
 ### API key errors after restore / migration
 
 API keys and webhook secrets are stored encrypted with the store's `crypt/key`. If you've migrated databases between environments with different keys, the encrypted values will be unreadable — re-enter them in admin.
+
+If the key is right but the **Connection** row says it was rejected, check the **Channel identifier**. A channel-scoped key only works when that identifier matches the address on your Bob Go channel exactly, `www.` included.
 
 ### Weight calculation issues
 
