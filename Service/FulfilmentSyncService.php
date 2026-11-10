@@ -484,6 +484,30 @@ class FulfilmentSyncService
     /**
      * @param array<string,mixed> $fulfilment
      */
+    /**
+     * The fulfilment's own status when it failed or was cancelled, else the
+     * shipment's.
+     *
+     * A booking the courier refused is a fulfilment with status "failed" and a
+     * shipment whose status is an empty string. Reading only the shipment's
+     * status saw nothing wrong, so a still-shippable order got a Magento shipment
+     * (and the customer an email) for a parcel that was never booked.
+     *
+     * @param array<string,mixed> $fulfilment
+     * @param array<string,mixed> $shipment
+     * @param array<string,mixed> $entry
+     */
+    private function fulfilmentStatus(array $fulfilment, array $shipment, array $entry): string
+    {
+        $own = strtolower(trim((string) ($fulfilment['status'] ?? '')));
+        if ($own !== '' && $this->isCancelled(['status' => $own])) {
+            return $own;
+        }
+
+        $shipmentStatus = (string) ($shipment['status'] ?? '');
+        return $shipmentStatus !== '' ? $shipmentStatus : (string) ($entry['status'] ?? '');
+    }
+
     private function isCancelled(array $fulfilment): bool
     {
         $status = strtolower((string) ($fulfilment['status'] ?? ''));
@@ -820,7 +844,7 @@ class FulfilmentSyncService
             'courier'                  => (string) ($provider['name'] ?? $entry['courier'] ?? $entry['courier_name'] ?? ''),
             'provider_slug'            => (string) ($shipment['provider_slug'] ?? ''),
             'service_level'            => (string) ($serviceLevel['name'] ?? ''),
-            'status'                   => (string) ($shipment['status'] ?? $entry['status'] ?? ''),
+            'status'                   => $this->fulfilmentStatus($fulfilment, $shipment, $entry),
             'items'                    => $this->extractItemRows($fulfilment, $entry, $shipment),
         ];
     }

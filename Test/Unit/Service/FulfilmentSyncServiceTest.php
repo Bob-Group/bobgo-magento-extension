@@ -370,6 +370,27 @@ class FulfilmentSyncServiceTest extends TestCase
     }
 
     /**
+     * Caught end to end against the sandbox: a booking the courier refused comes
+     * back as a fulfilment with status "failed" and a shipment with an empty
+     * status. It must not become a Magento shipment.
+     */
+    public function testDoesNotCreateAShipmentForAFailedBooking(): void
+    {
+        $order = $this->order(7, '987');
+        $order->method('canShip')->willReturn(true);
+        $this->noShipmentsYet($order);
+
+        $failed = $this->fulfilment('UASD33DX', 'Demo Couriers', '');
+        $failed['order_fulfillment']['status'] = 'failed';
+        $failed['order_fulfillment']['failed_reason'] = "Demo Couriers responded with: The delivery contact's email domain does not exist.";
+        $this->apiClient->method('get')->willReturn(['order_fulfillments' => [$failed]]);
+
+        $this->shipOrder->expects($this->never())->method('execute');
+
+        $this->service->syncOrder($order);
+    }
+
+    /**
      * @dataProvider dedupProvider
      */
     public function testDoesNotDuplicateAnExistingShipment(string $stampedId, string $trackNumber): void
