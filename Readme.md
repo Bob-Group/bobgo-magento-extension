@@ -78,7 +78,7 @@ Real-time shipping rates, automatic order push, signed-webhook fulfillment sync,
 This package is not published on Packagist. Add the GitHub repository as a VCS source first:
 
 ```bash
-composer config repositories.bobgo vcs https://github.com/nicholasgousis/bobgo-magento-extension.git
+composer config repositories.bobgo vcs https://github.com/Bob-Group/bobgo-magento-extension.git
 composer require bobgo/bobgo-magento-extension
 ```
 
@@ -93,7 +93,7 @@ php bin/magento cache:flush
 
 ### Manual installation
 
-1. Download the latest release ZIP from the [GitHub releases page](https://github.com/nicholasgousis/bobgo-magento-extension/releases)
+1. Download the latest release ZIP from the [GitHub releases page](https://github.com/Bob-Group/bobgo-magento-extension/releases)
 2. Extract the contents to `app/code/BobGroup/BobGo/` in your Magento root
 3. Run the setup commands:
 
@@ -567,7 +567,7 @@ php bin/magento cache:flush
 
 - **Website:** [bobgo.co.za](https://www.bobgo.co.za)
 - **Email:** support@bobgo.co.za
-- **Issues:** [GitHub issues](https://github.com/nicholasgousis/bobgo-magento-extension/issues)
+- **Issues:** [GitHub issues](https://github.com/Bob-Group/bobgo-magento-extension/issues)
 
 ## License
 
