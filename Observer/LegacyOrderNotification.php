@@ -68,11 +68,11 @@ class LegacyOrderNotification implements ObserverInterface
                 return;
             }
 
-            if ($this->apiConfig->isConfigured() && $this->apiConfig->isOrderPushEnabled()) {
+            $storeId = (int) $order->getStoreId();
+            if ($this->apiConfig->isConfigured($storeId) && $this->apiConfig->isOrderPushEnabled($storeId)) {
                 return;
             }
 
-            $storeId = (int) $order->getStoreId();
             if (!$this->scopeConfig->isSetFlag(self::XML_PATH_ENABLED, ScopeInterface::SCOPE_STORE, $storeId)) {
                 return;
             }

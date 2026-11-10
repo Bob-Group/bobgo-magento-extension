@@ -63,7 +63,11 @@ class OrderSaveObserver implements ObserverInterface
                 return;
             }
 
-            if (!$this->apiConfig->isOrderPushEnabled() || !$this->apiConfig->isConfigured()) {
+            // The order's own store, not the current one: an admin save runs in the
+            // default scope, which may have push off while the order's website has
+            // it on (or the reverse).
+            $storeId = (int) $order->getStoreId();
+            if (!$this->apiConfig->isOrderPushEnabled($storeId) || !$this->apiConfig->isConfigured($storeId)) {
                 return;
             }
 

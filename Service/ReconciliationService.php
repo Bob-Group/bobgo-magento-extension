@@ -89,15 +89,12 @@ class ReconciliationService
     }
 
     /**
-     * Cron entry point. No-op when the merchant has disabled fulfilment sync
-     * or hasn't configured an API key yet.
+     * Cron entry point. Each order is skipped unless fulfilment sync is on and
+     * an API key is saved for its own store. There is no store-wide gate: these
+     * are set per website, and cron runs in the default scope.
      */
     public function run(): void
     {
-        if (!$this->apiConfig->isFulfillmentSyncEnabled() || !$this->apiConfig->isConfigured()) {
-            return;
-        }
-
         // Piggyback the webhook-subscription health check on this job. It is
         // internally rate-limited to one conclusive check per day, and it is the
         // only way to notice that Bob Go disabled our subscription — nothing
@@ -142,6 +139,11 @@ class ReconciliationService
      */
     public function reconcileOrder(OrderInterface $order): void
     {
+        $storeId = (int) $order->getStoreId();
+        if (!$this->apiConfig->isFulfillmentSyncEnabled($storeId) || !$this->apiConfig->isConfigured($storeId)) {
+            return;
+        }
+
         try {
             // Emulate the order's store: cron has no store context, so the API
             // key and channel identifier would otherwise come from the default

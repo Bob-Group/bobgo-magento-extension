@@ -77,11 +77,12 @@ class ApiConfig
     /**
      * Get the decrypted Bob Go API key.
      *
+     * @param int|null $storeId The store to read for; null for the current store
      * @return string|null The API key, or null if not configured
      */
-    public function getApiKey(): ?string
+    public function getApiKey(?int $storeId = null): ?string
     {
-        $value = $this->scopeConfig->getValue(self::XML_PATH_API_KEY, ScopeInterface::SCOPE_STORE);
+        $value = $this->scopeConfig->getValue(self::XML_PATH_API_KEY, ScopeInterface::SCOPE_STORE, $storeId);
         if (!is_string($value) || $value === '') {
             return null;
         }
@@ -130,21 +131,27 @@ class ApiConfig
     /**
      * Check whether automatic order push to Bob Go is enabled.
      *
+     * @param int|null $storeId The store to read for; null for the current store
      * @return bool
      */
-    public function isOrderPushEnabled(): bool
+    public function isOrderPushEnabled(?int $storeId = null): bool
     {
-        return $this->scopeConfig->isSetFlag(self::XML_PATH_ENABLE_ORDER_PUSH, ScopeInterface::SCOPE_STORE);
+        return $this->scopeConfig->isSetFlag(self::XML_PATH_ENABLE_ORDER_PUSH, ScopeInterface::SCOPE_STORE, $storeId);
     }
 
     /**
      * Check whether fulfillment sync (webhooks) is enabled.
      *
+     * @param int|null $storeId The store to read for; null for the current store
      * @return bool
      */
-    public function isFulfillmentSyncEnabled(): bool
+    public function isFulfillmentSyncEnabled(?int $storeId = null): bool
     {
-        return $this->scopeConfig->isSetFlag(self::XML_PATH_ENABLE_FULFILLMENT_SYNC, ScopeInterface::SCOPE_STORE);
+        return $this->scopeConfig->isSetFlag(
+            self::XML_PATH_ENABLE_FULFILLMENT_SYNC,
+            ScopeInterface::SCOPE_STORE,
+            $storeId
+        );
     }
 
     /**
@@ -160,11 +167,12 @@ class ApiConfig
     /**
      * Check whether the API key has been configured (non-empty).
      *
+     * @param int|null $storeId The store to read for; null for the current store
      * @return bool
      */
-    public function isConfigured(): bool
+    public function isConfigured(?int $storeId = null): bool
     {
-        return $this->getApiKey() !== null;
+        return $this->getApiKey($storeId) !== null;
     }
 
     /**

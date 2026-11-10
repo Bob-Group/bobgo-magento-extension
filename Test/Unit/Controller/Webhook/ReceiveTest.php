@@ -204,12 +204,32 @@ class ReceiveTest extends TestCase
     public function testDisabledFulfillmentSyncDoesNotProcess(): void
     {
         $this->signatureVerifier->method('verify')->willReturn(true);
+        $this->resolvesTo($this->anOrder());
         $this->apiConfig->method('isFulfillmentSyncEnabled')->willReturn(false);
 
         $this->syncLogger->expects($this->never())->method('claimEventId');
         $this->fulfillmentService->expects($this->never())->method('processFulfillment');
 
         $this->runController('evt_anything', 'fulfillment/created', 200);
+    }
+
+    /**
+     * Fulfilment sync is set per website. The delivery URL resolves to one store,
+     * but the order may belong to another, and that store's setting decides.
+     */
+    public function testFulfillmentSyncIsCheckedForTheOrdersOwnStore(): void
+    {
+        $this->passSignature();
+        $this->resolvesTo($this->anOrder());
+        $this->syncLogger->method('claimEventId')->willReturn(true);
+
+        $this->apiConfig->expects($this->atLeastOnce())
+            ->method('isFulfillmentSyncEnabled')
+            ->with(1)
+            ->willReturn(true);
+        $this->fulfillmentService->expects($this->once())->method('processFulfillment');
+
+        $this->runController('evt_scoped', 'fulfillment/created', 200);
     }
 
     // ------------------------------------------------- subscription-disable window

@@ -169,15 +169,6 @@ class Receive extends Action implements CsrfAwareActionInterface
             return $result->setHttpResponseCode(400)->setData(['error' => 'Invalid JSON']);
         }
 
-        // After signature: gate on fulfillment_sync_enabled. If a merchant has
-        // disabled sync but a stale subscription is still firing, the body is
-        // authentic (signature passed) but we must not mutate orders. 200 so
-        // Bob Go doesn't retry — operator intent is "stop processing".
-        if (!$this->apiConfig->isFulfillmentSyncEnabled()) {
-            $this->logger->info('Bob Go webhook: fulfillment sync disabled, ignoring');
-            return $result->setHttpResponseCode(200)->setData(['message' => 'fulfillment sync disabled']);
-        }
-
         // 3. Topic and event id. The body is authoritative for both.
         $topic = $this->resolveTopic($request, $data);
         $eventId = $this->normaliseEventId($data['event_id'] ?? null) ?? $eventId;
@@ -232,6 +223,18 @@ class Receive extends Action implements CsrfAwareActionInterface
 
         $order = $resolution->getOrder();
         $orderId = (int) $order->getEntityId();
+
+        // Gate on fulfilment sync in the order's own store, not the store this
+        // URL resolved to: it is set per website. If the merchant disabled sync
+        // but a stale subscription is still firing, the body is authentic but we
+        // must not mutate orders. 200 so Bob Go doesn't retry: operator intent is
+        // "stop processing".
+        if (!$this->apiConfig->isFulfillmentSyncEnabled((int) $order->getStoreId())) {
+            $this->logger->info('Bob Go webhook: fulfillment sync disabled for this store, ignoring', [
+                'order_id' => $orderId,
+            ]);
+            return $result->setHttpResponseCode(200)->setData(['message' => 'fulfillment sync disabled']);
+        }
 
         $this->logger->info('Bob Go webhook received', [
             'topic' => $topic,
