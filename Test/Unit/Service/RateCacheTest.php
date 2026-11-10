@@ -3,8 +3,11 @@ declare(strict_types=1);
 
 namespace BobGroup\BobGo\Test\Unit\Service;
 
+use BobGroup\BobGo\Model\Config\ApiConfig;
 use BobGroup\BobGo\Service\RateCache;
 use Magento\Framework\App\CacheInterface;
+use Magento\Store\Api\Data\StoreInterface;
+use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -24,6 +27,11 @@ class RateCacheTest extends TestCase
     /** @var array<string,array{data:string,ttl:int|null}> */
     private $stored = [];
 
+    /** The account the next lookup is made under. */
+    private $environment = 'production';
+    private $apiKey = 'key-a';
+    private $storeId = 1;
+
     protected function setUp(): void
     {
         $this->cache = $this->createMock(CacheInterface::class);
@@ -41,7 +49,62 @@ class RateCacheTest extends TestCase
             }
         );
 
-        $this->rateCache = new RateCache($this->cache, $this->logger);
+        $this->rateCache = $this->newRateCache($this->cache, $this->logger);
+    }
+
+    /**
+     * Rates belong to an account. The same basket asked under another
+     * environment, key or store must not be answered from the first one's entry.
+     *
+     * @dataProvider accountChanges
+     */
+    public function testAnotherAccountDoesNotShareAnEntry(string $property, $value): void
+    {
+        $this->rateCache->save($this->payload(), $this->rates());
+
+        $this->{$property} = $value;
+        $fresh = $this->newRateCache($this->cache, $this->logger);
+
+        $this->assertNull($fresh->load($this->payload()));
+    }
+
+    /**
+     * @return array<string,array{0:string,1:mixed}>
+     */
+    public function accountChanges(): array
+    {
+        return [
+            'sandbox to production' => ['environment', 'sandbox'],
+            'another API key' => ['apiKey', 'key-b'],
+            'another store' => ['storeId', 2],
+        ];
+    }
+
+    /**
+     * A keyless (1.0.x) checkout is charged against, so it gets the short TTL
+     * too, not the cart estimate's two hours.
+     */
+    public function testKeylessCheckoutGetsTheShortTtl(): void
+    {
+        $this->rateCache->save([
+            'identifier' => 'shop.co.za',
+            'rate' => ['destination' => ['address1' => '1 Test Street', 'suburb' => 'Sandton']],
+        ], $this->rates());
+
+        $this->assertSame(900, $this->onlyStoredTtl());
+    }
+
+    /**
+     * Once Bob Go is known to be down, no cart waits for it, whatever its basket.
+     */
+    public function testUnavailableIsSharedAcrossBaskets(): void
+    {
+        $this->assertFalse($this->rateCache->isUnavailable());
+
+        $this->rateCache->markUnavailable();
+
+        $this->assertTrue($this->newRateCache($this->cache, $this->logger)->isUnavailable());
+        $this->assertSame(30, $this->onlyStoredTtl());
     }
 
     public function testMissReturnsNull(): void
@@ -143,11 +206,11 @@ class RateCacheTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->atLeastOnce())->method('warning');
 
-        $rateCache = new RateCache($cache, $logger);
+        $rateCache = $this->newRateCache($cache, $logger);
         $rateCache->save($this->payload(), $this->rates());
 
         // The memo still answers within the request; a fresh instance misses.
-        $this->assertNull((new RateCache($cache, $logger))->load($this->payload()));
+        $this->assertNull($this->newRateCache($cache, $logger)->load($this->payload()));
     }
 
     // ----------------------------------------------------------------------- helpers
@@ -175,6 +238,26 @@ class RateCacheTest extends TestCase
     private function rates(): array
     {
         return ['rates' => [['service_name' => 'Standard', 'total_price' => 100]]];
+    }
+
+    private function newRateCache($cache, $logger): RateCache
+    {
+        $apiConfig = $this->createMock(ApiConfig::class);
+        $apiConfig->method('getEnvironment')->willReturnCallback(function () {
+            return $this->environment;
+        });
+        $apiConfig->method('getApiKey')->willReturnCallback(function () {
+            return $this->apiKey;
+        });
+
+        $store = $this->createMock(StoreInterface::class);
+        $store->method('getId')->willReturnCallback(function () {
+            return $this->storeId;
+        });
+        $storeManager = $this->createMock(StoreManagerInterface::class);
+        $storeManager->method('getStore')->willReturn($store);
+
+        return new RateCache($cache, $logger, $apiConfig, $storeManager);
     }
 
     private function onlyStoredTtl(): ?int

@@ -3,7 +3,9 @@ declare(strict_types=1);
 
 namespace BobGroup\BobGo\Service;
 
+use BobGroup\BobGo\Model\Config\ApiConfig;
 use Magento\Framework\App\CacheInterface;
+use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -26,14 +28,18 @@ use Psr\Log\LoggerInterface;
  *   - A short negative entry for errors and empty results, so a Bob Go outage
  *     doesn't turn into one upstream call per cart recalculation.
  *
- * The cache key is a hash of the whole request payload, so any change to origin,
- * destination or basket contents misses cleanly.
+ * The cache key is a hash of the whole request payload plus the account it was
+ * asked for (environment, API key and store), so any change to origin,
+ * destination, basket or credentials misses cleanly.
  */
 class RateCache
 {
     public const CACHE_TAG = 'BOBGO_RATES';
 
     private const KEY_PREFIX = 'bobgo_rates_';
+
+    /** Set when Bob Go itself could not be reached, for every cart at once. */
+    private const UNAVAILABLE_PREFIX = 'bobgo_rates_unavailable_';
 
     /** Rates for an address precise enough to be charged against. */
     private const TTL_COMPLETE_ADDRESS = 900;
@@ -50,6 +56,8 @@ class RateCache
 
     private CacheInterface $cache;
     private LoggerInterface $logger;
+    private ApiConfig $apiConfig;
+    private StoreManagerInterface $storeManager;
 
     /**
      * In-request memo. Same lifetime as the request, so it needs no TTL.
@@ -58,10 +66,16 @@ class RateCache
      */
     private array $memo = [];
 
-    public function __construct(CacheInterface $cache, LoggerInterface $logger)
-    {
+    public function __construct(
+        CacheInterface $cache,
+        LoggerInterface $logger,
+        ApiConfig $apiConfig,
+        StoreManagerInterface $storeManager
+    ) {
         $this->cache = $cache;
         $this->logger = $logger;
+        $this->apiConfig = $apiConfig;
+        $this->storeManager = $storeManager;
     }
 
     /**
@@ -135,6 +149,37 @@ class RateCache
     }
 
     /**
+     * Bob Go could not be reached at all. A failure cached per payload still let
+     * every new cart and every address edit wait out the full timeout; this tells
+     * all of them, for the same short window, not to ask.
+     */
+    public function markUnavailable(): void
+    {
+        $key = $this->unavailableKey();
+        $this->memo[$key] = self::NO_RATES;
+
+        try {
+            $this->cache->save('1', $key, [self::CACHE_TAG], self::TTL_NEGATIVE);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Bob Go: rate cache write failed', ['error' => $e->getMessage()]);
+        }
+    }
+
+    public function isUnavailable(): bool
+    {
+        $key = $this->unavailableKey();
+        if (array_key_exists($key, $this->memo)) {
+            return true;
+        }
+
+        try {
+            return (string) $this->cache->load($key) === '1';
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
      * @param array<string,mixed> $payload
      * @param array<string,mixed> $entry
      */
@@ -160,9 +205,18 @@ class RateCache
      */
     private function ttlFor(array $payload): int
     {
-        $destination = is_array($payload['delivery_address'] ?? null) ? $payload['delivery_address'] : [];
-        $street = trim((string) ($destination['street_address'] ?? ''));
-        $suburb = trim((string) ($destination['local_area'] ?? ''));
+        // The keyless 1.0.x route nests the address under rate.destination and
+        // names its fields differently. Reading only the v2 shape treated every
+        // keyless checkout as a cart estimate and held its rates for two hours.
+        if (is_array($payload['rate']['destination'] ?? null)) {
+            $destination = $payload['rate']['destination'];
+            $street = trim((string) ($destination['address1'] ?? ''));
+            $suburb = trim((string) ($destination['suburb'] ?? ''));
+        } else {
+            $destination = is_array($payload['delivery_address'] ?? null) ? $payload['delivery_address'] : [];
+            $street = trim((string) ($destination['street_address'] ?? ''));
+            $suburb = trim((string) ($destination['local_area'] ?? ''));
+        }
 
         return ($street === '' && $suburb === '')
             ? self::TTL_COARSE_ADDRESS
@@ -174,6 +228,33 @@ class RateCache
      */
     private function key(array $payload): string
     {
-        return self::KEY_PREFIX . sha1((string) json_encode($payload));
+        return self::KEY_PREFIX . sha1((string) json_encode($payload) . '|' . $this->accountScope());
+    }
+
+    private function unavailableKey(): string
+    {
+        return self::UNAVAILABLE_PREFIX . sha1($this->accountScope());
+    }
+
+    /**
+     * Rates belong to an account, an environment and a store's channel, and none
+     * of those is in the payload. Without them, switching from sandbox to
+     * production kept serving sandbox rates for up to two hours, and two websites
+     * with different keys could be shown each other's rates. The key is hashed,
+     * never stored.
+     */
+    private function accountScope(): string
+    {
+        try {
+            $storeId = (string) $this->storeManager->getStore()->getId();
+        } catch (\Throwable $e) {
+            $storeId = '';
+        }
+
+        return implode('|', [
+            $this->apiConfig->getEnvironment(),
+            sha1((string) $this->apiConfig->getApiKey()),
+            $storeId,
+        ]);
     }
 }

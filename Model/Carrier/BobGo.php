@@ -1184,6 +1184,10 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             return $this->rateCache->isNegative($cached) ? null : $cached;
         }
 
+        if ($this->rateCache->isUnavailable()) {
+            return null;
+        }
+
         try {
             $rates = $keyless
                 ? $this->apiClient->postKeylessRates($payload)
@@ -1193,6 +1197,11 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
             // Brief negative entry so an outage costs one call per 30s rather
             // than one per cart recalculation.
             $this->rateCache->saveFailure($payload);
+            // No response, rate limiting or a server error is Bob Go being down
+            // for every cart, not just this one.
+            if ($e->isTransient()) {
+                $this->rateCache->markUnavailable();
+            }
             return null;
         }
 
