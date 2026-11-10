@@ -205,7 +205,7 @@ When fulfillment sync is enabled, the extension subscribes to three topics on Bo
 
 Inbound flow for every webhook:
 
-1. **HMAC verification** — the raw body is verified against the `Bobgo-Webhook-Signature` header (HMAC-SHA256, base64, constant-time compare). Failed verification → 403, body never inspected. Rejected bodies are truncated to 256 bytes before persistence.
+1. **HMAC verification** — the raw body is verified against the `Bobgo-Webhook-Signature` header (HMAC-SHA256, base64, constant-time compare). Failed verification → 403, body never inspected or stored; the sync log records only the refusal and the body's size.
 2. **Fulfillment-sync gate** — even with a valid signature, the request is short-circuited to 200 (no processing) if the merchant has disabled fulfillment sync. Stale subscriptions can no longer mutate orders after a disable.
 3. **JSON parse + topic resolution** — topic comes from the header, with a payload-shape fallback for legacy events
 4. **Race-safe `event_id` claim** — a `webhook_claim` row is INSERTed under the `UNIQUE (event_id, direction)` constraint; concurrent deliveries of the same event lose the race and 200 cleanly without reprocessing. NULL `event_id`s are not deduped (the constraint allows multiple NULLs).
@@ -327,7 +327,7 @@ Every inbound webhook body is HMAC-SHA256 signed by Bob Go using the merchant-is
 - Webhook signing secret not configured in admin
 - Signature mismatch
 
-Rejected request bodies are written to the sync log, truncated to 256 bytes so an unauthenticated attacker can't bloat the table with sustained traffic.
+Requests that fail signature verification are logged without their body: the sync log records the refusal and the body's size only.
 
 ### Encrypted credentials
 

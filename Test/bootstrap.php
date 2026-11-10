@@ -186,7 +186,7 @@ $stubs = [
         'Magento\Catalog\Model\ResourceModel\Product\CollectionFactory' => ['create'],
         'Magento\Framework\App\Request\Http' => ['getContent', 'getParam'],
         'Magento\Catalog\Model\Product' => ['isVirtual', 'getWeight', 'getImage', 'getId'],
-        'Magento\Quote\Model\Quote\Item' => ['getProduct', 'getName', 'getSku', 'getQty', 'getPrice', 'getWeight', 'getStore', 'getProductType'],
+        'Magento\Quote\Model\Quote\Item' => ['getProduct', 'getName', 'getSku', 'getQty', 'getPrice', 'getWeight', 'getStore', 'getProductType', 'getParentItem'],
     ],
 ];
 

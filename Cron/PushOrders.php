@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace BobGroup\BobGo\Cron;
 
 use BobGroup\BobGo\Model\Config\ApiConfig;
+use BobGroup\BobGo\Service\InboundGuard;
 use BobGroup\BobGo\Service\OrderPushService;
 use BobGroup\BobGo\Service\OrderSyncPolicy;
 use BobGroup\BobGo\Service\OrderSyncQueue;
@@ -40,6 +41,7 @@ class PushOrders
     private ApiConfig $apiConfig;
     private StoreScope $storeScope;
     private LoggerInterface $logger;
+    private InboundGuard $ownSaveGuard;
 
     public function __construct(
         OrderSyncQueue $queue,
@@ -48,7 +50,8 @@ class PushOrders
         OrderSyncPolicy $policy,
         ApiConfig $apiConfig,
         StoreScope $storeScope,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        InboundGuard $ownSaveGuard
     ) {
         $this->queue = $queue;
         $this->orderRepository = $orderRepository;
@@ -57,6 +60,7 @@ class PushOrders
         $this->apiConfig = $apiConfig;
         $this->storeScope = $storeScope;
         $this->logger = $logger;
+        $this->ownSaveGuard = $ownSaveGuard;
     }
 
     public function execute(): void
@@ -93,8 +97,13 @@ class PushOrders
             // bobgo-channel-identifier header would come from the default store
             // rather than the order's — pushing a multi-store order into the
             // wrong Bob Go channel.
-            $ok = $this->storeScope->forOrder($order, function () use ($order) {
-                return $this->push($order) && $this->forwardStatus($order);
+            // The push saves the order itself (link, hash, failure marker). If
+            // those saves re-queued it, the attempt count would reset to zero
+            // and a push that always fails would retry every minute forever.
+            $ok = $this->ownSaveGuard->around($orderId, function () use ($order) {
+                return $this->storeScope->forOrder($order, function () use ($order) {
+                    return $this->push($order) && $this->forwardStatus($order);
+                });
             });
 
             if ($ok) {

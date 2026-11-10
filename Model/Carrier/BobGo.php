@@ -1261,13 +1261,12 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         array $itemsArray
     ): array {
         foreach ($items as $item) {
-            // Skip configurable parents. Magento records two rows for a
-            // configurable — the parent (customer-paid price, no weight) and the
-            // simple child (the variant, which carries the weight) — so sending
-            // both gave Bob Go a duplicate zero-weight line for every
-            // configurable in the cart. OrderMapper::mapItems() has always
-            // skipped them; the rate payload didn't, so the two disagreed.
-            if (method_exists($item, 'getProductType') && $item->getProductType() === 'configurable') {
+            // A configurable is two quote rows. The parent holds the quantity, the
+            // price paid and the chosen variant's weight; the child always has
+            // quantity 1 and price 0. Send the parent, as Magento's own shipping
+            // total does. (Order items differ: there the child carries the real
+            // quantity, which is why OrderMapper keeps the child instead.)
+            if ($this->isConfigurableChild($item)) {
                 continue;
             }
 
@@ -1291,4 +1290,9 @@ class BobGo extends AbstractCarrierOnline implements \Magento\Shipping\Model\Car
         return $itemsArray;
     }
 
+    private function isConfigurableChild(\Magento\Quote\Model\Quote\Item $item): bool
+    {
+        $parent = $item->getParentItem();
+        return $parent !== null && $parent->getProductType() === 'configurable';
+    }
 }
