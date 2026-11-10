@@ -13,6 +13,10 @@ use Magento\Framework\Exception\LocalizedException;
  */
 class BobGoApiException extends LocalizedException
 {
+    private const STATUS_NO_RESPONSE = 0;
+    private const STATUS_TOO_MANY_REQUESTS = 429;
+    private const STATUS_SERVER_ERROR_FLOOR = 500;
+
     /**
      * @var int HTTP status code from the API response
      */
@@ -61,5 +65,16 @@ class BobGoApiException extends LocalizedException
     public function getEndpoint(): string
     {
         return $this->endpoint;
+    }
+
+    /**
+     * Could the same request succeed if tried again? Yes for no response at all,
+     * rate limiting, or a server error. Any other 4xx will be refused again.
+     */
+    public function isTransient(): bool
+    {
+        return $this->statusCode === self::STATUS_NO_RESPONSE
+            || $this->statusCode === self::STATUS_TOO_MANY_REQUESTS
+            || $this->statusCode >= self::STATUS_SERVER_ERROR_FLOOR;
     }
 }

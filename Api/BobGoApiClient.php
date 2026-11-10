@@ -282,9 +282,18 @@ class BobGoApiClient
      * with the right channel. Format: "host[/path]" — no scheme, no trailing
      * slash. The scheme is omitted because a ":" in the header value breaks
      * downstream parsers that split on the first colon.
+     *
+     * Bob Go compares it exactly, so a channel set up as "shop.co.za" refuses a
+     * store at "www.shop.co.za" with a 401 on a channel-scoped key. The admin
+     * setting is for that case, and wins when set.
      */
     private function getChannelIdentifier(): string
     {
+        $configured = $this->apiConfig->getChannelIdentifier();
+        if ($configured !== null) {
+            return $configured;
+        }
+
         $baseUrl = $this->storeManager->getStore()->getBaseUrl();
         $withoutScheme = (string)preg_replace('#^https?://#i', '', $baseUrl);
         return rtrim($withoutScheme, '/');

@@ -127,6 +127,29 @@ class BobGoApiClientTest extends TestCase
         $this->assertSame($expected, $headers['bobgo-channel-identifier'] ?? null);
     }
 
+    /**
+     * Bob Go compares the identifier exactly, so a channel set up as
+     * "shop.co.za" refuses a store at "www.shop.co.za". The setting wins.
+     */
+    public function testConfiguredChannelIdentifierWinsOverTheStoreUrl(): void
+    {
+        $this->apiConfigMock->method('getApiKey')->willReturn('test-key');
+        $this->apiConfigMock->method('getBaseUrl')->willReturn(ApiConfig::BASE_URL_SANDBOX);
+        $this->apiConfigMock->method('getChannelIdentifier')->willReturn('shop.co.za');
+
+        $headers = [];
+        $this->curlMock->method('addHeader')
+            ->willReturnCallback(function (string $name, string $value) use (&$headers) {
+                $headers[$name] = $value;
+            });
+        $this->curlMock->method('getStatus')->willReturn(200);
+        $this->curlMock->method('getBody')->willReturn('{}');
+
+        $this->client->get('webhooks');
+
+        $this->assertSame('shop.co.za', $headers['bobgo-channel-identifier'] ?? null);
+    }
+
     public function channelIdentifierProvider(): array
     {
         return [

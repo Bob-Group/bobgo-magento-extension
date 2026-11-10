@@ -410,13 +410,13 @@ const ENV_PRODUCTION = 'production';
 
 1. **Bearer Token Auth + Channel Identifier** - API key stored encrypted, sent as `Authorization: Bearer {key}`. Every outbound call also carries `bobgo-channel-identifier: {store base URL}` so Bob Go can associate the call with the right channel.
 2. **HMAC-Verified Webhooks** - Every inbound webhook body is verified against `Bobgo-Webhook-Signature` (HMAC-SHA256 base64, constant-time compare) using a merchant-issued secret. Verification is the first gate; the body is never inspected before it passes.
-3. **Event-ID Webhook Dedup** - Bob Go retries failed deliveries; `SyncLogger::claimEventId()` claims the event atomically under a unique index and short-circuits duplicates to a 200 so they don't re-process.
+3. **Webhook Dedup by Delivery Key** - Bob Go retries failed deliveries, so `SyncLogger::claimEventId()` claims each delivery atomically under a unique index and answers a repeat with a 200. The key is Bob Go's request id plus the topic plus a body hash, not the request id alone: that id names the Bob Go action, and one action sends several events (§10).
 3b. **Acknowledge, Don't Reject** - Webhook subscriptions are account-wide, so this endpoint receives events for orders that aren't ours. Anything authentic and well-formed gets a 200 even when we do nothing with it, because Bob Go disables the whole subscription after three days without a successful delivery.
 3c. **Never Guess an Order** - `OrderResolver` walks a strict reference ladder and refuses ambiguous matches. Magento's default `increment_id` sequence is identical across stores, so an order number alone can never establish ownership.
 4. **Sync-Hash Dirty Checking** - `OrderPushService::updateOrder()` skips PATCH calls entirely when the canonicalised payload hash matches the last successful sync.
 5. **Reconciliation as Safety Net** - Webhooks remain the primary fulfillment signal. An hourly cron (`Cron\Reconcile`) refetches `GET /v2/order-fulfillments?order_id=...` for active orders and full-replaces `sales_order.bobgo_shipments`, closing the gap when a webhook is lost or delayed.
 6. **Sync Log as Single Source of Truth** - Every inbound and outbound API event flows through `SyncLogger`, recording event type, direction, payload, HTTP status, success flag, and `event_id` for correlation.
-7. **Idempotent Fulfillments** - Webhook dedup via `event_id`; shipment dedup via tracking number matching in `FulfillmentService::hasExistingTrackingNumber()`.
+7. **Idempotent Fulfillments** - Webhooks are deduped by delivery key. Shipments are deduped by the stamped `bobgo_fulfillment_id`, then the tracking number (`FulfilmentSyncService::findShipment()`), and a per-order lock stops two syncs of one order both creating a shipment (§9).
 8. **South Africa Only** - `processAdditionalValidation()` restricts rates to `ZA` country code.
 9. **Suburb as Extension Attribute** - Custom field on `Magento\Quote\Api\Data\AddressInterface` because Magento doesn't have a native suburb field.
 
@@ -907,9 +907,17 @@ syncOrder(OrderInterface $order, array $webhookItems = [])
 order has bobgo_order_id?  ── no ──▶ return false
          │ yes                        (NO LINK, NO REQUEST — never substitute a
          ▼                             Magento id into Bob Go's id namespace)
+take the per-order lock bobgo_fulfilment_sync_{order id}
+  (LockManagerInterface, waits 5 s; can't get it → TransientWebhookException).
+  Held for the whole refresh, and taken before the order's shipments are first
+  read, because Magento caches that collection on the order.
+         │
+         ▼
 GET /v2/order-fulfillments?order_id={bobgo_order_id}
          │
-         ├── BobGoApiException ──▶ log + reconciliation_fetched row (success=0), return false
+         ├── BobGoApiException ──▶ log + reconciliation_fetched row (success=0), then
+         │                         isTransient() (no response, 429, 5xx) → TransientWebhookException,
+         │                         so the webhook answers 500 and Bob Go retries; otherwise return false
          ▼
 normalise the response
   (tolerates order_fulfillments / fulfillments / shipments / data wrappers, or a
@@ -921,7 +929,11 @@ quiet tick doesn't touch the order row (a write would re-fire every observer)
          │
          ▼
 for each fulfilment:
-    ├── status contains cancel/failed/rejected      → skip
+    ├── status contains cancel/failed/rejected      → skip. The fulfilment's own
+    │                                                 status wins over the shipment's:
+    │                                                 a refused booking is
+    │                                                 order_fulfillment.status "failed"
+    │                                                 with an empty shipment status
     ├── shipment already exists (by stamped         → refresh a placeholder courier
     │   bobgo_fulfillment_id, then tracking number)   title, then done
     ├── no tracking number AND no fulfilment id     → skip (nothing to dedup on)
@@ -929,6 +941,8 @@ for each fulfilment:
     │                                                 retries hourly
     ▼
     which items does this fulfilment cover?   (see below)
+    lines with nothing left to ship (qty_to_ship 0, e.g. shipped by hand) are
+    dropped; if none are left, the fulfilment is skipped with an info log
     ▼
     ShipOrderInterface::execute(order, items, notify, false, null, tracks)
     ▼
@@ -939,7 +953,8 @@ for each fulfilment:
 A failure from `ShipOrderInterface` is wrapped in `TransientWebhookException`: on
 the webhook path the controller turns that into a 500 so Bob Go retries; on the
 cron path `reconcileOrder()` catches it per order so one bad order can't end the
-batch.
+batch. Within one order, a failing fulfilment is set aside so the others still
+ship, and the first failure is rethrown afterwards.
 
 ### Item scope — never guess "everything"
 
@@ -1053,6 +1068,19 @@ why reading it as one corrupts the link.
 4. `X-Request-Id` header — last resort only. CDNs, load balancers and nginx
    commonly stamp this with a fresh value per request; preferring it would give
    each retry of one event a different id and silently defeat dedup.
+
+In practice Bob Go sends `Bob-Go-Request-Id` (and the same value as
+`X-Request-Id`), and no body `event_id`. That id names the Bob Go **action**
+that caused the event, not the event: fulfilling an order sends `order/updated`,
+`fulfillment/created` and `tracking/updated`, all with the same id. Keyed on the
+id alone, the second and third were dropped as duplicates, which is how it was
+found end to end against the sandbox.
+
+So the dedup key (`Receive::deliveryKey()`) is `<id>:<topic>:<first 16 hex of
+sha1(raw body)>`, with `-` for a missing id, and the whole key SHA-1'd if it
+would exceed the 128-character column. Separate events from one action get
+separate keys; a retry of one delivery repeats its topic and body, so it gets
+the same key and is skipped.
 
 ### Response policy
 
@@ -1212,46 +1240,43 @@ leaves no trace at all — no claim row, no log row.
   - Signature header missing or empty → warning logged
   - Computed digest ≠ provided digest → silent reject (no detail leaked)
 
-### Event-ID Deduplication (race-safe)
+### Webhook Deduplication (race-safe)
 
-Inbound deliveries are deduped via an atomic claim against the `UNIQUE (event_id, direction)` constraint on `bobgo_sync_log`.
+Inbound deliveries are deduped via an atomic claim against the `UNIQUE (event_id, direction)` constraint on `bobgo_sync_log`. The value claimed is the delivery key described under [Inbound Webhook Endpoint](#inbound-webhook-endpoint), stored in the `event_id` column.
 
 `SyncLogger::claimEventId($eventId, $topic)`:
 1. INSERTs a sentinel row with `event_type = 'webhook_claim'`, `success = 0`.
 2. On `AlreadyExistsException` or a `SQLSTATE[23000]` driver-level duplicate-key error → returns `false`; the caller 200's the request without processing.
 3. On any other DB error → logs and returns `true` (fail-open: a transient DB issue must not silently drop events).
 
-On successful processing, `logInbound()` upgrades the same claim row in place (`success=1`, real event type, full payload) via `upgradeClaim()` — so there's still only one row per `event_id`.
+On successful processing, `logInbound()` upgrades the same claim row in place (`success=1`, real event type, full payload) via `upgradeClaim()`, so there's still only one row per delivery key.
 
 On transient failure (`TransientWebhookException`), `releaseEventIdClaim($eventId)` DELETEs the claim, and the failure log row is written with `event_id = NULL` so the next retry can claim cleanly.
 
 On any other unexpected `\Throwable`, the claim row stays. Retries from Bob Go are short-circuited at the claim step (200 "duplicate") rather than re-running potentially broken code. An operator clears the row to allow a replay.
 
-The event id is read from:
-1. `Bobgo-Webhook-Event-Id` header (preferred)
-2. `event_id` key in the JSON body (fallback)
-
-NULL/empty event ids skip dedup entirely (MySQL treats NULLs as not-equal in unique indexes, so the constraint allows multiple).
+Every delivery that reaches the claim has a key, even one with no id, so every delivery is deduplicated. NULL `event_id` values appear only on failure and ignored rows, which the unique constraint ignores (MySQL treats NULLs as not-equal), so they never block a retry.
 
 ### Sync Log Entries Written
 
 | Event type | When |
 |-----------|------|
 | `webhook_claim`         | Sentinel row written by `claimEventId()` — upgraded to a real event type on success |
-| `webhook_rejected`      | Signature missing/invalid/secret unset, body unparseable, or no resolvable topic (body truncated to 256 B, `event_id` NULL) |
+| `webhook_rejected`      | Signature missing/invalid/secret unset (no body stored, only the refusal and the body's size), signed body unparseable (body capped at 256 B), or no resolvable topic. `event_id` NULL |
 | `webhook_received`      | Transient/unexpected failure log (`event_id` intentionally NULL) |
 | `webhook_ignored`       | Authentic, well-formed, carried an order reference — but it matched no local order. 200 returned; `success=false` and the reason recorded, because this is the shape an attempted mis-link takes |
 | `webhook_unknown_topic` | Topic resolved but not one we handle — 200 returned, `success=false` so operators can grep for it |
 | `fulfillment_received`  | `fulfillment/created` accepted and processed |
 | `tracking_updated`      | `tracking/updated` accepted and processed |
+| `order_updated_inbound` | `order/updated` accepted and processed |
 
 ### Supported Topics
 
 | Topic | Handler | Description |
 |-------|---------|-------------|
-| `fulfillment/created` | `FulfillmentService::processFulfillment()` | Creates a Magento shipment |
-| `tracking/updated` | `FulfillmentService::processTrackingUpdate()` | Adds tracking to the latest shipment + status comment |
-| `order/updated` | _(none — acknowledge + log only)_ | HMAC-verified, deduped, and written to `bobgo_sync_log` as `EVENT_ORDER_UPDATED_INBOUND`. Local order is not mutated; field-mapping is reserved for a future pass against real payloads. |
+| `fulfillment/created` | `FulfillmentService::processFulfillment()` | Re-fetches the order's fulfilments and creates any missing Magento shipment |
+| `tracking/updated` | `FulfillmentService::processTrackingUpdate()` | Same refresh, plus a status comment on the order |
+| `order/updated` | `FulfillmentService::processOrderUpdate()` | Cancels the local order when Bob Go cancelled it; otherwise acknowledged and logged as `EVENT_ORDER_UPDATED_INBOUND`. Other fields are left alone: the store owns the order. |
 
 ### Webhook Subscription Management (`Service/WebhookSubscriptionService.php`)
 
@@ -1471,7 +1496,7 @@ A webhook that fails signature verification is logged without its body (only the
 
 **`releaseEventIdClaim($eventId): void`** — DELETEs the matching `webhook_claim` row so a transient-failure retry can re-claim cleanly.
 
-NULL/empty event ids skip dedup entirely.
+The webhook controller always passes a delivery key (§10), so every webhook is deduplicated. `claimEventId(null)` still returns `true`, for any other caller without a key.
 
 ### Sync Log retention
 
@@ -1875,7 +1900,7 @@ an order saved ten times in one request is pushed once. Indexed on
 | `order_id` | INT UNSIGNED | Yes | Magento `sales_order.entity_id` (null for non-order events) |
 | `event_type` | VARCHAR(64) | No | See [Sync Log](#10c-sync-log) for the constant list |
 | `direction` | VARCHAR(16) | No | `inbound` or `outbound` |
-| `event_id` | VARCHAR(128) | Yes | Provider-issued event id for dedup |
+| `event_id` | VARCHAR(128) | Yes | Inbound delivery key for dedup: `<Bob-Go-Request-Id>:<topic>:<body hash>` (§10). NULL on failure and ignored rows |
 | `payload` | TEXT | Yes | JSON-encoded request/response body (truncated to 65,535 bytes) |
 | `http_status` | SMALLINT UNSIGNED | Yes | HTTP status returned / observed |
 | `success` | BOOLEAN | No | Outcome flag (default 0) |
@@ -1888,7 +1913,7 @@ an order saved ten times in one request is pushed once. Indexed on
 - `BOBGO_SYNC_LOG_CREATED_AT` on `created_at`
 
 **Constraints:**
-- **`BOBGO_SYNC_LOG_EVENT_ID_DIRECTION_UNQ`** — UNIQUE on `(event_id, direction)`. Load-bearing for race-safe webhook dedup: two concurrent deliveries of the same `event_id` can't both pass a check-then-insert race because the second `INSERT` violates the constraint and `SyncLogger::claimEventId()` returns `false`. NULL event ids are not part of the constraint (MySQL treats NULLs as not-equal), so unidentified deliveries log freely.
+- **`BOBGO_SYNC_LOG_EVENT_ID_DIRECTION_UNQ`**: UNIQUE on `(event_id, direction)`. Load-bearing for race-safe webhook dedup: two concurrent deliveries of the same `event_id` can't both pass a check-then-insert race because the second `INSERT` violates the constraint and `SyncLogger::claimEventId()` returns `false`. NULL `event_id` values are not part of the constraint (MySQL treats NULLs as not-equal), which is why failure and ignored rows are written with NULL: they never occupy a slot a retry needs.
 
 All schema changes are declared in `etc/db_schema.xml` and whitelisted in `etc/db_schema_whitelist.json`.
 

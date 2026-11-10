@@ -391,8 +391,8 @@ class OrderPushService
      * Matches response items to Magento items by SKU. When duplicate SKUs exist,
      * positional order is used as a tie-breaker.
      *
-     * Must mirror OrderMapper::mapItems() — skip configurable parents and target
-     * the simple child so the id we store lines up with the SKU we send on PATCH.
+     * Walks the same lines OrderMapper sends (OrderMapper::pushedItems), so the id
+     * we store lands on the line we PATCH.
      *
      * @param array<int,array<string,mixed>> $responseItems
      */
@@ -413,11 +413,7 @@ class OrderPushService
 
         $skuIndex = [];
 
-        foreach ($order->getItems() ?: [] as $item) {
-            if ($item->getProductType() === 'configurable') {
-                continue;
-            }
-
+        foreach (OrderMapper::pushedItems($order->getItems() ?: []) as [$item]) {
             $sku = $item->getSku();
             $position = $skuIndex[$sku] ?? 0;
 

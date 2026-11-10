@@ -65,10 +65,8 @@ class PushOrders
 
     public function execute(): void
     {
-        if (!$this->apiConfig->isOrderPushEnabled() || !$this->apiConfig->isConfigured()) {
-            return;
-        }
-
+        // No store-wide gate here: push is set per website, and cron runs in the
+        // default scope. Each order is checked against its own store below.
         foreach ($this->queue->claim(self::BATCH_SIZE) as $orderId) {
             $this->processOne($orderId);
         }
@@ -88,6 +86,12 @@ class PushOrders
         // the save that queued it, and the order may have moved on since — an
         // order queued while `processing` can be `canceled` by the time we get here.
         if (!$this->policy->shouldPush($order)) {
+            $this->queue->release($orderId);
+            return;
+        }
+
+        $storeId = (int) $order->getStoreId();
+        if (!$this->apiConfig->isOrderPushEnabled($storeId) || !$this->apiConfig->isConfigured($storeId)) {
             $this->queue->release($orderId);
             return;
         }

@@ -71,13 +71,16 @@ class Receive extends Action implements CsrfAwareActionInterface
     ];
 
     /**
-     * Header names carrying the delivery's unique event id, in preference order.
+     * Header names carrying an id for the delivery, in preference order.
      *
      * The body's own `event_id` wins over all of these. That ordering matters:
      * X-Request-Id is a generic header that CDNs, load balancers and nginx
      * commonly stamp on every inbound request with a fresh value. Preferring it
      * would give each retry of the same event a different id, quietly defeating
      * dedup. It stays only as a last resort, below the two Bob Go-specific names.
+     *
+     * What Bob Go actually sends is Bob-Go-Request-Id, and it names the Bob Go
+     * action that caused the event, not the event: see deliveryKey().
      */
     private const EVENT_ID_HEADERS = [
         'Bobgo-Webhook-Event-Id',
@@ -86,6 +89,12 @@ class Receive extends Action implements CsrfAwareActionInterface
     ];
 
     private const SIGNATURE_HEADER = 'Bobgo-Webhook-Signature';
+
+    /** Hex characters of the body hash in a delivery key. */
+    private const BODY_HASH_LENGTH = 16;
+
+    /** bobgo_sync_log.event_id is varchar(128); a longer key is hashed to fit. */
+    private const MAX_DELIVERY_KEY_LENGTH = 128;
 
     /** Topics we act on. Anything else is acknowledged and logged, not rejected. */
     private const KNOWN_TOPICS = [
@@ -169,15 +178,6 @@ class Receive extends Action implements CsrfAwareActionInterface
             return $result->setHttpResponseCode(400)->setData(['error' => 'Invalid JSON']);
         }
 
-        // After signature: gate on fulfillment_sync_enabled. If a merchant has
-        // disabled sync but a stale subscription is still firing, the body is
-        // authentic (signature passed) but we must not mutate orders. 200 so
-        // Bob Go doesn't retry — operator intent is "stop processing".
-        if (!$this->apiConfig->isFulfillmentSyncEnabled()) {
-            $this->logger->info('Bob Go webhook: fulfillment sync disabled, ignoring');
-            return $result->setHttpResponseCode(200)->setData(['message' => 'fulfillment sync disabled']);
-        }
-
         // 3. Topic and event id. The body is authoritative for both.
         $topic = $this->resolveTopic($request, $data);
         $eventId = $this->normaliseEventId($data['event_id'] ?? null) ?? $eventId;
@@ -232,6 +232,20 @@ class Receive extends Action implements CsrfAwareActionInterface
 
         $order = $resolution->getOrder();
         $orderId = (int) $order->getEntityId();
+
+        // Gate on fulfilment sync in the order's own store, not the store this
+        // URL resolved to: it is set per website. If the merchant disabled sync
+        // but a stale subscription is still firing, the body is authentic but we
+        // must not mutate orders. 200 so Bob Go doesn't retry: operator intent is
+        // "stop processing".
+        if (!$this->apiConfig->isFulfillmentSyncEnabled((int) $order->getStoreId())) {
+            $this->logger->info('Bob Go webhook: fulfillment sync disabled for this store, ignoring', [
+                'order_id' => $orderId,
+            ]);
+            return $result->setHttpResponseCode(200)->setData(['message' => 'fulfillment sync disabled']);
+        }
+
+        $eventId = $this->deliveryKey($eventId, $topic, $rawBody);
 
         $this->logger->info('Bob Go webhook received', [
             'topic' => $topic,
@@ -394,6 +408,23 @@ class Receive extends Action implements CsrfAwareActionInterface
             $payload['reason'] = $reason;
         }
         $this->syncLogger->logInbound($eventType, $payload, $orderId, null, $httpStatus, false);
+    }
+
+    /**
+     * The key a repeat delivery is recognised by, for the dedup claim.
+     *
+     * Bob Go's Bob-Go-Request-Id names the action that caused an event, not the
+     * event: fulfilling an order sends order/updated, fulfillment/created and
+     * tracking/updated, all carrying the same id. Keyed on that id alone, the
+     * first was processed and the other two were acknowledged as duplicates and
+     * dropped, so no shipment was ever created from the webhook. A retry of one
+     * delivery repeats its topic and body as well, so the three together pick out
+     * exactly that delivery, with or without an id.
+     */
+    private function deliveryKey(?string $requestId, string $topic, string $rawBody): string
+    {
+        $key = ($requestId ?? '-') . ':' . $topic . ':' . substr(sha1($rawBody), 0, self::BODY_HASH_LENGTH);
+        return strlen($key) <= self::MAX_DELIVERY_KEY_LENGTH ? $key : sha1($key);
     }
 
     private function getEventIdFromHeaders(RequestInterface $request): ?string

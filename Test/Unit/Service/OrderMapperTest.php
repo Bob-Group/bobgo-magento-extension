@@ -194,6 +194,57 @@ class OrderMapperTest extends TestCase
         $this->assertSame(22.00, $payload['order_items'][0]['unit_price']);
     }
 
+    /**
+     * A bundle that ships together is one parcel line. Sending the bundle and
+     * every part, each part carrying the bundle's price, quoted a R1,200 bundle
+     * of three as R4,800.
+     */
+    /**
+     * Only a Bob Go rate has a Bob Go service code. Every order is pushed, so
+     * another carrier's method used to go out as if it were one.
+     */
+    public function testAnotherCarriersMethodIsNotSentAsAServiceCode(): void
+    {
+        $payload = $this->mapper->mapOrderToPayload(
+            $this->createOrderMock(['shippingMethod' => 'flatrate_flatrate'])
+        );
+
+        $this->assertNull($payload['buyer_selected_service_code']);
+    }
+
+    public function testBundleShippedTogetherIsSentAsTheBundleOnly(): void
+    {
+        $bundle = $this->bundleItem(1, 1200.00, 0);
+        $partA = $this->bundlePart(2, 1, 'PART-A');
+        $partB = $this->bundlePart(3, 1, 'PART-B');
+
+        $payload = $this->mapper->mapOrderToPayload(
+            $this->createOrderMock(['items' => [$bundle, $partA, $partB]])
+        );
+
+        $this->assertCount(1, $payload['order_items']);
+        $this->assertSame('BUNDLE', $payload['order_items'][0]['sku']);
+        $this->assertSame(1200.00, $payload['order_items'][0]['unit_price']);
+    }
+
+    /**
+     * A bundle that ships its parts separately goes out as the parts, each at
+     * its own price. The bundle's price is never copied onto them.
+     */
+    public function testBundleShippedSeparatelyIsSentAsItsPartsAtTheirOwnPrice(): void
+    {
+        $bundle = $this->bundleItem(1, 1200.00, 1);
+        $partA = $this->bundlePart(2, 1, 'PART-A');
+        $partB = $this->bundlePart(3, 1, 'PART-B');
+
+        $payload = $this->mapper->mapOrderToPayload(
+            $this->createOrderMock(['items' => [$bundle, $partA, $partB]])
+        );
+
+        $this->assertSame(['PART-A', 'PART-B'], array_column($payload['order_items'], 'sku'));
+        $this->assertSame([0.0, 0.0], array_column($payload['order_items'], 'unit_price'));
+    }
+
     public function testSimpleProductOrderUnaffected(): void
     {
         $item = $this->createMock(OrderItemInterface::class);
@@ -444,6 +495,43 @@ class OrderMapperTest extends TestCase
      * @param array<string,mixed> $overrides
      * @return OrderInterface&\PHPUnit\Framework\MockObject\MockObject
      */
+    /**
+     * @return OrderItemInterface&\PHPUnit\Framework\MockObject\MockObject
+     */
+    private function bundleItem(int $itemId, float $price, int $shipmentType)
+    {
+        $item = $this->createMock(OrderItemInterface::class);
+        $item->method('getParentItemId')->willReturn(null);
+        $item->method('getProductType')->willReturn('bundle');
+        $item->method('getItemId')->willReturn($itemId);
+        $item->method('getSku')->willReturn('BUNDLE');
+        $item->method('getName')->willReturn('Starter kit');
+        $item->method('getPriceInclTax')->willReturn($price);
+        $item->method('getQtyOrdered')->willReturn(1.0);
+        $item->method('getWeight')->willReturn(1.5);
+        $item->method('getProductOptions')->willReturn(['shipment_type' => $shipmentType]);
+        return $item;
+    }
+
+    /**
+     * A part of a fixed-price bundle: it has no price of its own.
+     *
+     * @return OrderItemInterface&\PHPUnit\Framework\MockObject\MockObject
+     */
+    private function bundlePart(int $itemId, int $parentItemId, string $sku)
+    {
+        $item = $this->createMock(OrderItemInterface::class);
+        $item->method('getParentItemId')->willReturn($parentItemId);
+        $item->method('getProductType')->willReturn('simple');
+        $item->method('getItemId')->willReturn($itemId);
+        $item->method('getSku')->willReturn($sku);
+        $item->method('getName')->willReturn($sku);
+        $item->method('getPriceInclTax')->willReturn(0.0);
+        $item->method('getQtyOrdered')->willReturn(1.0);
+        $item->method('getWeight')->willReturn(0.5);
+        return $item;
+    }
+
     private function createOrderMock(array $overrides = []): OrderInterface
     {
         $defaults = [
