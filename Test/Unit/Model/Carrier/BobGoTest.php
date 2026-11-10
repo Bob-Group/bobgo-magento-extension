@@ -231,6 +231,8 @@ class BobGoTest extends TestCase
         $methodMock = $this->createMock(\Magento\Quote\Model\Quote\Address\RateResult\Method::class);
         $this->methodFactoryMock->method('create')->willReturn($methodMock);
 
+        $this->apiConfigMock->method('isConfigured')->willReturn(true);
+
         // Capture the payload sent to apiClient
         $capturedPayload = null;
         $this->apiClientMock->method('post')
@@ -454,17 +456,22 @@ class BobGoTest extends TestCase
      *
      * @param callable $prepare Receives the RateRequest before collection
      * @param array<int,object> $items
+     * @param bool $withApiKey False to take the keyless 1.0.x route
      * @return array<string,mixed>
      */
-    private function captureRatePayload(callable $prepare, array $items = []): array
-    {
+    private function captureRatePayload(
+        callable $prepare,
+        array $items = [],
+        bool $withApiKey = true,
+        string $storeBaseUrl = 'https://example.com/'
+    ): array {
         $this->scopeConfigMock->method('getValue')->willReturn('test_value');
         $this->scopeConfigMock->method('isSetFlag')->willReturn(true);
         $this->additionalInfoMock->method('getDestComp')->willReturn('Test Co');
         $this->additionalInfoMock->method('getSuburb')->willReturn('Sandton');
 
         $storeMock = $this->createMock(\Magento\Store\Model\Store::class);
-        $storeMock->method('getBaseUrl')->willReturn('https://example.com/');
+        $storeMock->method('getBaseUrl')->willReturn($storeBaseUrl);
         $this->storeManagerMock->method('getStore')->willReturn($storeMock);
 
         $this->resultFactoryMock->method('create')
@@ -473,13 +480,20 @@ class BobGoTest extends TestCase
             ->willReturn($this->createMock(\Magento\Quote\Model\Quote\Address\RateResult\Method::class));
 
         $this->rateCacheMock->method('load')->willReturn(null);
+        $this->apiConfigMock->method('isConfigured')->willReturn($withApiKey);
 
         $captured = [];
-        $this->apiClientMock->method('post')
-            ->willReturnCallback(function ($endpoint, $payload) use (&$captured) {
-                $captured = $payload;
-                return ['rates' => [['service_name' => 'Standard', 'total_price' => 100.0]]];
-            });
+        $capture = function ($endpointOrPayload, $payload = null) use (&$captured) {
+            $captured = $payload ?? $endpointOrPayload;
+            return ['rates' => [['service_name' => 'Standard', 'total_price' => 100.0]]];
+        };
+        if ($withApiKey) {
+            $this->apiClientMock->method('post')->willReturnCallback($capture);
+            $this->apiClientMock->expects($this->never())->method('postKeylessRates');
+        } else {
+            $this->apiClientMock->method('postKeylessRates')->willReturnCallback($capture);
+            $this->apiClientMock->expects($this->never())->method('post');
+        }
 
         $request = new RateRequest();
         $request->setDestCountryId('ZA');
@@ -569,6 +583,44 @@ class BobGoTest extends TestCase
         $this->assertSame('Hoodie', $captured['items'][0]['description']);
         $this->assertSame(5.0, $captured['items'][0]['quantity']);
         $this->assertSame(500.0, $captured['items'][0]['price']);
+    }
+
+    /**
+     * A store upgraded from 1.0.x has no API key. Its rates must still come
+     * from the keyless route 1.0.x used, in 1.0.x's shape, or upgrading takes
+     * Bob Go off the checkout.
+     */
+    public function testWithoutAnApiKeyRatesUseThe10xKeylessRoute(): void
+    {
+        $item = $this->createMock(\Magento\Quote\Model\Quote\Item::class);
+        $item->method('getProductType')->willReturn('simple');
+        $item->method('getSku')->willReturn('MUG-1');
+        $item->method('getQty')->willReturn(2);
+        $item->method('getPrice')->willReturn(150.00);
+        $item->method('getWeight')->willReturn(0.5);
+
+        $captured = $this->captureRatePayload(static function (RateRequest $request) {
+        }, [$item], false);
+
+        $this->assertSame('example.com', $captured['identifier']);
+        $this->assertSame('2196', $captured['rate']['destination']['postal_code']);
+        $this->assertSame('Sandton', $captured['rate']['destination']['suburb']);
+        $this->assertSame('MUG-1', $captured['rate']['items'][0]['sku']);
+        $this->assertSame(2.0, $captured['rate']['items'][0]['quantity']);
+        $this->assertArrayHasKey('weight', $captured['rate']['items'][0]);
+        $this->assertArrayNotHasKey('collection_address', $captured);
+    }
+
+    /**
+     * 1.0.x identified the store by host alone, without "www." or a path. The
+     * keyless route only recognises the store in that form.
+     */
+    public function testKeylessIdentifierMatches10x(): void
+    {
+        $captured = $this->captureRatePayload(static function (RateRequest $request) {
+        }, [], false, 'https://www.shop.co.za/index.php/');
+
+        $this->assertSame('shop.co.za', $captured['identifier']);
     }
 
     /**

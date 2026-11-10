@@ -46,6 +46,15 @@ class BobGoApiClient
     private const FAST_PATH_ENDPOINTS = ['rates-at-checkout'];
 
     /**
+     * The rates route 1.0.x used. It takes no API key and identifies the store by
+     * the `identifier` in the body, so it is the only way to price a checkout for
+     * a store upgraded from 1.0.x that has not saved a key yet. Production only,
+     * as it always was.
+     */
+    private const KEYLESS_RATES_URL = 'https://api.bobgo.co.za/rates-at-checkout/magento';
+    private const KEYLESS_RATES_ENDPOINT = 'rates-at-checkout/magento';
+
+    /**
      * @var ApiConfig
      */
     private ApiConfig $apiConfig;
@@ -155,6 +164,31 @@ class BobGoApiClient
     }
 
     /**
+     * Rates through the keyless 1.0.x route, for a store with no API key.
+     *
+     * Sends no Authorization or channel header, and leaves connection health
+     * alone: a success here says nothing about an API key.
+     *
+     * @param array<string,mixed> $payload The 1.0.x payload: identifier plus rate
+     * @return array<string,mixed>
+     * @throws BobGoApiException
+     */
+    public function postKeylessRates(array $payload): array
+    {
+        $body = $this->encodePayload($payload, self::KEYLESS_RATES_ENDPOINT);
+
+        $curl = $this->curlFactory->create();
+        $curl->addHeader('Content-Type', 'application/json');
+        $curl->addHeader('Accept', 'application/json');
+        $curl->setOption(CURLOPT_TIMEOUT, self::RATES_TIMEOUT_SECONDS);
+        $curl->setOption(CURLOPT_CONNECTTIMEOUT, self::CONNECT_TIMEOUT_SECONDS);
+
+        return $this->send($curl, self::KEYLESS_RATES_ENDPOINT, static function () use ($curl, $body) {
+            $curl->post(self::KEYLESS_RATES_URL, $body);
+        }, false);
+    }
+
+    /**
      * Dispatch a prepared request and normalise the response.
      *
      * Magento's Curl client reports transport failures — connect timeout, read
@@ -169,13 +203,15 @@ class BobGoApiClient
      * HTTP response at all (same convention as the missing-API-key case).
      *
      * @param callable $dispatch Performs the actual curl call
+     * @param bool $observeHealth False for calls made without the API key
      * @return array<string,mixed>
      * @throws BobGoApiException
      */
     private function send(
         \Magento\Framework\HTTP\Client\Curl $curl,
         string $endpoint,
-        callable $dispatch
+        callable $dispatch,
+        bool $observeHealth = true
     ): array {
         try {
             $dispatch();
@@ -197,7 +233,7 @@ class BobGoApiClient
             );
         }
 
-        return $this->handleResponse($curl, $endpoint);
+        return $this->handleResponse($curl, $endpoint, $observeHealth);
     }
 
     /**
@@ -274,14 +310,19 @@ class BobGoApiClient
      * @return array<string,mixed>
      * @throws BobGoApiException
      */
-    private function handleResponse(\Magento\Framework\HTTP\Client\Curl $curl, string $endpoint): array
-    {
+    private function handleResponse(
+        \Magento\Framework\HTTP\Client\Curl $curl,
+        string $endpoint,
+        bool $observeHealth = true
+    ): array {
         $statusCode = $curl->getStatus();
         $responseBody = $curl->getBody();
 
         // Write-through health tracking: a key revoked on the Bob Go side shows up
         // here, on ordinary traffic, without anyone pressing a Test button.
-        $this->connectionHealth->observe((int) $statusCode);
+        if ($observeHealth) {
+            $this->connectionHealth->observe((int) $statusCode);
+        }
 
         if ($statusCode >= 400) {
             $maskedKey = $this->getMaskedApiKey();

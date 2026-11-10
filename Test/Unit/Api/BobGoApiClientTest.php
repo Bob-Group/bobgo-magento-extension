@@ -344,4 +344,48 @@ class BobGoApiClientTest extends TestCase
         $this->expectException(BobGoApiException::class);
         $this->client->get('webhooks');
     }
+
+    /**
+     * A store upgraded from 1.0.x has no key, so the keyless route must work
+     * without one and must not send one.
+     */
+    public function testKeylessRatesPostToThe10xRouteWithoutAKey(): void
+    {
+        $this->apiConfigMock->method('getApiKey')->willReturn(null);
+
+        $headers = [];
+        $this->curlMock->method('addHeader')
+            ->willReturnCallback(function ($name, $value) use (&$headers) {
+                $headers[$name] = $value;
+            });
+
+        $postedUrl = null;
+        $this->curlMock->method('post')
+            ->willReturnCallback(function ($url) use (&$postedUrl) {
+                $postedUrl = $url;
+            });
+        $this->curlMock->method('getStatus')->willReturn(200);
+        $this->curlMock->method('getBody')->willReturn('{"rates":[{"service_code":"ECO"}]}');
+
+        $response = $this->client->postKeylessRates(['identifier' => 'shop.co.za', 'rate' => []]);
+
+        $this->assertSame('https://api.bobgo.co.za/rates-at-checkout/magento', $postedUrl);
+        $this->assertArrayNotHasKey('Authorization', $headers);
+        $this->assertArrayNotHasKey('bobgo-channel-identifier', $headers);
+        $this->assertSame([['service_code' => 'ECO']], $response['rates']);
+    }
+
+    /**
+     * A keyless success says nothing about an API key, so it must not flip the
+     * admin's connection status to "Connected".
+     */
+    public function testKeylessRatesLeaveConnectionHealthAlone(): void
+    {
+        $this->curlMock->method('getStatus')->willReturn(200);
+        $this->curlMock->method('getBody')->willReturn('{"rates":[]}');
+
+        $this->connectionHealthMock->expects($this->never())->method('observe');
+
+        $this->client->postKeylessRates(['identifier' => 'shop.co.za', 'rate' => []]);
+    }
 }

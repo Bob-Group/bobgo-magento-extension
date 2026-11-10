@@ -170,6 +170,8 @@ For the destination side, customers fill in a suburb field that the extension in
 3. POST to `rates-at-checkout` on the v2 API using the `street_address` / `local_area` / `zone` / `country` / `code` address shape
 4. Available service levels are returned with prices and (optionally) delivery timeframes, and rendered as shipping options
 
+**No API key yet?** A store upgraded from 1.0.x has no API key, so until one is saved the extension prices checkout the way 1.0.x did: a keyless POST to `https://api.bobgo.co.za/rates-at-checkout/magento`, which recognises the store by its host (without `www.` or a path). Rates keep working through the upgrade. Order push, fulfilment sync and tracking still need a key.
+
 ### Order push
 
 Order push is **asynchronous**. Nothing talks to Bob Go while a customer or an admin
@@ -497,7 +499,7 @@ And two new tables:
 ### No shipping rates at checkout
 
 1. Verify **Stores > Configuration > Sales > Shipping Methods > Bob Go > Enable Bob Go rates at checkout** is set to **Yes**
-2. Confirm the API key is correct and matches the selected environment (sandbox key for sandbox, production key for production)
+2. Confirm the API key is correct and matches the selected environment (sandbox key for sandbox, production key for production). With no key saved, rates come from the keyless 1.0.x route, which only works for a store already set up as a Magento channel in Bob Go under the same host
 3. The shipping address must include a valid South African postal code and country `ZA`
 4. Check `var/log/exception.log` and `var/log/system.log` for "Bob Go rates API error"
 
